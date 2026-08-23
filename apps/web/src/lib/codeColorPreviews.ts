@@ -2,10 +2,14 @@ import type { ShikiTransformer } from "@pierre/diffs";
 
 const CSS_HEX_COLOR_REGEX =
   /(^|[^0-9A-Za-z_-])(#[0-9A-Fa-f]{8}|#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{4}|#[0-9A-Fa-f]{3})(?![0-9A-Za-z_-])/g;
+const CSS_LONG_HEX_COLOR_REGEX =
+  /(^|[^0-9A-Za-z_-])(#[0-9A-Fa-f]{8}|#[0-9A-Fa-f]{6})(?![0-9A-Za-z_-])/g;
 
-/** Languages whose hex tokens are plausibly CSS colours. Elsewhere, hashes are
-    issue references, directives, or prose, so the swatch stays off. */
-const CODE_COLOR_PREVIEW_LANGUAGES = new Set([
+/** Style languages keep the #rgb/#rgba short forms. In data and script
+    languages a short hex run is usually an issue reference or a JS private
+    name, so only #rrggbb/#rrggbbaa get a swatch there. Elsewhere hashes are
+    directives or prose, so the swatch stays off entirely. */
+const STYLE_LANGUAGES = new Set([
   "css",
   "scss",
   "sass",
@@ -16,6 +20,8 @@ const CODE_COLOR_PREVIEW_LANGUAGES = new Set([
   "vue",
   "svelte",
   "astro",
+]);
+const LONG_HEX_LANGUAGES = new Set([
   "json",
   "jsonc",
   "json5",
@@ -39,11 +45,15 @@ interface CodeColorPreviewPart {
   readonly color?: string;
 }
 
-export function codeColorPreviewParts(text: string): CodeColorPreviewPart[] {
+export function codeColorPreviewParts(
+  text: string,
+  allowShortForms = true,
+): CodeColorPreviewPart[] {
+  const regex = allowShortForms ? CSS_HEX_COLOR_REGEX : CSS_LONG_HEX_COLOR_REGEX;
   const parts: CodeColorPreviewPart[] = [];
   let cursor = 0;
 
-  for (const match of text.matchAll(CSS_HEX_COLOR_REGEX)) {
+  for (const match of text.matchAll(regex)) {
     const color = match[2];
     if (!color || match.index == null) continue;
 
@@ -61,41 +71,54 @@ export function codeColorPreviewParts(text: string): CodeColorPreviewPart[] {
   return parts;
 }
 
-export const codeColorPreviewTransformer: ShikiTransformer = {
-  name: "t3-code-color-previews",
-  span(hast) {
-    const textNode = hast.children.length === 1 ? hast.children[0] : undefined;
-    if (textNode?.type !== "text") return;
+function createCodeColorPreviewTransformer(
+  name: string,
+  allowShortForms: boolean,
+): ShikiTransformer {
+  return {
+    name,
+    span(hast) {
+      const textNode = hast.children.length === 1 ? hast.children[0] : undefined;
+      if (textNode?.type !== "text") return;
 
-    const parts = codeColorPreviewParts(textNode.value);
-    if (!parts.some((part) => part.color != null)) return;
+      const parts = codeColorPreviewParts(textNode.value, allowShortForms);
+      if (!parts.some((part) => part.color != null)) return;
 
-    hast.children = parts.map((part) => {
-      if (!part.color) {
-        return { type: "text", value: part.text };
-      }
-      return {
-        type: "element",
-        tagName: "span",
-        properties: { className: ["chat-markdown-color-literal"] },
-        children: [
-          { type: "text", value: part.text },
-          {
-            type: "element",
-            tagName: "span",
-            properties: {
-              className: ["chat-markdown-color-swatch"],
-              ariaHidden: "true",
-              style: `--chat-markdown-color: ${part.color}`,
+      hast.children = parts.map((part) => {
+        if (!part.color) {
+          return { type: "text", value: part.text };
+        }
+        return {
+          type: "element",
+          tagName: "span",
+          properties: { className: ["chat-markdown-color-literal"] },
+          children: [
+            { type: "text", value: part.text },
+            {
+              type: "element",
+              tagName: "span",
+              properties: {
+                className: ["chat-markdown-color-swatch"],
+                ariaHidden: "true",
+                style: `--chat-markdown-color: ${part.color}`,
+              },
+              children: [],
             },
-            children: [],
-          },
-        ],
-      };
-    });
-  },
-};
+          ],
+        };
+      });
+    },
+  };
+}
+
+const styleTransformer = createCodeColorPreviewTransformer("t3-code-color-previews", true);
+const longHexTransformer = createCodeColorPreviewTransformer(
+  "t3-code-color-previews-long-hex",
+  false,
+);
 
 export function codeColorPreviewTransformers(language: string): ShikiTransformer[] {
-  return CODE_COLOR_PREVIEW_LANGUAGES.has(language) ? [codeColorPreviewTransformer] : [];
+  if (STYLE_LANGUAGES.has(language)) return [styleTransformer];
+  if (LONG_HEX_LANGUAGES.has(language)) return [longHexTransformer];
+  return [];
 }

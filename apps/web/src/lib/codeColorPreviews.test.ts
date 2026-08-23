@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  codeColorPreviewParts,
-  codeColorPreviewTransformer,
-  codeColorPreviewTransformers,
-} from "./codeColorPreviews";
+import { codeColorPreviewParts, codeColorPreviewTransformers } from "./codeColorPreviews";
 import { resolveDiffThemeName } from "./diffRendering";
 import { getSyntaxHighlighterPromise } from "./syntaxHighlighting";
 
@@ -39,9 +35,20 @@ describe("codeColorPreviewParts", () => {
     expect(codeColorPreviewParts(code)).toEqual([{ text: code }]);
   });
 
+  it("keeps issue references and private names bare when short forms are off", () => {
+    expect(codeColorPreviewParts("// fixes #1904 via this.#abc and #a1b2c3", false)).toEqual([
+      { text: "// fixes #1904 via this.#abc and " },
+      { text: "#a1b2c3", color: "#a1b2c3" },
+    ]);
+  });
+
   it("previews colours only for languages that carry them", () => {
-    expect(codeColorPreviewTransformers("css")).toEqual([codeColorPreviewTransformer]);
-    expect(codeColorPreviewTransformers("json")).toEqual([codeColorPreviewTransformer]);
+    expect(codeColorPreviewTransformers("css").map((transformer) => transformer.name)).toEqual([
+      "t3-code-color-previews",
+    ]);
+    expect(codeColorPreviewTransformers("json").map((transformer) => transformer.name)).toEqual([
+      "t3-code-color-previews-long-hex",
+    ]);
     expect(codeColorPreviewTransformers("text")).toEqual([]);
     expect(codeColorPreviewTransformers("c")).toEqual([]);
     expect(codeColorPreviewTransformers("markdown")).toEqual([]);
@@ -52,7 +59,7 @@ describe("codeColorPreviewParts", () => {
     const html = highlighter.codeToHtml('{"idle":"#701525"}', {
       lang: "json",
       theme: resolveDiffThemeName("dark"),
-      transformers: [codeColorPreviewTransformer],
+      transformers: codeColorPreviewTransformers("json"),
     });
 
     expect(html).toContain('class="chat-markdown-color-literal"');
