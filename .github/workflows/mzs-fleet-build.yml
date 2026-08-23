@@ -25,27 +25,19 @@ jobs:
       version: ${{ steps.compose.outputs.version }}
       release_tag: ${{ steps.compose.outputs.release_tag }}
     steps:
-      - name: Checkout fleet controls
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Checkout fork for composition
-        uses: actions/checkout@v6
-        with:
-          repository: msegec/t3code_rookie
-          ref: main
-          fetch-depth: 0
-          path: source
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      - name: Clone fleet controls without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone \
+            --filter=blob:none \
+            --no-tags \
+            --branch main \
+            --single-branch \
+            https://github.com/msegec/t3code_rookie.git \
+            source
+          [[ "$(git -C source rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          cp source/.mzs/overlays.json "$RUNNER_TEMP/overlays.json"
 
       - id: compose
         name: Compose latest nightly and overlays
@@ -151,7 +143,7 @@ jobs:
               --arg action "$action" \
               '. + [{kind: "pull-request", number: $number, sha: $sha, state: $state, mergedAt: (if $mergedAt == "" then null else $mergedAt end), action: $action}]' \
               <<<"$results")"
-          done < <(jq -c '.overlays[]' .mzs/overlays.json)
+          done < <(jq -c '.overlays[]' "$RUNNER_TEMP/overlays.json")
 
           git -C source diff --check
           printf '%s\n' "$results" >"$RUNNER_TEMP/overlay-results.json"
@@ -180,7 +172,7 @@ jobs:
         working-directory: source
         shell: bash
         run: |
-          mapfile -t tests < <(jq -r '.tests[]' ../.mzs/overlays.json)
+          mapfile -t tests < <(jq -r '.tests[]' "$RUNNER_TEMP/overlays.json")
           vp test run "${tests[@]}"
 
       - name: Typecheck affected packages
