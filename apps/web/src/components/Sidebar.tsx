@@ -177,7 +177,7 @@ import {
   type ProviderInstanceEntry,
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
-import { projectAccentRowStyle } from "../projectAccent";
+import { projectAccentRowState, projectAccentRowStyle } from "../projectAccent";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -1241,7 +1241,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
                 data-project-accent={projectAccent === null ? undefined : "true"}
-                data-project-accent-state={props.isActive || isSelected ? "selected" : "idle"}
+                data-project-accent-state={projectAccentRowState(
+                  projectAccent,
+                  props.isActive,
+                  isSelected,
+                )}
                 style={projectAccentRowStyle(projectAccent)}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
@@ -1406,7 +1410,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               tabIndex={0}
               data-testid="sidebar-row-card"
               data-project-accent={projectAccent === null ? undefined : "true"}
-              data-project-accent-state={props.isActive || isSelected ? "selected" : "idle"}
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isActive,
+                isSelected,
+              )}
               style={projectAccentRowStyle(projectAccent)}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}

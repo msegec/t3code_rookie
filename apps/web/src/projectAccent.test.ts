@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { projectAccentRowStyle } from "./projectAccent";
+import { projectAccentRowState, projectAccentRowStyle } from "./projectAccent";
+
+describe("projectAccentRowState", () => {
+  it("keeps the routed thread and multi-selection as distinct states", () => {
+    expect(projectAccentRowState("#1688f0", true, true)).toBe("active");
+    expect(projectAccentRowState("#1688f0", false, true)).toBe("selected");
+    expect(projectAccentRowState("#1688f0", false, false)).toBe("idle");
+  });
+
+  it("does not add a state attribute without project configuration", () => {
+    expect(projectAccentRowState(null, true, false)).toBeUndefined();
+  });
+});
 
 describe("projectAccentRowStyle", () => {
   it("sets one source color for generated state tints", () => {

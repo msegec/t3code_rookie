@@ -1541,21 +1541,40 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
-[data-app-sidebar] [data-project-accent] {
+/* No [data-app-sidebar] ancestor scope: the mobile sheet sidebar renders
+   without that attribute. Keep the state rules after the hover rule so
+   active and selected surfaces stay stable under the pointer. */
+[data-project-accent] {
   background-color: var(
     --project-accent-idle,
     color-mix(in srgb, var(--project-accent-color) 4%, transparent)
   );
 }
 
-[data-app-sidebar] [data-project-accent]:is(:hover, :focus-visible) {
+[data-project-accent]:focus-visible {
   background-color: var(
     --project-accent-hover,
     color-mix(in srgb, var(--project-accent-color) 9%, var(--sidebar-row-hover))
   );
 }
 
-[data-app-sidebar] [data-project-accent][data-project-accent-state="selected"] {
+@media (hover: hover) {
+  [data-project-accent]:hover {
+    background-color: var(
+      --project-accent-hover,
+      color-mix(in srgb, var(--project-accent-color) 9%, var(--sidebar-row-hover))
+    );
+  }
+}
+
+[data-project-accent][data-project-accent-state="selected"] {
+  background-color: var(
+    --project-accent-selected,
+    color-mix(in srgb, var(--project-accent-color) 13%, var(--sidebar-row-selected))
+  );
+}
+
+[data-project-accent][data-project-accent-state="active"] {
   background-color: var(
     --project-accent-selected,
     color-mix(in srgb, var(--project-accent-color) 13%, var(--sidebar-row-active))

@@ -8,6 +8,15 @@ export interface ProjectAccentRowStyle extends CSSProperties {
   "--project-accent-selected"?: string;
 }
 
+export function projectAccentRowState(
+  accent: ProjectAccent | null,
+  isActive: boolean,
+  isSelected: boolean,
+): "active" | "selected" | "idle" | undefined {
+  if (accent === null) return undefined;
+  return isActive ? "active" : isSelected ? "selected" : "idle";
+}
+
 export function projectAccentRowStyle(
   accent: ProjectAccent | null,
 ): ProjectAccentRowStyle | undefined {
