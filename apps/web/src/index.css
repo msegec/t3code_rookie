@@ -1833,6 +1833,12 @@ html[data-theme-id] .chat-markdown .chat-markdown-chrome-action[aria-pressed="tr
   color: var(--code-foreground);
 }
 
+/* Themed palettes repaint the code surface with --code-foreground, so the
+   swatch border follows it instead of the app-chrome contrast colour. */
+html[data-theme-id] .chat-markdown .chat-markdown-color-swatch {
+  border-color: color-mix(in srgb, var(--code-foreground) 35%, transparent);
+}
+
 html[data-theme-id] [data-app-sidebar] {
   --background: var(--app-theme-canvas);
   --foreground: var(--app-theme-text);

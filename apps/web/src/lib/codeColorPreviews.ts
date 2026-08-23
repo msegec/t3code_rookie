@@ -1,7 +1,38 @@
 import type { ShikiTransformer } from "@pierre/diffs";
 
 const CSS_HEX_COLOR_REGEX =
-  /(^|[^0-9A-Za-z_-])(#[0-9A-Fa-f]{8}|#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{4}|#[0-9A-Fa-f]{3})(?![0-9A-Fa-f])/g;
+  /(^|[^0-9A-Za-z_-])(#[0-9A-Fa-f]{8}|#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{4}|#[0-9A-Fa-f]{3})(?![0-9A-Za-z_-])/g;
+
+/** Languages whose hex tokens are plausibly CSS colours. Elsewhere, hashes are
+    issue references, directives, or prose, so the swatch stays off. */
+const CODE_COLOR_PREVIEW_LANGUAGES = new Set([
+  "css",
+  "scss",
+  "sass",
+  "less",
+  "stylus",
+  "postcss",
+  "html",
+  "vue",
+  "svelte",
+  "astro",
+  "json",
+  "jsonc",
+  "json5",
+  "yaml",
+  "yml",
+  "toml",
+  "javascript",
+  "js",
+  "mjs",
+  "cjs",
+  "jsx",
+  "typescript",
+  "ts",
+  "mts",
+  "cts",
+  "tsx",
+]);
 
 interface CodeColorPreviewPart {
   readonly text: string;
@@ -64,3 +95,7 @@ export const codeColorPreviewTransformer: ShikiTransformer = {
     });
   },
 };
+
+export function codeColorPreviewTransformers(language: string): ShikiTransformer[] {
+  return CODE_COLOR_PREVIEW_LANGUAGES.has(language) ? [codeColorPreviewTransformer] : [];
+}

@@ -65,7 +65,7 @@ import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
-import { codeColorPreviewTransformer } from "../lib/codeColorPreviews";
+import { codeColorPreviewTransformers } from "../lib/codeColorPreviews";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings } from "../hooks/useSettings";
@@ -823,7 +823,7 @@ function UncachedShikiCodeBlock({
       return highlighter.codeToHtml(code, {
         lang: language,
         theme: themeName,
-        transformers: [codeColorPreviewTransformer],
+        transformers: codeColorPreviewTransformers(language),
       });
     } catch (error) {
       // Log highlighting failures for debugging while falling back to plain text
@@ -831,12 +831,9 @@ function UncachedShikiCodeBlock({
         `Code highlighting failed for language "${language}", falling back to plain text.`,
         error instanceof Error ? error.message : error,
       );
-      // If highlighting fails for this language, render as plain text
-      return highlighter.codeToHtml(code, {
-        lang: "text",
-        theme: themeName,
-        transformers: [codeColorPreviewTransformer],
-      });
+      // If highlighting fails for this language, render as plain text without
+      // colour previews: text tokens span whole lines, so prose would match
+      return highlighter.codeToHtml(code, { lang: "text", theme: themeName });
     }
   }, [code, highlighter, language, themeName]);
 

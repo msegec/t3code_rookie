@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { codeColorPreviewParts, codeColorPreviewTransformer } from "./codeColorPreviews";
+import {
+  codeColorPreviewParts,
+  codeColorPreviewTransformer,
+  codeColorPreviewTransformers,
+} from "./codeColorPreviews";
 import { resolveDiffThemeName } from "./diffRendering";
 import { getSyntaxHighlighterPromise } from "./syntaxHighlighting";
 
@@ -28,6 +32,19 @@ describe("codeColorPreviewParts", () => {
   it("ignores invalid lengths and hashes embedded in identifiers", () => {
     const code = "#12 #12345 #123456789 token#abcdef hash-tag#123";
     expect(codeColorPreviewParts(code)).toEqual([{ text: code }]);
+  });
+
+  it("ignores identifiers that merely start with a hex run", () => {
+    const code = "#define X #fffxyz #fff_value #fff-theme";
+    expect(codeColorPreviewParts(code)).toEqual([{ text: code }]);
+  });
+
+  it("previews colours only for languages that carry them", () => {
+    expect(codeColorPreviewTransformers("css")).toEqual([codeColorPreviewTransformer]);
+    expect(codeColorPreviewTransformers("json")).toEqual([codeColorPreviewTransformer]);
+    expect(codeColorPreviewTransformers("text")).toEqual([]);
+    expect(codeColorPreviewTransformers("c")).toEqual([]);
+    expect(codeColorPreviewTransformers("markdown")).toEqual([]);
   });
 
   it("adds a decorative swatch to highlighted code", async () => {
