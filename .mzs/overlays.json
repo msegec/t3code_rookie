@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "overlays": [
+    {
+      "kind": "commit",
+      "name": "MZS fleet runtime source",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-runtime-source",
+      "sha": "c758ff8453cdea1e9954045c6cfe0e58c66d494d"
+    },
+    {
+      "kind": "pull-request",
+      "number": 7972,
+      "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 7979,
+      "headRepository": "msegec/t3code_rookie"
+    }
+  ],
+  "tests": [
+    "apps/server/src/cloud/pinnedRuntime.test.ts",
+    "apps/server/src/assets/AssetAccess.test.ts",
+    "apps/server/src/project/ProjectFaviconResolver.test.ts",
+    "apps/web/src/components/ProjectFavicon.test.tsx",
+    "apps/web/src/projectAccent.test.ts",
+    "packages/contracts/src/t3ProjectFile.test.ts",
+    "apps/web/src/lib/codeColorPreviews.test.ts"
+  ]
+}

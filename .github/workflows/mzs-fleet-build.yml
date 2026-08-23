@@ -1,0 +1,287 @@
+name: Build MZS T3 fleet release
+
+on:
+  workflow_dispatch:
+    inputs:
+      nightly_tag:
+        description: Official nightly tag, or blank for the latest
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: mzs-t3-fleet-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compose and build Linux server
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.compose.outputs.version }}
+      release_tag: ${{ steps.compose.outputs.release_tag }}
+    steps:
+      - name: Checkout fleet controls
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Checkout fork for composition
+        uses: actions/checkout@v6
+        with:
+          repository: msegec/t3code_rookie
+          ref: main
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - id: compose
+        name: Compose latest nightly and overlays
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_NIGHTLY_TAG: ${{ inputs.nightly_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nightly_tag="${REQUESTED_NIGHTLY_TAG:-}"
+          if [[ -z "$nightly_tag" ]]; then
+            nightly_tag="$(gh release list \
+              --repo pingdotgg/t3code \
+              --limit 100 \
+              --json tagName,publishedAt \
+              --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-nightly\\."))] | sort_by(.publishedAt) | last.tagName')"
+          fi
+          if [[ ! "$nightly_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.[0-9]+$ ]]; then
+            printf 'Invalid official nightly tag: %s\n' "$nightly_tag" >&2
+            exit 1
+          fi
+
+          version="${nightly_tag#v}"
+          release_tag="fleet-v${version}"
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf 'Fleet release already exists: %s\n' "$release_tag" >&2
+            exit 1
+          fi
+
+          git -C source remote add upstream https://github.com/pingdotgg/t3code.git
+          git -C source fetch --no-tags upstream main
+          git -C source fetch --no-tags upstream "refs/tags/${nightly_tag}:refs/tags/${nightly_tag}"
+          git -C source checkout --detach "$nightly_tag"
+          git -C source config user.name "Mark S"
+          git -C source config user.email "49048586+msegec@users.noreply.github.com"
+
+          base_sha="$(git -C source rev-parse HEAD)"
+          results='[]'
+          while IFS= read -r overlay; do
+            kind="$(jq -r .kind <<<"$overlay")"
+            if [[ "$kind" == "commit" ]]; then
+              name="$(jq -r .name <<<"$overlay")"
+              repository="$(jq -r .repository <<<"$overlay")"
+              ref="$(jq -r .ref <<<"$overlay")"
+              sha="$(jq -r .sha <<<"$overlay")"
+              git -C source fetch --no-tags "https://github.com/${repository}.git" "$ref"
+              git -C source cat-file -e "${sha}^{commit}"
+              git -C source merge-base --is-ancestor "$sha" FETCH_HEAD
+              git -C source cherry-pick "$sha"
+              results="$(jq -c \
+                --arg kind "$kind" \
+                --arg name "$name" \
+                --arg sha "$sha" \
+                '. + [{kind: $kind, name: $name, sha: $sha, action: "applied"}]' \
+                <<<"$results")"
+              continue
+            fi
+
+            if [[ "$kind" != "pull-request" ]]; then
+              printf 'Unsupported overlay kind: %s\n' "$kind" >&2
+              exit 1
+            fi
+            number="$(jq -r .number <<<"$overlay")"
+            expected_repository="$(jq -r .headRepository <<<"$overlay")"
+            pull="$(gh api "repos/pingdotgg/t3code/pulls/${number}")"
+            repository="$(jq -r .head.repo.full_name <<<"$pull")"
+            sha="$(jq -r .head.sha <<<"$pull")"
+            state="$(jq -r .state <<<"$pull")"
+            merged_at="$(jq -r '.merged_at // ""' <<<"$pull")"
+            merge_sha="$(jq -r '.merge_commit_sha // ""' <<<"$pull")"
+            if [[ "$repository" != "$expected_repository" ]]; then
+              printf 'PR %s moved from %s to %s\n' "$number" "$expected_repository" "$repository" >&2
+              exit 1
+            fi
+
+            git -C source fetch --no-tags upstream "refs/pull/${number}/head"
+            if [[ "$(git -C source rev-parse FETCH_HEAD)" != "$sha" ]]; then
+              printf 'PR %s head changed while composing\n' "$number" >&2
+              exit 1
+            fi
+
+            action=applied
+            if git -C source merge-base --is-ancestor "$sha" HEAD; then
+              action=included
+            elif [[ -n "$merged_at" && -n "$merge_sha" ]]; then
+              if ! git -C source cat-file -e "${merge_sha}^{commit}" 2>/dev/null; then
+                git -C source fetch --no-tags upstream "$merge_sha"
+              fi
+              if git -C source merge-base --is-ancestor "$merge_sha" HEAD; then
+                action=included
+              fi
+            fi
+            if [[ "$action" == applied ]]; then
+              git -C source merge --no-ff --no-edit "$sha"
+            fi
+
+            results="$(jq -c \
+              --argjson number "$number" \
+              --arg sha "$sha" \
+              --arg state "$state" \
+              --arg mergedAt "$merged_at" \
+              --arg action "$action" \
+              '. + [{kind: "pull-request", number: $number, sha: $sha, state: $state, mergedAt: (if $mergedAt == "" then null else $mergedAt end), action: $action}]' \
+              <<<"$results")"
+          done < <(jq -c '.overlays[]' .mzs/overlays.json)
+
+          git -C source diff --check
+          printf '%s\n' "$results" >"$RUNNER_TEMP/overlay-results.json"
+          {
+            printf 'version=%s\n' "$version"
+            printf 'release_tag=%s\n' "$release_tag"
+            printf 'base_sha=%s\n' "$base_sha"
+            printf 'nightly_tag=%s\n' "$nightly_tag"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: source/package.json
+          cache: true
+          run-install: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: source
+        run: vp i --frozen-lockfile
+
+      - name: Run overlay tests
+        working-directory: source
+        shell: bash
+        run: |
+          mapfile -t tests < <(jq -r '.tests[]' ../.mzs/overlays.json)
+          vp test run "${tests[@]}"
+
+      - name: Typecheck affected packages
+        working-directory: source
+        run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/contracts typecheck
+
+      - name: Align package versions
+        working-directory: source
+        shell: bash
+        run: |
+          node scripts/update-release-package-versions.ts "${{ steps.compose.outputs.version }}"
+          git add -- \
+            apps/server/package.json \
+            apps/desktop/package.json \
+            apps/web/package.json \
+            packages/contracts/package.json \
+            pnpm-lock.yaml
+          git commit -m "chore(release): prepare fleet-v${{ steps.compose.outputs.version }}"
+
+      - name: Build web and server
+        working-directory: source
+        shell: bash
+        run: |
+          cp .env.example .env
+          vp run --filter @t3tools/web build
+          vp run --filter t3 build
+
+      - name: Build Linux resource monitor
+        working-directory: source
+        shell: bash
+        run: |
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          mkdir -p apps/server/dist/resource-monitor/linux-x64
+          cp native/resource-monitor/target/release/t3-resource-monitor \
+            apps/server/dist/resource-monitor/linux-x64/t3-resource-monitor
+          chmod +x apps/server/dist/resource-monitor/linux-x64/t3-resource-monitor
+
+      - name: Package and smoke test
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/fleet-release"
+          mkdir -p "$release_dir"
+          overlays="$(<"$RUNNER_TEMP/overlay-results.json")"
+          source_sha="$(git rev-parse HEAD)"
+          jq -n \
+            --argjson schemaVersion 1 \
+            --arg version "${{ steps.compose.outputs.version }}" \
+            --arg nightlyTag "${{ steps.compose.outputs.nightly_tag }}" \
+            --arg baseSha "${{ steps.compose.outputs.base_sha }}" \
+            --arg sourceSha "$source_sha" \
+            --argjson overlays "$overlays" \
+            '{schemaVersion: $schemaVersion, version: $version, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, overlays: $overlays}' \
+            >apps/server/dist/mzs-fleet.json
+          pnpm --filter t3 pack --pack-destination "$release_dir"
+          artifact="$release_dir/t3-${{ steps.compose.outputs.version }}.tgz"
+          test -f "$artifact"
+          bundle="$release_dir/t3-source-${{ steps.compose.outputs.version }}.bundle"
+          git bundle create "$bundle" HEAD
+          cp apps/server/dist/mzs-fleet.json "$release_dir/mzs-fleet.json"
+          cd "$release_dir"
+          sha256sum "$(basename "$artifact")" "$(basename "$bundle")" >SHA256SUMS
+          smoke_dir="$RUNNER_TEMP/fleet-smoke"
+          npm install --prefix "$smoke_dir" --no-fund --no-audit "$artifact"
+          reported="$(node "$smoke_dir/node_modules/t3/dist/bin.mjs" --version)"
+          [[ "$reported" == *"v${{ steps.compose.outputs.version }}" ]]
+
+      - name: Upload verified release files
+        uses: actions/upload-artifact@v7
+        with:
+          name: mzs-t3-fleet-${{ steps.compose.outputs.version }}
+          path: ${{ runner.temp }}/fleet-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish fleet release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release files
+        uses: actions/download-artifact@v8
+        with:
+          name: mzs-t3-fleet-${{ needs.build.outputs.version }}
+          path: release
+
+      - name: Validate release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum --check SHA256SUMS
+          test -f "t3-${{ needs.build.outputs.version }}.tgz"
+          test -f "t3-source-${{ needs.build.outputs.version }}.bundle"
+          test -f mzs-fleet.json
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${{ needs.build.outputs.release_tag }}" \
+            release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "T3 Code Fleet ${{ needs.build.outputs.version }}" \
+            --notes "Manual MZS fleet build from the matching official nightly and the overlays recorded in mzs-fleet.json."
