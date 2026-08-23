@@ -228,7 +228,7 @@ jobs:
             --argjson overlays "$overlays" \
             '{schemaVersion: $schemaVersion, version: $version, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, overlays: $overlays}' \
             >apps/server/dist/mzs-fleet.json
-          pnpm --filter t3 pack --pack-destination "$release_dir"
+          vp pm pack --filter t3 --pack-destination "$release_dir"
           artifact="$release_dir/t3-${{ steps.compose.outputs.version }}.tgz"
           test -f "$artifact"
           bundle="$release_dir/t3-source-${{ steps.compose.outputs.version }}.bundle"
