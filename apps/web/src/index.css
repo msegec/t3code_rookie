@@ -2338,6 +2338,28 @@ code {
   background: transparent !important;
 }
 
+.chat-markdown .chat-markdown-color-literal {
+  white-space: nowrap;
+}
+
+.chat-markdown .chat-markdown-color-swatch {
+  display: inline-block;
+  width: 0.72em;
+  height: 0.72em;
+  margin-inline-start: 0.32em;
+  border: 1px solid color-mix(in srgb, var(--contrast-foreground) 35%, transparent);
+  border-radius: 2px;
+  background: var(--chat-markdown-color);
+  vertical-align: -0.04em;
+  transform-origin: center;
+}
+
+.chat-markdown .chat-markdown-color-literal:hover .chat-markdown-color-swatch {
+  position: relative;
+  z-index: 1;
+  transform: scale(1.6);
+}
+
 /* Diagnostics-style tables: row separators only, uppercase headers, and a
    scroll-fade container for horizontal overflow. The root chat-markdown
    wrapping rules (overflow-wrap: anywhere) would let columns shrink to single

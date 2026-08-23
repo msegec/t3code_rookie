@@ -65,6 +65,7 @@ import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
+import { codeColorPreviewTransformer } from "../lib/codeColorPreviews";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings } from "../hooks/useSettings";
@@ -819,7 +820,11 @@ function UncachedShikiCodeBlock({
   const highlighter = use(getSyntaxHighlighterPromise(language));
   const highlightedHtml = useMemo(() => {
     try {
-      return highlighter.codeToHtml(code, { lang: language, theme: themeName });
+      return highlighter.codeToHtml(code, {
+        lang: language,
+        theme: themeName,
+        transformers: [codeColorPreviewTransformer],
+      });
     } catch (error) {
       // Log highlighting failures for debugging while falling back to plain text
       console.warn(
@@ -827,7 +832,11 @@ function UncachedShikiCodeBlock({
         error instanceof Error ? error.message : error,
       );
       // If highlighting fails for this language, render as plain text
-      return highlighter.codeToHtml(code, { lang: "text", theme: themeName });
+      return highlighter.codeToHtml(code, {
+        lang: "text",
+        theme: themeName,
+        transformers: [codeColorPreviewTransformer],
+      });
     }
   }, [code, highlighter, language, themeName]);
 
