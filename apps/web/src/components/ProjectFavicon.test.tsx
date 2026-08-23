@@ -59,7 +59,7 @@ vi.mock("../assets/assetUrls", () => ({
   },
 }));
 
-import { ProjectFavicon } from "./ProjectFavicon";
+import { ProjectFavicon, projectAccentFromAsset } from "./ProjectFavicon";
 
 type ProjectFaviconImageProps = {
   readonly cacheKey: string;
@@ -142,5 +142,26 @@ describe("ProjectFavicon", () => {
       cwd: "/workspace-test",
       path: "brand/icon.svg",
     });
+  });
+
+  it("reads simple and advanced accents from the shared project asset", () => {
+    expect(
+      projectAccentFromAsset({
+        _tag: "Success",
+        url: testState.faviconUrl,
+        projectAccent: "#1688f0",
+      }),
+    ).toBe("#1688f0");
+    expect(
+      projectAccentFromAsset({
+        _tag: "Success",
+        url: testState.faviconUrl,
+        projectAccent: {
+          idle: "#071525",
+          hover: "#102b46",
+          selected: "#173b60",
+        },
+      }),
+    ).toEqual({ idle: "#071525", hover: "#102b46", selected: "#173b60" });
   });
 });

@@ -163,7 +163,12 @@ import {
   snoozeWakeLabel,
   type SnoozePreset,
 } from "./Sidebar.snooze";
-import { ProjectFavicon } from "./ProjectFavicon";
+import {
+  ProjectFavicon,
+  ProjectFaviconFromAsset,
+  projectAccentFromAsset,
+  useProjectFaviconAsset,
+} from "./ProjectFavicon";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
 import {
@@ -172,6 +177,7 @@ import {
   type ProviderInstanceEntry,
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { projectAccentRowStyle } from "../projectAccent";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -785,6 +791,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
+  const projectFaviconAsset = useProjectFaviconAsset({
+    environmentId: thread.environmentId,
+    cwd: props.projectCwd ?? "",
+    faviconPath: props.projectFaviconPath,
+  });
+  const projectAccent = projectAccentFromAsset(projectFaviconAsset);
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
@@ -1228,6 +1240,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 role="button"
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
+                data-project-accent={projectAccent === null ? undefined : "true"}
+                data-project-accent-state={props.isActive || isSelected ? "selected" : "idle"}
+                style={projectAccentRowStyle(projectAccent)}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
                 onClick={handleClick}
@@ -1246,12 +1261,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
-              <ProjectFavicon
+              <ProjectFaviconFromAsset
                 environmentId={thread.environmentId}
                 cwd={props.projectCwd ?? ""}
                 faviconPath={props.projectFaviconPath}
                 className="size-4"
                 fallbackIcon={MessageSquareIcon}
+                state={projectFaviconAsset}
               />
             </span>
             {title}
@@ -1389,6 +1405,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               role="button"
               tabIndex={0}
               data-testid="sidebar-row-card"
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              data-project-accent-state={props.isActive || isSelected ? "selected" : "idle"}
+              style={projectAccentRowStyle(projectAccent)}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -1400,11 +1419,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         >
           <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
             <div className="flex h-5 min-w-0 items-center gap-1.5">
-              <ProjectFavicon
+              <ProjectFaviconFromAsset
                 environmentId={thread.environmentId}
                 cwd={props.projectCwd ?? ""}
                 faviconPath={props.projectFaviconPath}
                 className="size-4 shrink-0"
+                state={projectFaviconAsset}
               />
               {props.projectTitle ? (
                 <span

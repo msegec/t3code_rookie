@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectAccent } from "@t3tools/contracts";
 import {
   getProjectFaviconCacheKey,
   isProjectFaviconFallbackUrl,
@@ -11,14 +11,29 @@ import { cn } from "~/lib/utils";
 
 const loadedProjectFaviconSrcs = new Map<string, string>();
 
-export function ProjectFavicon(input: {
+interface ProjectFaviconInput {
   environmentId: EnvironmentId;
   cwd: string;
   faviconPath?: string | null | undefined;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
-}) {
+}
+
+export function ProjectFavicon(input: ProjectFaviconInput) {
   const state = useProjectFaviconAsset(input);
+  return renderProjectFavicon(input, state);
+}
+
+export function ProjectFaviconFromAsset(
+  input: ProjectFaviconInput & { readonly state: ReturnType<typeof useProjectFaviconAsset> },
+) {
+  return renderProjectFavicon(input, input.state);
+}
+
+function renderProjectFavicon(
+  input: ProjectFaviconInput,
+  state: ReturnType<typeof useProjectFaviconAsset>,
+) {
   const src = state._tag === "Success" ? state.url : null;
   const FallbackIcon = input.fallbackIcon ?? FolderIcon;
 
@@ -49,6 +64,12 @@ export function useProjectFaviconAsset(input: {
     cwd: input.cwd,
     ...(input.faviconPath ? { path: input.faviconPath } : {}),
   });
+}
+
+export function projectAccentFromAsset(
+  state: ReturnType<typeof useProjectFaviconAsset>,
+): ProjectAccent | null {
+  return state._tag === "Success" ? (state.projectAccent ?? null) : null;
 }
 
 function ProjectFaviconFallback({

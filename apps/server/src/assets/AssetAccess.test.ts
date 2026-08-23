@@ -220,12 +220,14 @@ describe("AssetAccess", () => {
       const updatedFavicon = "<svg>b</svg>";
       expect(updatedFavicon).toHaveLength(initialFavicon.length);
       yield* fileSystem.writeFileString(faviconPath, initialFavicon);
+      yield* fileSystem.writeFileString(path.join(root, "t3.json"), '{ "accentColor": "#1688f0" }');
       const canonicalFaviconPath = yield* fileSystem.realPath(faviconPath);
 
       const faviconResult = yield* issueAssetUrl({
         resource: { _tag: "project-favicon", cwd: root },
       });
       expect(faviconResult.sourcePath).toBe("favicon.svg");
+      expect(faviconResult.projectAccent).toBe("#1688f0");
       expect(faviconResult.relativeUrl).toMatch(/\/v[0-9a-f]{64}-favicon\.svg$/);
       expect(
         yield* issueAssetUrl({
@@ -427,6 +429,7 @@ describe("AssetAccess", () => {
         cause: platformCause,
       });
       const resolver = ProjectFaviconResolver.ProjectFaviconResolver.of({
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: () => Effect.fail(resolutionCause),
       });
 

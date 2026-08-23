@@ -25,6 +25,7 @@ describe("buildT3ProjectFileJsonSchema", () => {
         string,
         {
           description?: string;
+          anyOf?: ReadonlyArray<unknown>;
           items?: { properties: Record<string, unknown>; required: ReadonlyArray<string> };
         }
       >;
@@ -33,12 +34,15 @@ describe("buildT3ProjectFileJsonSchema", () => {
 
     expect(Object.keys(schema.properties).sort()).toEqual([
       "$schema",
+      "accentColor",
       "defaultThreadEnvMode",
       "iconPath",
       "scripts",
     ]);
     expect(schema.required).toBeUndefined();
     expect(schema.properties.iconPath?.description).toContain("Workspace-relative path");
+    expect(schema.properties.accentColor?.description).toContain("sidebar thread-row accent");
+    expect(JSON.stringify(schema.properties.accentColor?.anyOf?.[0])).toContain("#[0-9a-fA-F]{6}");
     expect(schema.properties.defaultThreadEnvMode?.description).toContain("new threads start");
 
     const script = schema.properties.scripts?.items;

@@ -10,6 +10,7 @@ describe("T3ProjectFile", () => {
     const decoded = decode({
       $schema: "https://t3.codes/schema/t3.json",
       iconPath: "assets/logo.svg",
+      accentColor: "#1688f0",
       scripts: [
         {
           name: "Dev",
@@ -24,6 +25,7 @@ describe("T3ProjectFile", () => {
     });
 
     expect(decoded.iconPath).toBe("assets/logo.svg");
+    expect(decoded.accentColor).toBe("#1688f0");
     expect(decoded.scripts).toHaveLength(2);
     expect(decoded.scripts?.[1]).toEqual({ name: "Test", command: "pnpm test" });
   });
@@ -33,14 +35,37 @@ describe("T3ProjectFile", () => {
     expect(decode({ futureField: true })).toEqual({});
   });
 
-  it("trims icon paths and script fields", () => {
+  it("trims icon paths, accent colors, and script fields", () => {
     const decoded = decode({
       iconPath: " assets/logo.svg ",
+      accentColor: " #1688f0 ",
       scripts: [{ name: " Dev ", command: " pnpm dev " }],
     });
 
     expect(decoded.iconPath).toBe("assets/logo.svg");
+    expect(decoded.accentColor).toBe("#1688f0");
     expect(decoded.scripts?.[0]).toEqual({ name: "Dev", command: "pnpm dev" });
+  });
+
+  it("rejects invalid accent colors", () => {
+    expect(() => decode({ accentColor: "blue" })).toThrow();
+    expect(() => decode({ accentColor: "#1688f0cc" })).toThrow();
+  });
+
+  it("accepts exact idle, hover, and selected accent colors", () => {
+    expect(
+      decode({
+        accentColor: {
+          idle: "#071525",
+          hover: "#102b46",
+          selected: "#173b60",
+        },
+      }).accentColor,
+    ).toEqual({ idle: "#071525", hover: "#102b46", selected: "#173b60" });
+  });
+
+  it("requires every exact accent state", () => {
+    expect(() => decode({ accentColor: { idle: "#071525", hover: "#102b46" } })).toThrow();
   });
 
   it("rejects scripts without a command", () => {

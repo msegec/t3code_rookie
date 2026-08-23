@@ -1,4 +1,6 @@
-# Customize a project icon
+# Customize project appearance
+
+## Project icon
 
 T3 Code selects a project icon automatically. It checks `t3.json`, common favicon and app icon
 paths, and icon links in project HTML files.
@@ -14,3 +16,29 @@ T3 Code supports SVG, PNG, ICO, JPEG, GIF, AVIF, and WebP files. The selected pa
 each checkout in the project group and appears on your connected clients.
 
 To use automatic detection again, select **Automatic**.
+
+## Sidebar accent
+
+Add `accentColor` to `t3.json` to tint every sidebar thread row for the project. A single color
+generates restrained idle, hover, and selected tints:
+
+```json
+{
+  "accentColor": "#1688f0"
+}
+```
+
+For exact control, set all three row colors:
+
+```json
+{
+  "accentColor": {
+    "idle": "#071525",
+    "hover": "#102b46",
+    "selected": "#173b60"
+  }
+}
+```
+
+Colors must use six-digit hex notation. Exact colors replace the generated tints, so choose values
+that remain readable with your light and dark sidebar themes.

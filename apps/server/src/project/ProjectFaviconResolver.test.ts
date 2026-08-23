@@ -48,6 +48,51 @@ const makeResolverWithFileSystem = (fileSystem: FileSystem.FileSystem) =>
   );
 
 it.layer(TestLayer)("ProjectFaviconResolverLive", (it) => {
+  describe("resolveAccent", () => {
+    it.effect("reads the validated t3.json accent color", () =>
+      Effect.gen(function* () {
+        const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "t3.json", '{ "accentColor": "#1688f0" }');
+
+        const accentColor = yield* resolver.resolveAccent(cwd);
+        expect(accentColor).toBe("#1688f0");
+      }),
+    );
+
+    it.effect("reads exact accent colors for every row state", () =>
+      Effect.gen(function* () {
+        const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(
+          cwd,
+          "t3.json",
+          '{ "accentColor": { "idle": "#071525", "hover": "#102b46", "selected": "#173b60" } }',
+        );
+
+        const accentColor = yield* resolver.resolveAccent(cwd);
+        expect(accentColor).toEqual({
+          idle: "#071525",
+          hover: "#102b46",
+          selected: "#173b60",
+        });
+      }),
+    );
+
+    it.effect("returns null when the project file is missing or invalid", () =>
+      Effect.gen(function* () {
+        const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+        const cwd = yield* makeTempDir;
+
+        const missingAccentColor = yield* resolver.resolveAccent(cwd);
+        expect(missingAccentColor).toBeNull();
+        yield* writeTextFile(cwd, "t3.json", '{ "accentColor": "blue" }');
+        const invalidAccentColor = yield* resolver.resolveAccent(cwd);
+        expect(invalidAccentColor).toBeNull();
+      }),
+    );
+  });
+
   describe("resolvePath", () => {
     it.effect("prefers well-known favicon files", () =>
       Effect.gen(function* () {

@@ -12,6 +12,8 @@ export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
 
 const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
+const PROJECT_ACCENT_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const PROJECT_ACCENT_COLOR_INPUT_PATTERN = /^\s*#[0-9a-fA-F]{6}\s*$/;
 
 // Annotations go on the encoded (string) side so they survive into the
 // published JSON Schema; decoding still trims and re-validates non-emptiness.
@@ -59,6 +61,30 @@ export const T3ProjectFileScript = Schema.Struct({
 });
 export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
 
+const ProjectAccentColorInput = Schema.String.annotate({
+  description: 'Six-digit hex color (e.g. "#1688f0").',
+}).check(Schema.isNonEmpty(), Schema.isPattern(PROJECT_ACCENT_COLOR_INPUT_PATTERN));
+export const ProjectAccentColor = ProjectAccentColorInput.pipe(
+  Schema.decodeTo(
+    Schema.String.check(Schema.isPattern(PROJECT_ACCENT_COLOR_PATTERN)),
+    SchemaTransformation.trim(),
+  ),
+);
+export type ProjectAccentColor = typeof ProjectAccentColor.Type;
+
+export const ProjectAccentPalette = Schema.Struct({
+  idle: ProjectAccentColor,
+  hover: ProjectAccentColor,
+  selected: ProjectAccentColor,
+});
+export type ProjectAccentPalette = typeof ProjectAccentPalette.Type;
+
+export const ProjectAccent = Schema.Union([ProjectAccentColor, ProjectAccentPalette]).annotate({
+  description:
+    "Project sidebar thread-row accent. Set one hex color for generated state tints, or set idle, hover, and selected colors for exact control.",
+});
+export type ProjectAccent = typeof ProjectAccent.Type;
+
 export const T3ProjectFile = Schema.Struct({
   $schema: Schema.optionalKey(
     Schema.String.annotate({
@@ -74,6 +100,7 @@ export const T3ProjectFile = Schema.Struct({
       T3_PROJECT_FILE_PATH_MAX_LENGTH,
     ),
   ),
+  accentColor: Schema.optionalKey(ProjectAccent),
   defaultThreadEnvMode: Schema.optionalKey(
     ThreadEnvMode.annotate({
       description:
