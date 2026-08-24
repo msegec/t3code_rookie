@@ -217,6 +217,7 @@ jobs:
           cp -R \
             "$upstream_dir/extracted/package/dist/resource-monitor" \
             apps/server/dist/resource-monitor
+          chmod +x apps/server/dist/resource-monitor/{darwin-arm64,darwin-x64,linux-x64}/t3-resource-monitor
           test -x apps/server/dist/resource-monitor/darwin-arm64/t3-resource-monitor
           test -x apps/server/dist/resource-monitor/darwin-x64/t3-resource-monitor
           test -x apps/server/dist/resource-monitor/linux-x64/t3-resource-monitor
@@ -272,14 +273,103 @@ jobs:
       - name: Upload verified release files
         uses: actions/upload-artifact@v7
         with:
-          name: mzs-t3-fleet-${{ steps.compose.outputs.version }}
+          name: mzs-t3-fleet-server-${{ steps.compose.outputs.version }}
           path: ${{ runner.temp }}/fleet-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  build_macos:
+    name: Build macOS desktop (universal)
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Download composed source
+        uses: actions/download-artifact@v8
+        with:
+          name: mzs-t3-fleet-server-${{ needs.build.outputs.version }}
+          path: fleet-input
+
+      - name: Restore composed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone \
+            "fleet-input/t3-source-${{ needs.build.outputs.version }}.bundle" \
+            source
+          [[ "$(git -C source rev-parse HEAD)" == \
+            "$(jq -r .sourceSha fleet-input/mzs-fleet.json)" ]]
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: source/package.json
+          cache: true
+          run-install: false
+
+      - name: Install dependencies
+        working-directory: source
+        run: vp i --frozen-lockfile
+
+      - name: Set up Rust targets
+        working-directory: source
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Build official-brand desktop artifact
+        working-directory: source
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec/t3code_rookie
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          vp run build:desktop
+          cp ../fleet-input/mzs-fleet.json apps/server/dist/mzs-fleet.json
+          vp run dist:desktop:artifact \
+            --platform mac \
+            --target dmg \
+            --arch universal \
+            --build-version "${{ needs.build.outputs.version }}" \
+            --skip-build \
+            --verbose
+
+      - name: Verify macOS release files
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/fleet-macos"
+          mkdir -p "$release_dir"
+          shopt -s nullglob
+          files=(release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml)
+          if (( ${#files[@]} < 3 )); then
+            printf 'Missing macOS desktop release files\n' >&2
+            exit 1
+          fi
+          cp "${files[@]}" "$release_dir/"
+          zip_file=("$release_dir"/*.zip)
+          [[ ${#zip_file[@]} -eq 1 ]]
+          update_config="$(unzip -Z1 "${zip_file[0]}" | grep '/Contents/Resources/app-update.yml$')"
+          [[ -n "$update_config" ]]
+          unzip -p "${zip_file[0]}" "$update_config" | grep -q 'owner: msegec'
+          unzip -p "${zip_file[0]}" "$update_config" | grep -q 'repo: t3code_rookie'
+          cd "$release_dir"
+          shasum -a 256 ./* >SHA256SUMS.mac
+
+      - name: Upload verified macOS release files
+        uses: actions/upload-artifact@v7
+        with:
+          name: mzs-t3-fleet-macos-${{ needs.build.outputs.version }}
+          path: ${{ runner.temp }}/fleet-macos/*
           if-no-files-found: error
           retention-days: 7
 
   publish:
     name: Publish fleet release
-    needs: build
+    needs: [build, build_macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -288,7 +378,8 @@ jobs:
       - name: Download verified release files
         uses: actions/download-artifact@v8
         with:
-          name: mzs-t3-fleet-${{ needs.build.outputs.version }}
+          pattern: mzs-t3-fleet-*-${{ needs.build.outputs.version }}
+          merge-multiple: true
           path: release
 
       - name: Validate release files
@@ -297,9 +388,13 @@ jobs:
           set -euo pipefail
           cd release
           sha256sum --check SHA256SUMS
+          sha256sum --check SHA256SUMS.mac
           test -f "t3-${{ needs.build.outputs.version }}.tgz"
           test -f "t3-source-${{ needs.build.outputs.version }}.bundle"
           test -f mzs-fleet.json
+          test -n "$(find . -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -n "$(find . -maxdepth 1 -type f -name '*-mac.yml' -print -quit)"
 
       - name: Publish GitHub release
         env:
