@@ -34,7 +34,6 @@ import {
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   type ProjectId,
-  ProjectCreateUploadUrlError,
   type ProjectEntriesFailure,
   type ProjectFileFailure,
   type ProjectFileOperation,
@@ -97,6 +96,7 @@ import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import { issueWorkspaceUploadUrl } from "./workspace/WorkspaceUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -1939,11 +1939,10 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
-        // Task 3 replaces this with the real handler.
-        [WS_METHODS.projectsCreateUploadUrl]: () =>
-          Effect.fail(
-            new ProjectCreateUploadUrlError({ message: "Workspace uploads are not wired up yet." }),
-          ),
+        [WS_METHODS.projectsCreateUploadUrl]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsCreateUploadUrl, issueWorkspaceUploadUrl(input), {
+            "rpc.aggregate": "workspace",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",

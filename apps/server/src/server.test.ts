@@ -133,6 +133,7 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import { WORKSPACE_UPLOAD_ROUTE_PREFIX } from "./workspace/WorkspaceUpload.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriver from "./vcs/VcsDriver.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -5124,6 +5125,75 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.relativePath, "nested/created.txt");
       const persisted = yield* fs.readFileString(path.join(workspaceDir, "nested", "created.txt"));
       assert.equal(persisted, "written-by-rpc");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("uploads workspace file bytes through a signed URL issued by websocket rpc", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-upload-",
+      });
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const issued = yield* client[WS_METHODS.projectsCreateUploadUrl]({
+              cwd: workspaceDir,
+              relativePath: "uploaded/dropped.bin",
+              sizeBytes: 6,
+              overwrite: false,
+            });
+            assert.equal(issued.relativePath, "uploaded/dropped.bin");
+
+            const badContentLength = yield* HttpClient.post(issued.relativeUrl, {
+              body: HttpBody.uint8Array(new Uint8Array([1, 2, 3]), "application/octet-stream"),
+            });
+            assert.equal(badContentLength.status, 400);
+
+            const response = yield* HttpClient.post(issued.relativeUrl, {
+              body: HttpBody.uint8Array(
+                new Uint8Array([1, 2, 3, 4, 5, 6]),
+                "application/octet-stream",
+              ),
+            });
+            assert.equal(response.status, 204);
+
+            const persisted = yield* fs.readFile(
+              path.join(workspaceDir, "uploaded", "dropped.bin"),
+            );
+            assert.deepEqual(Array.from(persisted), [1, 2, 3, 4, 5, 6]);
+
+            const notFoundResponse = yield* HttpClient.post(
+              `${WORKSPACE_UPLOAD_ROUTE_PREFIX}/not-a-real-token`,
+              { body: HttpBody.uint8Array(new Uint8Array([1, 2, 3, 4, 5, 6])) },
+            );
+            assert.equal(notFoundResponse.status, 404);
+
+            const conflictTarget = yield* client[WS_METHODS.projectsCreateUploadUrl]({
+              cwd: workspaceDir,
+              relativePath: "uploaded/conflict.bin",
+              sizeBytes: 6,
+              overwrite: false,
+            });
+            yield* fs.writeFile(
+              path.join(workspaceDir, "uploaded", "conflict.bin"),
+              new Uint8Array([9, 9, 9, 9, 9, 9]),
+            );
+            const conflictResponse = yield* HttpClient.post(conflictTarget.relativeUrl, {
+              body: HttpBody.uint8Array(
+                new Uint8Array([1, 2, 3, 4, 5, 6]),
+                "application/octet-stream",
+              ),
+            });
+            assert.equal(conflictResponse.status, 409);
+          }),
+        ),
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
