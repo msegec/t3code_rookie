@@ -460,18 +460,19 @@ jobs:
           release_dir="$RUNNER_TEMP/fleet-linux"
           mkdir -p "$release_dir"
           shopt -s nullglob
-          files=(release/*.AppImage release/*.blockmap release/*-linux.yml)
-          if (( ${#files[@]} < 3 )); then
+          app_images=(release/*.AppImage)
+          manifests=(release/*-linux.yml)
+          if (( ${#app_images[@]} != 1 || ${#manifests[@]} != 1 )); then
             printf 'Missing Linux desktop release files\n' >&2
             exit 1
           fi
+          files=("${app_images[@]}" "${manifests[@]}")
           cp "${files[@]}" "$release_dir/"
-          app_images=("$release_dir"/*.AppImage)
-          [[ ${#app_images[@]} -eq 1 ]]
-          chmod +x "${app_images[0]}"
+          app_image="$release_dir/$(basename "${app_images[0]}")"
+          chmod +x "$app_image"
           (
             cd "$RUNNER_TEMP"
-            "${app_images[0]}" --appimage-extract >/dev/null
+            "$app_image" --appimage-extract >/dev/null
           )
           grep -q 'owner: msegec' "$RUNNER_TEMP/squashfs-root/resources/app-update.yml"
           grep -q 'repo: t3code_rookie' "$RUNNER_TEMP/squashfs-root/resources/app-update.yml"
