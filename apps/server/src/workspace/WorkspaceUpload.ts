@@ -1,0 +1,230 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeCrypto from "node:crypto";
+
+import {
+  PROJECT_UPLOAD_URL_TTL_MS,
+  ProjectCreateUploadUrlError,
+  ProjectUploadTargetExistsError,
+  type ProjectCreateUploadUrlInput,
+} from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+
+import {
+  base64UrlDecodeUtf8,
+  base64UrlEncode,
+  signPayload,
+  timingSafeEqualBase64Url,
+} from "../auth/utils.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as WorkspaceEntries from "./WorkspaceEntries.ts";
+import * as WorkspacePaths from "./WorkspacePaths.ts";
+
+export const WORKSPACE_UPLOAD_ROUTE_PREFIX = "/api/workspace/upload";
+
+// Asset download and attachment upload tokens share this key; the signed
+// claim kind keeps the token spaces separate.
+const SIGNING_SECRET_NAME = "asset-access-signing-key";
+
+const WorkspaceUploadClaims = Schema.Struct({
+  version: Schema.Literal(1),
+  kind: Schema.Literal("workspace-upload"),
+  cwd: Schema.String,
+  relativePath: Schema.String,
+  sizeBytes: Schema.Number,
+  overwrite: Schema.Boolean,
+  expiresAt: Schema.Number,
+});
+export type WorkspaceUploadClaims = typeof WorkspaceUploadClaims.Type;
+
+const workspaceUploadClaimsJson = Schema.fromJsonString(WorkspaceUploadClaims);
+const decodeWorkspaceUploadClaims = Schema.decodeUnknownOption(workspaceUploadClaimsJson);
+const encodeWorkspaceUploadClaims = Schema.encodeSync(workspaceUploadClaimsJson);
+
+function decodeClaims(encodedPayload: string): WorkspaceUploadClaims | null {
+  try {
+    return Option.getOrNull(decodeWorkspaceUploadClaims(base64UrlDecodeUtf8(encodedPayload)));
+  } catch {
+    return null;
+  }
+}
+
+const loadSigningSecret = Effect.gen(function* () {
+  const secretStore = yield* ServerSecretStore.ServerSecretStore;
+  return yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32);
+});
+
+export const issueWorkspaceUploadUrl = Effect.fn("WorkspaceUpload.issueUrl")(function* (
+  input: ProjectCreateUploadUrlInput,
+) {
+  const secret = yield* loadSigningSecret.pipe(
+    Effect.mapError(
+      (cause) =>
+        new ProjectCreateUploadUrlError({
+          cwd: input.cwd,
+          relativePath: input.relativePath,
+          message: "Failed to load the upload signing key.",
+          cause,
+        }),
+    ),
+  );
+
+  const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+  const target = yield* workspacePaths
+    .resolveRelativePathWithinRoot({
+      workspaceRoot: input.cwd,
+      relativePath: input.relativePath,
+    })
+    .pipe(
+      Effect.mapError(
+        (error) =>
+          new ProjectCreateUploadUrlError({
+            cwd: input.cwd,
+            relativePath: input.relativePath,
+            message: error.message,
+            cause: error,
+          }),
+      ),
+    );
+
+  const fileSystem = yield* FileSystem.FileSystem;
+  const targetExists = yield* fileSystem.exists(target.absolutePath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new ProjectCreateUploadUrlError({
+          cwd: input.cwd,
+          relativePath: target.relativePath,
+          message: `Failed to check for an existing file at '${target.relativePath}' in '${input.cwd}'.`,
+          cause,
+        }),
+    ),
+  );
+  if (targetExists && input.overwrite !== true) {
+    return yield* new ProjectUploadTargetExistsError({
+      cwd: input.cwd,
+      relativePath: target.relativePath,
+    });
+  }
+
+  const nowMs = yield* Clock.currentTimeMillis;
+  const expiresAt = nowMs + PROJECT_UPLOAD_URL_TTL_MS;
+  const encodedPayload = base64UrlEncode(
+    encodeWorkspaceUploadClaims({
+      version: 1,
+      kind: "workspace-upload",
+      cwd: input.cwd,
+      relativePath: target.relativePath,
+      sizeBytes: input.sizeBytes,
+      overwrite: input.overwrite === true,
+      expiresAt,
+    }),
+  );
+
+  return {
+    relativePath: target.relativePath,
+    relativeUrl: `${WORKSPACE_UPLOAD_ROUTE_PREFIX}/${encodedPayload}.${signPayload(encodedPayload, secret)}`,
+    expiresAt,
+  };
+});
+
+export const validateWorkspaceUploadToken = Effect.fn("WorkspaceUpload.validateToken")(function* (
+  token: string,
+) {
+  const [encodedPayload, signature, unexpectedSegment] = token.split(".");
+  if (!encodedPayload || !signature || unexpectedSegment) {
+    return null;
+  }
+
+  const secret = yield* loadSigningSecret.pipe(
+    Effect.tapError((cause) =>
+      Effect.logError("Failed to load the workspace upload signing key.", { cause }),
+    ),
+    Effect.orElseSucceed(() => null),
+  );
+  if (!secret || !timingSafeEqualBase64Url(signature, signPayload(encodedPayload, secret))) {
+    return null;
+  }
+
+  const claims = decodeClaims(encodedPayload);
+  if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) {
+    return null;
+  }
+  return claims;
+});
+
+export type StoreWorkspaceUploadResult =
+  | { readonly ok: true; readonly relativePath: string }
+  | { readonly ok: false; readonly status: number; readonly detail: string };
+
+export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function* (
+  claims: WorkspaceUploadClaims,
+  bytes: Uint8Array,
+) {
+  if (bytes.byteLength !== claims.sizeBytes) {
+    return {
+      ok: false,
+      status: 400,
+      detail: `Body was ${bytes.byteLength} bytes, expected ${claims.sizeBytes}.`,
+    } satisfies StoreWorkspaceUploadResult;
+  }
+
+  const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+  const target = yield* workspacePaths
+    .resolveRelativePathWithinRoot({
+      workspaceRoot: claims.cwd,
+      relativePath: claims.relativePath,
+    })
+    .pipe(Effect.catchTag("WorkspacePathOutsideRootError", () => Effect.succeed(null)));
+  if (!target) {
+    return {
+      ok: false,
+      status: 500,
+      detail: "Failed to resolve the workspace upload target.",
+    } satisfies StoreWorkspaceUploadResult;
+  }
+
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const partPath = `${target.absolutePath}.${NodeCrypto.randomUUID()}.part`;
+  return yield* Effect.gen(function* () {
+    const targetExists = yield* fileSystem.exists(target.absolutePath);
+    if (targetExists && !claims.overwrite) {
+      return {
+        ok: false,
+        status: 409,
+        detail: "A file already exists at this path.",
+      } satisfies StoreWorkspaceUploadResult;
+    }
+
+    yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true });
+    yield* fileSystem.writeFile(partPath, bytes);
+    yield* fileSystem.rename(partPath, target.absolutePath);
+
+    const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+    yield* workspaceEntries.refresh(claims.cwd);
+
+    return { ok: true, relativePath: target.relativePath } satisfies StoreWorkspaceUploadResult;
+  }).pipe(
+    Effect.catch((cause) =>
+      fileSystem.remove(partPath, { force: true }).pipe(
+        Effect.orElseSucceed(() => undefined),
+        Effect.andThen(
+          Effect.logError("Failed to persist workspace upload.", {
+            cwd: claims.cwd,
+            relativePath: claims.relativePath,
+            cause,
+          }),
+        ),
+        Effect.as({
+          ok: false,
+          status: 500,
+          detail: "Failed to persist upload.",
+        } satisfies StoreWorkspaceUploadResult),
+      ),
+    ),
+  );
+});
