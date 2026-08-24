@@ -9,6 +9,13 @@
       "sha": "1918e12feb95080ece601a6a70a30c15529b8b55"
     },
     {
+      "kind": "commit",
+      "name": "MZS fleet runtime native verification",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-runtime-overlay",
+      "sha": "83591c7d7820cffebd0097410727db7b94ba76ed"
+    },
+    {
       "kind": "pull-request",
       "number": 7972,
       "headRepository": "msegec/t3code_rookie"
