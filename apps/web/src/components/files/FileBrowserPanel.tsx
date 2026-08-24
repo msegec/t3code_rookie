@@ -8,6 +8,7 @@ import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { RotateCw, Upload, XIcon } from "lucide-react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -254,14 +255,26 @@ export default function FileBrowserPanel({
     },
     [handleAddFiles],
   );
-  const uploadsById = useWorkspaceUploadStore((state) => state.uploadsById);
-  const uploads = useMemo(
-    () =>
-      Object.entries(uploadsById).filter(
-        ([, upload]) => upload.environmentId === environmentId && upload.cwd === cwd,
-      ),
-    [cwd, environmentId, uploadsById],
+  // Flattened [id, state, id, state, ...] so the shallow compare sees stable
+  // string ids and per-upload state refs; uploads for other panels never
+  // re-render this one.
+  const uploadEntries = useWorkspaceUploadStore(
+    useShallow((state) =>
+      Object.entries(state.uploadsById)
+        .filter(([, upload]) => upload.environmentId === environmentId && upload.cwd === cwd)
+        .flat(),
+    ),
   );
+  const uploads = useMemo(() => {
+    const pairs: Array<[string, WorkspaceUploadState]> = [];
+    for (let index = 0; index < uploadEntries.length; index += 2) {
+      pairs.push([
+        uploadEntries[index] as string,
+        uploadEntries[index + 1] as WorkspaceUploadState,
+      ]);
+    }
+    return pairs;
+  }, [uploadEntries]);
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
