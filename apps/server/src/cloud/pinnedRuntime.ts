@@ -18,9 +18,13 @@ import * as ProcessRunner from "../processRunner.ts";
 
 const PINNED_RUNTIME_DIR = "runtime";
 const PINNED_RUNTIME_INSTALL_TIMEOUT = Duration.minutes(10);
+const FLEET_RELEASE_BASE_URL = "https://github.com/msegec/t3code_rookie/releases/download";
 // Boot-service setup and remote update can construct separate layers. Serialize
 // the complete install transaction across every caller in this process.
 const pinnedRuntimeInstallLock = Semaphore.makeUnsafe(1);
+
+export const pinnedRuntimePackageSpec = (version: string): string =>
+  `${FLEET_RELEASE_BASE_URL}/v${version}/t3-${version}.tgz`;
 
 export interface PinnedRuntimePaths {
   readonly versionDir: string;
@@ -155,7 +159,14 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
     yield* runner
       .run({
         command: "npm",
-        args: ["install", "--prefix", stagingDir, "--no-fund", "--no-audit", `t3@${input.version}`],
+        args: [
+          "install",
+          "--prefix",
+          stagingDir,
+          "--no-fund",
+          "--no-audit",
+          pinnedRuntimePackageSpec(input.version),
+        ],
         // Native dependencies may compile from source on slower machines.
         timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
       })

@@ -10,9 +10,17 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
+  pinnedRuntimePackageSpec,
   pinnedRuntimePaths,
   PinnedRuntimeInstallError,
 } from "./pinnedRuntime.ts";
+
+it("resolves pinned runtimes from the MZS fleet release", () => {
+  assert.equal(
+    pinnedRuntimePackageSpec("0.0.34-nightly.20260824.1172.mzs.r1234abcdef56"),
+    "https://github.com/msegec/t3code_rookie/releases/download/v0.0.34-nightly.20260824.1172.mzs.r1234abcdef56/t3-0.0.34-nightly.20260824.1172.mzs.r1234abcdef56.tgz",
+  );
+});
 
 const successfulRunner = (fs: FileSystem.FileSystem, path: Path.Path) =>
   ProcessRunner.ProcessRunner.of({
