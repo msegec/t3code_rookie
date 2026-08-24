@@ -213,6 +213,7 @@ jobs:
           tar -xzf "$upstream_package" -C "$upstream_dir/extracted"
           [[ "$(jq -r .version "$upstream_dir/extracted/package/package.json")" == \
             "${{ steps.compose.outputs.version }}" ]]
+          rm -rf apps/server/dist/resource-monitor
           cp -R \
             "$upstream_dir/extracted/package/dist/resource-monitor" \
             apps/server/dist/resource-monitor
