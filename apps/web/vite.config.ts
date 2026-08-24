@@ -39,7 +39,6 @@ const configuredRelayTracingUrl = repoEnv.VITE_RELAY_OTLP_TRACES_URL?.trim() || 
 const configuredRelayTracingDataset = repoEnv.VITE_RELAY_OTLP_TRACES_DATASET?.trim() || "";
 const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim() || "";
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
-const configuredMzsFleetBaseTag = process.env.VITE_MZS_FLEET_BASE_TAG?.trim() || "";
 const configuredMzsFleetLabel = process.env.VITE_MZS_FLEET_LABEL?.trim() || "";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
 const configuredHostedAppUrl = (() => {
@@ -203,7 +202,6 @@ export default defineConfig(() => {
       "import.meta.env.VITE_RELAY_OTLP_TRACES_TOKEN": JSON.stringify(configuredRelayTracingToken),
       "import.meta.env.VITE_HOSTED_APP_URL": JSON.stringify(configuredHostedAppUrl ?? ""),
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
-      "import.meta.env.VITE_MZS_FLEET_BASE_TAG": JSON.stringify(configuredMzsFleetBaseTag),
       "import.meta.env.VITE_MZS_FLEET_LABEL": JSON.stringify(configuredMzsFleetLabel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
     },

@@ -5,16 +5,11 @@ import {
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
+import { APP_BUILD_LABEL } from "../../branding";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
-import {
-  FLEET_BASE_TAG,
-  FLEET_BUILD_LABEL,
-  fetchFleetSyncStatus,
-  type FleetSyncStatus,
-} from "../../fleetBuild";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import {
@@ -53,7 +48,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     environmentIdentificationMode === "pill"
       ? resolveEnvironmentIdentificationPillLabel(stageLabel)
       : null;
-  const fleetSyncStatus = useFleetSyncStatus();
 
   return (
     <SidebarHeader
@@ -72,16 +66,15 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         )}
       />
       <SidebarBrand onBackdrop={backdropVariant !== null} />
-      {FLEET_BUILD_LABEL ? (
+      {APP_BUILD_LABEL ? (
         <Badge
           className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
           data-fleet-build="true"
           size="sm"
-          title={fleetBuildTitle(fleetSyncStatus)}
-          variant={fleetSyncStatus.status === "available" ? "warning" : "secondary"}
+          title="This build follows the MZS fleet release channel."
+          variant="secondary"
         >
-          {FLEET_BUILD_LABEL}
-          {fleetSyncStatus.status === "available" ? " · Sync" : null}
+          {APP_BUILD_LABEL}
         </Badge>
       ) : null}
       {pillLabel ? (
@@ -97,37 +90,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     </SidebarHeader>
   );
 });
-
-function fleetBuildTitle(status: FleetSyncStatus): string {
-  if (status.status === "available") {
-    return `Built from ${FLEET_BASE_TAG}. Run t3-fleet-release to sync to ${status.latestTag}.`;
-  }
-  if (status.status === "current")
-    return `Built from ${FLEET_BASE_TAG}. Official nightly is current.`;
-  return FLEET_BASE_TAG
-    ? `Built from ${FLEET_BASE_TAG}. Upstream nightly check unavailable.`
-    : "MZS fleet build";
-}
-
-function useFleetSyncStatus(): FleetSyncStatus {
-  const [status, setStatus] = useState<FleetSyncStatus>({ status: "unavailable" });
-
-  useEffect(() => {
-    if (!FLEET_BUILD_LABEL || !FLEET_BASE_TAG) return;
-
-    const controller = new AbortController();
-    void fetchFleetSyncStatus(FLEET_BASE_TAG, controller.signal)
-      .then((nextStatus) => {
-        if (!controller.signal.aborted) setStatus(nextStatus);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setStatus({ status: "unavailable" });
-      });
-    return () => controller.abort();
-  }, []);
-
-  return status;
-}
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
