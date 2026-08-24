@@ -5,8 +5,9 @@ import type {
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { RotateCw, Upload, XIcon } from "lucide-react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -15,10 +16,19 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
+import {
+  cancelWorkspaceUpload,
+  dismissWorkspaceUpload,
+  retryWorkspaceUpload,
+  startWorkspaceUploads,
+  useWorkspaceUploadStore,
+  type WorkspaceUploadState,
+} from "~/lib/workspaceUploadQueue";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
+import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 
@@ -71,6 +81,97 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
   );
 }
 
+function UploadFilesButton(props: { onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Upload files"
+            onClick={props.onClick}
+          />
+        }
+      >
+        <Upload />
+      </TooltipTrigger>
+      <TooltipPopup>Upload files</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function UploadRowButton(props: { label: string; icon: ReactNode; onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={props.label}
+            onClick={props.onClick}
+          />
+        }
+      >
+        {props.icon}
+      </TooltipTrigger>
+      <TooltipPopup>{props.label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function UploadRow(props: { id: string; upload: WorkspaceUploadState }) {
+  const { id, upload } = props;
+  return (
+    <div className="flex h-7 items-center gap-2 px-2 text-xs">
+      <Tooltip>
+        <TooltipTrigger
+          render={<span className="min-w-0 flex-1 truncate text-foreground">{upload.name}</span>}
+        />
+        <TooltipPopup>{upload.name}</TooltipPopup>
+      </Tooltip>
+      {upload.status === "uploading" ? (
+        <>
+          <span className="shrink-0 tabular-nums text-muted-foreground">
+            {Math.round(upload.progress * 100)}%
+          </span>
+          <UploadRowButton
+            label={`Cancel upload of ${upload.name}`}
+            icon={<XIcon />}
+            onClick={() => cancelWorkspaceUpload(id)}
+          />
+        </>
+      ) : (
+        <>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="min-w-0 max-w-32 shrink truncate text-destructive">
+                  {upload.reason}
+                </span>
+              }
+            />
+            <TooltipPopup>{upload.reason}</TooltipPopup>
+          </Tooltip>
+          <UploadRowButton
+            label={`Retry upload of ${upload.name}`}
+            icon={<RotateCw />}
+            onClick={() => retryWorkspaceUpload(id)}
+          />
+          <UploadRowButton
+            label={`Dismiss upload of ${upload.name}`}
+            icon={<XIcon />}
+            onClick={() => dismissWorkspaceUpload(id)}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 function FileSearchField(props: {
   ariaLabel: string;
   name: string;
@@ -111,6 +212,56 @@ export default function FileBrowserPanel({
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleAddFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+      startWorkspaceUploads({
+        environmentId,
+        cwd,
+        files,
+        onUploaded: () => entriesQuery.refresh(),
+      });
+    },
+    [cwd, entriesQuery, environmentId],
+  );
+  // The shared drop handlers manage drag-active state, but their onDrop reads
+  // event.dataTransfer.files directly, which includes an unreadable stand-in
+  // File for a dropped directory. Filter with dataTransfer.items instead so
+  // directories never reach the upload queue.
+  const fileDropHandlers = useMemo(
+    () => makeWorkspaceFileDropHandlers({ setDragActive, addFiles: handleAddFiles }),
+    [handleAddFiles],
+  );
+  const handleDrop = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      setDragActive(false);
+      const items = Array.from(event.dataTransfer.items);
+      const supportsEntries = items.length > 0 && typeof items[0]?.webkitGetAsEntry === "function";
+      const files = supportsEntries
+        ? items.flatMap((item) => {
+            if (item.kind !== "file") return [];
+            const entry = item.webkitGetAsEntry();
+            if (entry !== null && !entry.isFile) return [];
+            const file = item.getAsFile();
+            return file ? [file] : [];
+          })
+        : Array.from(event.dataTransfer.files);
+      handleAddFiles(files);
+    },
+    [handleAddFiles],
+  );
+  const uploadsById = useWorkspaceUploadStore((state) => state.uploadsById);
+  const uploads = useMemo(
+    () =>
+      Object.entries(uploadsById).filter(
+        ([, upload]) => upload.environmentId === environmentId && upload.cwd === cwd,
+      ),
+    [cwd, environmentId, uploadsById],
+  );
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
@@ -353,20 +504,49 @@ export default function FileBrowserPanel({
   return (
     <div
       ref={panelRef}
-      className="flex min-h-0 flex-1 flex-col bg-background"
+      className="relative flex min-h-0 flex-1 flex-col bg-background"
       data-file-browser-panel={`${environmentId}:${cwd}`}
+      onDragEnter={fileDropHandlers.onDragEnter}
+      onDragOver={fileDropHandlers.onDragOver}
+      onDragLeave={fileDropHandlers.onDragLeave}
+      onDrop={handleDrop}
     >
+      {dragActive ? (
+        <div
+          className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
+          data-file-browser-drop-overlay="true"
+        >
+          <div
+            role="status"
+            className="flex items-center gap-2 rounded-full border border-primary/25 bg-background/95 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg"
+          >
+            <Upload className="size-4 text-primary" aria-hidden="true" />
+            Drop files to upload
+          </div>
+        </div>
+      ) : null}
       <div
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
+        <UploadFilesButton onClick={() => fileInputRef.current?.click()} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
           value={search.value}
           onValueChange={handleSearchValueChange}
           onClose={search.close}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          onChange={(event) => {
+            handleAddFiles(Array.from(event.target.files ?? []));
+            event.target.value = "";
+          }}
         />
       </div>
       {entriesQuery.error && entriesQuery.data === null ? (
@@ -382,6 +562,16 @@ export default function FileBrowserPanel({
           }}
         />
       )}
+      {uploads.length > 0 ? (
+        <div
+          className="flex shrink-0 flex-col divide-y divide-border/60 border-t border-border/60"
+          data-file-browser-uploads
+        >
+          {uploads.map(([id, upload]) => (
+            <UploadRow key={id} id={id} upload={upload} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
