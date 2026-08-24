@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
+import { APP_BUILD_LABEL } from "../../branding";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
@@ -67,6 +68,17 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         )}
       />
       <SidebarBrand onBackdrop={backdropVariant !== null} />
+      {APP_BUILD_LABEL ? (
+        <Badge
+          className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
+          data-fleet-build="true"
+          size="sm"
+          title="This build follows the MZS fleet release channel."
+          variant="secondary"
+        >
+          {APP_BUILD_LABEL}
+        </Badge>
+      ) : null}
       {pillLabel ? (
         <Badge
           className="relative z-10 ml-1 hidden rounded-full px-1.5 text-muted-foreground @[15rem]/sidebar-header:inline-flex"
