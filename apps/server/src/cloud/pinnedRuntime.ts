@@ -24,7 +24,7 @@ const FLEET_RELEASE_BASE_URL = "https://github.com/msegec/t3code_rookie/releases
 const pinnedRuntimeInstallLock = Semaphore.makeUnsafe(1);
 
 export const pinnedRuntimePackageSpec = (version: string): string =>
-  `${FLEET_RELEASE_BASE_URL}/fleet-v${version}/t3-${version}.tgz`;
+  `${FLEET_RELEASE_BASE_URL}/v${version}/t3-${version}.tgz`;
 
 export interface PinnedRuntimePaths {
   readonly versionDir: string;
