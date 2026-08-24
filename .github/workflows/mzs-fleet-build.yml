@@ -38,6 +38,7 @@ jobs:
             source
           [[ "$(git -C source rev-parse HEAD)" == "$GITHUB_SHA" ]]
           cp source/.mzs/overlays.json "$RUNNER_TEMP/overlays.json"
+          cp source/.mzs/stage-server-package.mjs "$RUNNER_TEMP/stage-server-package.mjs"
 
       - id: compose
         name: Compose latest nightly and overlays
@@ -228,7 +229,14 @@ jobs:
             --argjson overlays "$overlays" \
             '{schemaVersion: $schemaVersion, version: $version, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, overlays: $overlays}' \
             >apps/server/dist/mzs-fleet.json
-          vp pm pack --filter t3 --pack-destination "$release_dir"
+          node "$RUNNER_TEMP/stage-server-package.mjs" \
+            "$PWD" \
+            "$RUNNER_TEMP/fleet-package" \
+            "${{ steps.compose.outputs.version }}"
+          (
+            cd "$RUNNER_TEMP/fleet-package"
+            vp pm pack --pack-destination "$release_dir" >/dev/null
+          )
           artifact="$release_dir/t3-${{ steps.compose.outputs.version }}.tgz"
           test -f "$artifact"
           bundle="$release_dir/t3-source-${{ steps.compose.outputs.version }}.bundle"
