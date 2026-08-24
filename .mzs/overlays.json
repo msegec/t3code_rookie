@@ -6,7 +6,7 @@
       "name": "MZS fleet runtime source",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-runtime-source",
-      "sha": "c758ff8453cdea1e9954045c6cfe0e58c66d494d"
+      "sha": "7ffb11b03b237e42af85b2def73b46e1ebd97fb9"
     },
     {
       "kind": "pull-request",
@@ -24,8 +24,11 @@
     "apps/server/src/assets/AssetAccess.test.ts",
     "apps/server/src/project/ProjectFaviconResolver.test.ts",
     "apps/web/src/components/ProjectFavicon.test.tsx",
+    "apps/desktop/src/updates/updateChannels.test.ts",
+    "apps/web/src/branding.test.ts",
     "apps/web/src/projectAccent.test.ts",
     "packages/contracts/src/t3ProjectFile.test.ts",
-    "apps/web/src/lib/codeColorPreviews.test.ts"
+    "apps/web/src/lib/codeColorPreviews.test.ts",
+    "scripts/build-desktop-artifact.fleet.test.ts"
   ]
 }

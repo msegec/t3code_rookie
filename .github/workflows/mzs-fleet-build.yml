@@ -22,8 +22,10 @@ jobs:
     permissions:
       contents: read
     outputs:
+      base_version: ${{ steps.compose.outputs.base_version }}
       version: ${{ steps.compose.outputs.version }}
       release_tag: ${{ steps.compose.outputs.release_tag }}
+      nightly_tag: ${{ steps.compose.outputs.nightly_tag }}
     steps:
       - name: Clone fleet controls without credentials
         shell: bash
@@ -62,13 +64,7 @@ jobs:
             exit 1
           fi
 
-          version="${nightly_tag#v}"
-          release_tag="fleet-v${version}"
-          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            printf 'Fleet release already exists: %s\n' "$release_tag" >&2
-            exit 1
-          fi
-
+          base_version="${nightly_tag#v}"
           git -C source remote add upstream https://github.com/pingdotgg/t3code.git
           git -C source fetch --no-tags upstream main
           git -C source fetch --no-tags upstream "refs/tags/${nightly_tag}:refs/tags/${nightly_tag}"
@@ -146,9 +142,18 @@ jobs:
               <<<"$results")"
           done < <(jq -c '.overlays[]' "$RUNNER_TEMP/overlays.json")
 
+          revision="$(jq -cj '[.[] | if .kind == "commit" then {kind, name, sha} else {kind, number, sha} end]' <<<"$results" | sha256sum | cut -c1-12)"
+          version="${base_version}.mzs.r${revision}"
+          release_tag="v${version}"
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf 'Fleet release already exists: %s\n' "$release_tag" >&2
+            exit 1
+          fi
+
           git -C source diff --check
           printf '%s\n' "$results" >"$RUNNER_TEMP/overlay-results.json"
           {
+            printf 'base_version=%s\n' "$base_version"
             printf 'version=%s\n' "$version"
             printf 'release_tag=%s\n' "$release_tag"
             printf 'base_sha=%s\n' "$base_sha"
@@ -175,7 +180,7 @@ jobs:
 
       - name: Typecheck affected packages
         working-directory: source
-        run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/contracts typecheck
+        run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/desktop --filter @t3tools/contracts --filter @t3tools/scripts typecheck
 
       - name: Align package versions
         working-directory: source
@@ -188,10 +193,12 @@ jobs:
             apps/web/package.json \
             packages/contracts/package.json \
             pnpm-lock.yaml
-          git commit -m "chore(release): prepare fleet-v${{ steps.compose.outputs.version }}"
+          git commit -m "chore(release): prepare ${{ steps.compose.outputs.release_tag }}"
 
       - name: Build web and server
         working-directory: source
+        env:
+          VITE_MZS_FLEET_LABEL: MZS Fleet
         shell: bash
         run: |
           cp .env.example .env
@@ -206,13 +213,13 @@ jobs:
           upstream_dir="$RUNNER_TEMP/upstream-package"
           mkdir -p "$upstream_dir/archive" "$upstream_dir/extracted"
           npm pack \
-            "t3@${{ steps.compose.outputs.version }}" \
+            "t3@${{ steps.compose.outputs.base_version }}" \
             --pack-destination "$upstream_dir/archive" \
             >/dev/null
-          upstream_package="$upstream_dir/archive/t3-${{ steps.compose.outputs.version }}.tgz"
+          upstream_package="$upstream_dir/archive/t3-${{ steps.compose.outputs.base_version }}.tgz"
           tar -xzf "$upstream_package" -C "$upstream_dir/extracted"
           [[ "$(jq -r .version "$upstream_dir/extracted/package/package.json")" == \
-            "${{ steps.compose.outputs.version }}" ]]
+            "${{ steps.compose.outputs.base_version }}" ]]
           rm -rf apps/server/dist/resource-monitor
           cp -R \
             "$upstream_dir/extracted/package/dist/resource-monitor" \
@@ -237,11 +244,12 @@ jobs:
           jq -n \
             --argjson schemaVersion 1 \
             --arg version "${{ steps.compose.outputs.version }}" \
+            --arg releaseTag "${{ steps.compose.outputs.release_tag }}" \
             --arg nightlyTag "${{ steps.compose.outputs.nightly_tag }}" \
             --arg baseSha "${{ steps.compose.outputs.base_sha }}" \
             --arg sourceSha "$source_sha" \
             --argjson overlays "$overlays" \
-            '{schemaVersion: $schemaVersion, version: $version, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, overlays: $overlays}' \
+            '{schemaVersion: $schemaVersion, version: $version, releaseTag: $releaseTag, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, overlays: $overlays}' \
             >apps/server/dist/mzs-fleet.json
           node "$RUNNER_TEMP/stage-server-package.mjs" \
             "$PWD" \
@@ -330,6 +338,7 @@ jobs:
         working-directory: source
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec/t3code_rookie
+          VITE_MZS_FLEET_LABEL: MZS Fleet
         shell: bash
         run: |
           set -euo pipefail
@@ -378,9 +387,110 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build_linux:
+    name: Build Linux desktop (x64)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Download composed source
+        uses: actions/download-artifact@v8
+        with:
+          name: mzs-t3-fleet-server-${{ needs.build.outputs.version }}
+          path: fleet-input
+
+      - name: Restore composed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone \
+            "fleet-input/t3-source-${{ needs.build.outputs.version }}.bundle" \
+            source
+          [[ "$(git -C source rev-parse HEAD)" == \
+            "$(jq -r .sourceSha fleet-input/mzs-fleet.json)" ]]
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: source/package.json
+          cache: true
+          run-install: false
+
+      - name: Install dependencies
+        working-directory: source
+        run: vp i --frozen-lockfile
+
+      - name: Set up Linux build tools
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-linux-gnu
+          if ! command -v magick >/dev/null 2>&1 && ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y imagemagick
+          fi
+
+      - name: Build official-brand desktop artifact
+        working-directory: source
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec/t3code_rookie
+          VITE_MZS_FLEET_LABEL: MZS Fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          vp run build:desktop
+          cp ../fleet-input/mzs-fleet.json apps/server/dist/mzs-fleet.json
+          vp run dist:desktop:artifact \
+            --platform linux \
+            --target AppImage \
+            --arch x64 \
+            --build-version "${{ needs.build.outputs.version }}" \
+            --skip-build \
+            --verbose
+
+      - name: Verify Linux release files
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/fleet-linux"
+          mkdir -p "$release_dir"
+          shopt -s nullglob
+          files=(release/*.AppImage release/*.blockmap release/*-linux.yml)
+          if (( ${#files[@]} < 3 )); then
+            printf 'Missing Linux desktop release files\n' >&2
+            exit 1
+          fi
+          cp "${files[@]}" "$release_dir/"
+          app_images=("$release_dir"/*.AppImage)
+          [[ ${#app_images[@]} -eq 1 ]]
+          chmod +x "${app_images[0]}"
+          (
+            cd "$RUNNER_TEMP"
+            "${app_images[0]}" --appimage-extract >/dev/null
+          )
+          grep -q 'owner: msegec' "$RUNNER_TEMP/squashfs-root/resources/app-update.yml"
+          grep -q 'repo: t3code_rookie' "$RUNNER_TEMP/squashfs-root/resources/app-update.yml"
+          grep -aFq 'data-fleet-build' "$RUNNER_TEMP/squashfs-root/resources/app.asar"
+          grep -aFq 'mzs-fleet.json' "$RUNNER_TEMP/squashfs-root/resources/app.asar"
+          cd "$release_dir"
+          sha256sum ./* >SHA256SUMS.linux.x64
+
+      - name: Upload verified Linux release files
+        uses: actions/upload-artifact@v7
+        with:
+          name: mzs-t3-fleet-linux-${{ needs.build.outputs.version }}
+          path: ${{ runner.temp }}/fleet-linux/*
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish fleet release
-    needs: [build, build_macos]
+    needs: [build, build_macos, build_linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -401,6 +511,7 @@ jobs:
           sha256sum --check SHA256SUMS
           sha256sum --check SHA256SUMS.mac.arm64
           sha256sum --check SHA256SUMS.mac.x64
+          sha256sum --check SHA256SUMS.linux.x64
           test -f "t3-${{ needs.build.outputs.version }}.tgz"
           test -f "t3-source-${{ needs.build.outputs.version }}.bundle"
           test -f mzs-fleet.json
@@ -408,6 +519,8 @@ jobs:
           test -n "$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*-mac-arm64.yml' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*-mac-x64.yml' -print -quit)"
+          test -n "$(find . -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$(find . -maxdepth 1 -type f -name '*-linux.yml' -print -quit)"
 
       - name: Publish GitHub release
         env:
