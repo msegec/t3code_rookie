@@ -15,6 +15,17 @@ import {
   PinnedRuntimeInstallError,
 } from "./pinnedRuntime.ts";
 
+const processResult = (code: number, stderr = "") => ({
+  stdout: "",
+  stderr,
+  code: ChildProcessSpawner.ExitCode(code),
+  timedOut: false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
+  stdoutInvalidUtf8: false,
+  stderrInvalidUtf8: false,
+});
+
 it("resolves pinned runtimes from the MZS fleet release", () => {
   assert.equal(
     pinnedRuntimePackageSpec("0.0.34-nightly.20260824.1172.mzs.r1234abcdef56"),
@@ -22,26 +33,28 @@ it("resolves pinned runtimes from the MZS fleet release", () => {
   );
 });
 
-const successfulRunner = (fs: FileSystem.FileSystem, path: Path.Path) =>
+const runtimeRunner = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  options: {
+    readonly nativeExitCode?: number;
+    readonly onInstall?: (args: ReadonlyArray<string>) => void;
+  } = {},
+) =>
   ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
-        const prefixIndex = input.args.indexOf("--prefix");
-        const stagingDir = input.args[prefixIndex + 1];
-        if (stagingDir === undefined) return yield* Effect.die("missing npm --prefix");
-        const entry = path.join(stagingDir, "node_modules", "t3", "dist", "bin.mjs");
-        yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
-        yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
-        return {
-          stdout: "",
-          stderr: "",
-          code: ChildProcessSpawner.ExitCode(0),
-          timedOut: false,
-          stdoutTruncated: false,
-          stderrTruncated: false,
-          stdoutInvalidUtf8: false,
-          stderrInvalidUtf8: false,
-        };
+        if (input.command === "npm") {
+          options.onInstall?.(input.args);
+          const prefixIndex = input.args.indexOf("--prefix");
+          const stagingDir = input.args[prefixIndex + 1];
+          if (stagingDir === undefined) return yield* Effect.die("missing npm --prefix");
+          const entry = path.join(stagingDir, "node_modules", "t3", "dist", "bin.mjs");
+          yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
+          yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
+        }
+        const exitCode = input.command === "npm" ? 0 : (options.nativeExitCode ?? 0);
+        return processResult(exitCode, exitCode === 0 ? "" : "missing node-pty");
       }),
   });
 
@@ -59,7 +72,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         version: "1.2.3",
         fs,
         path,
-        runner: successfulRunner(fs, path),
+        runner: runtimeRunner(fs, path),
         validate: (staging) =>
           Effect.gen(function* () {
             validatedDirectory = staging.versionDir;
@@ -87,7 +100,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         version: "1.2.3",
         fs,
         path,
-        runner: successfulRunner(fs, path),
+        runner: runtimeRunner(fs, path),
         validate: () =>
           Effect.fail(new PinnedRuntimeInstallError({ step: "validating the staged runtime" })),
       }).pipe(Effect.flip);
@@ -99,6 +112,38 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         ),
         [],
       );
+    }),
+  );
+
+  it.effect("rejects a runtime whose native dependencies do not load", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-runtime-native-" });
+      const finalPaths = pinnedRuntimePaths(path, baseDir, "1.2.3");
+      let installArgs: ReadonlyArray<string> = [];
+      const runner = runtimeRunner(fs, path, {
+        nativeExitCode: 1,
+        onInstall: (args) => {
+          installArgs = args;
+        },
+      });
+
+      const error = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version: "1.2.3",
+        fs,
+        path,
+        runner,
+        validate: () => Effect.void,
+      }).pipe(Effect.flip);
+
+      if (error._tag !== "PinnedRuntimeInstallError") {
+        return assert.fail(`unexpected error: ${error._tag}`);
+      }
+      assert.equal(error.step, "verifying pinned runtime native dependencies");
+      assert.include(installArgs, "--ignore-scripts=false");
+      assert.isFalse(yield* fs.exists(finalPaths.versionDir));
     }),
   );
 
@@ -116,7 +161,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         version: "1.2.3",
         fs,
         path,
-        runner: successfulRunner(fs, path),
+        runner: runtimeRunner(fs, path),
         validate: () => Effect.void,
       });
 
@@ -141,7 +186,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         version: "1.2.3",
         fs,
         path,
-        runner: successfulRunner(fs, path),
+        runner: runtimeRunner(fs, path),
         validate: (paths) =>
           Effect.gen(function* () {
             validations += 1;

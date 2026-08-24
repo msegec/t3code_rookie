@@ -165,6 +165,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
           stagingDir,
           "--no-fund",
           "--no-audit",
+          "--ignore-scripts=false",
           pinnedRuntimePackageSpec(input.version),
         ],
         // Native dependencies may compile from source on slower machines.
@@ -177,6 +178,33 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
           (result) =>
             new PinnedRuntimeInstallError({
               step: installStep,
+              exitCode: Number(result.code),
+              stdoutLength: result.stdout.length,
+              stderrLength: result.stderr.length,
+            }),
+        ),
+      );
+
+    const nativeDependencyStep = "verifying pinned runtime native dependencies";
+    yield* runner
+      .run({
+        command: process.execPath,
+        args: [
+          "-e",
+          'require("node:module").createRequire(process.argv[1])("node-pty")',
+          stagingPaths.entryPath,
+        ],
+        timeout: Duration.seconds(30),
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) => new PinnedRuntimeInstallError({ step: nativeDependencyStep, cause }),
+        ),
+        Effect.filterOrFail(
+          (result) => result.code === 0,
+          (result) =>
+            new PinnedRuntimeInstallError({
+              step: nativeDependencyStep,
               exitCode: Number(result.code),
               stdoutLength: result.stdout.length,
               stderrLength: result.stderr.length,
