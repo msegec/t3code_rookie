@@ -102,5 +102,9 @@ export function createProjectEnvironmentAtoms<R, E>(
           JSON.stringify([environmentId, input.cwd, input.relativePath]),
       },
     }),
+    createUploadUrl: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:create-upload-url",
+      tag: WS_METHODS.projectsCreateUploadUrl,
+    }),
   };
 }
