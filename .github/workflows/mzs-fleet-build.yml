@@ -162,9 +162,6 @@ jobs:
           cache: true
           run-install: false
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install dependencies
         working-directory: source
         run: vp i --frozen-lockfile
@@ -201,15 +198,30 @@ jobs:
           vp run --filter @t3tools/web build
           vp run --filter t3 build
 
-      - name: Build Linux resource monitor
+      - name: Import official resource monitors
         working-directory: source
         shell: bash
         run: |
-          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
-          mkdir -p apps/server/dist/resource-monitor/linux-x64
-          cp native/resource-monitor/target/release/t3-resource-monitor \
-            apps/server/dist/resource-monitor/linux-x64/t3-resource-monitor
-          chmod +x apps/server/dist/resource-monitor/linux-x64/t3-resource-monitor
+          set -euo pipefail
+          upstream_dir="$RUNNER_TEMP/upstream-package"
+          mkdir -p "$upstream_dir/archive" "$upstream_dir/extracted"
+          npm pack \
+            "t3@${{ steps.compose.outputs.version }}" \
+            --pack-destination "$upstream_dir/archive" \
+            >/dev/null
+          upstream_package="$upstream_dir/archive/t3-${{ steps.compose.outputs.version }}.tgz"
+          tar -xzf "$upstream_package" -C "$upstream_dir/extracted"
+          [[ "$(jq -r .version "$upstream_dir/extracted/package/package.json")" == \
+            "${{ steps.compose.outputs.version }}" ]]
+          cp -R \
+            "$upstream_dir/extracted/package/dist/resource-monitor" \
+            apps/server/dist/resource-monitor
+          test -x apps/server/dist/resource-monitor/darwin-arm64/t3-resource-monitor
+          test -x apps/server/dist/resource-monitor/darwin-x64/t3-resource-monitor
+          test -x apps/server/dist/resource-monitor/linux-x64/t3-resource-monitor
+          test -f apps/server/dist/resource-monitor/win32-x64/t3-resource-monitor.exe
+          file apps/server/dist/resource-monitor/darwin-arm64/t3-resource-monitor | grep -q arm64
+          file apps/server/dist/resource-monitor/darwin-x64/t3-resource-monitor | grep -Eq 'x86_64|x86-64'
 
       - name: Package and smoke test
         working-directory: source
@@ -239,6 +251,13 @@ jobs:
           )
           artifact="$release_dir/t3-${{ steps.compose.outputs.version }}.tgz"
           test -f "$artifact"
+          tar -tzf "$artifact" >"$RUNNER_TEMP/package-files.txt"
+          grep -qx package/dist/resource-monitor/darwin-arm64/t3-resource-monitor \
+            "$RUNNER_TEMP/package-files.txt"
+          grep -qx package/dist/resource-monitor/darwin-x64/t3-resource-monitor \
+            "$RUNNER_TEMP/package-files.txt"
+          grep -qx package/dist/resource-monitor/linux-x64/t3-resource-monitor \
+            "$RUNNER_TEMP/package-files.txt"
           bundle="$release_dir/t3-source-${{ steps.compose.outputs.version }}.bundle"
           git bundle create "$bundle" HEAD
           cp apps/server/dist/mzs-fleet.json "$release_dir/mzs-fleet.json"
