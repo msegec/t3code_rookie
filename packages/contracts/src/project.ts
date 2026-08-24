@@ -298,3 +298,43 @@ export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteF
     } as any);
   }
 }
+
+export const PROJECT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+export const PROJECT_UPLOAD_URL_TTL_MS = 10 * 60_000;
+
+export const ProjectCreateUploadUrlInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROJECT_UPLOAD_MAX_BYTES)),
+  overwrite: Schema.optional(Schema.Boolean),
+});
+export type ProjectCreateUploadUrlInput = typeof ProjectCreateUploadUrlInput.Type;
+
+export const ProjectCreateUploadUrlResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+  relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  expiresAt: Schema.Number,
+});
+export type ProjectCreateUploadUrlResult = typeof ProjectCreateUploadUrlResult.Type;
+
+export class ProjectUploadTargetExistsError extends Schema.TaggedErrorClass<ProjectUploadTargetExistsError>()(
+  "ProjectUploadTargetExistsError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+  },
+) {
+  override get message(): string {
+    return `A file already exists at '${this.relativePath}' in '${this.cwd}'.`;
+  }
+}
+
+export class ProjectCreateUploadUrlError extends Schema.TaggedErrorClass<ProjectCreateUploadUrlError>()(
+  "ProjectCreateUploadUrlError",
+  {
+    cwd: Schema.optional(TrimmedNonEmptyString),
+    relativePath: Schema.optional(TrimmedNonEmptyString),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}

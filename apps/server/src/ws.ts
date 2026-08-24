@@ -34,6 +34,7 @@ import {
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   type ProjectId,
+  ProjectCreateUploadUrlError,
   type ProjectEntriesFailure,
   type ProjectFileFailure,
   type ProjectFileOperation,
@@ -1937,6 +1938,11 @@ const makeWsRpcLayer = (
               ),
             ),
             { "rpc.aggregate": "workspace" },
+          ),
+        // Task 3 replaces this with the real handler.
+        [WS_METHODS.projectsCreateUploadUrl]: () =>
+          Effect.fail(
+            new ProjectCreateUploadUrlError({ message: "Workspace uploads are not wired up yet." }),
           ),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
