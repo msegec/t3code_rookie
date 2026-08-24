@@ -26,8 +26,8 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 export const WORKSPACE_UPLOAD_ROUTE_PREFIX = "/api/workspace/upload";
 
-// Asset download and attachment upload tokens share this key; the signed
-// claim kind keeps the token spaces separate.
+// Asset download, attachment upload, and workspace upload tokens share this
+// key; the signed claim kind keeps the token spaces separate.
 const SIGNING_SECRET_NAME = "asset-access-signing-key";
 
 const WorkspaceUploadClaims = Schema.Struct({
