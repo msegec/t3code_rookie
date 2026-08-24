@@ -279,12 +279,20 @@ jobs:
           retention-days: 7
 
   build_macos:
-    name: Build macOS desktop (universal)
+    name: Build macOS desktop (${{ matrix.arch }})
     needs: build
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            rust_target: aarch64-apple-darwin
+          - arch: x64
+            rust_target: x86_64-apple-darwin
     steps:
       - name: Download composed source
         uses: actions/download-artifact@v8
@@ -316,7 +324,7 @@ jobs:
       - name: Set up Rust targets
         working-directory: source
         run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          rustup target add "${{ matrix.rust_target }}"
 
       - name: Build official-brand desktop artifact
         working-directory: source
@@ -331,7 +339,7 @@ jobs:
           vp run dist:desktop:artifact \
             --platform mac \
             --target dmg \
-            --arch universal \
+            --arch "${{ matrix.arch }}" \
             --build-version "${{ needs.build.outputs.version }}" \
             --skip-build \
             --verbose
@@ -350,6 +358,9 @@ jobs:
             exit 1
           fi
           cp "${files[@]}" "$release_dir/"
+          for manifest in "$release_dir"/*-mac.yml; do
+            mv "$manifest" "${manifest%.yml}-${{ matrix.arch }}.yml"
+          done
           zip_file=("$release_dir"/*.zip)
           [[ ${#zip_file[@]} -eq 1 ]]
           update_config="$(unzip -Z1 "${zip_file[0]}" | grep '/Contents/Resources/app-update.yml$')"
@@ -357,12 +368,12 @@ jobs:
           unzip -p "${zip_file[0]}" "$update_config" | grep -q 'owner: msegec'
           unzip -p "${zip_file[0]}" "$update_config" | grep -q 'repo: t3code_rookie'
           cd "$release_dir"
-          shasum -a 256 ./* >SHA256SUMS.mac
+          shasum -a 256 ./* >"SHA256SUMS.mac.${{ matrix.arch }}"
 
       - name: Upload verified macOS release files
         uses: actions/upload-artifact@v7
         with:
-          name: mzs-t3-fleet-macos-${{ needs.build.outputs.version }}
+          name: mzs-t3-fleet-macos-${{ matrix.arch }}-${{ needs.build.outputs.version }}
           path: ${{ runner.temp }}/fleet-macos/*
           if-no-files-found: error
           retention-days: 7
@@ -388,13 +399,15 @@ jobs:
           set -euo pipefail
           cd release
           sha256sum --check SHA256SUMS
-          sha256sum --check SHA256SUMS.mac
+          sha256sum --check SHA256SUMS.mac.arm64
+          sha256sum --check SHA256SUMS.mac.x64
           test -f "t3-${{ needs.build.outputs.version }}.tgz"
           test -f "t3-source-${{ needs.build.outputs.version }}.bundle"
           test -f mzs-fleet.json
           test -n "$(find . -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
-          test -n "$(find . -maxdepth 1 -type f -name '*-mac.yml' -print -quit)"
+          test -n "$(find . -maxdepth 1 -type f -name '*-mac-arm64.yml' -print -quit)"
+          test -n "$(find . -maxdepth 1 -type f -name '*-mac-x64.yml' -print -quit)"
 
       - name: Publish GitHub release
         env:
