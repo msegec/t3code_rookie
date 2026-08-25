@@ -85,7 +85,7 @@ export const issueWorkspaceUploadUrl = Effect.fn("WorkspaceUpload.issueUrl")(fun
           new ProjectCreateUploadUrlError({
             cwd: input.cwd,
             relativePath: input.relativePath,
-            message: error.message,
+            message: `Failed to resolve '${input.relativePath}' within '${input.cwd}'.`,
             cause: error,
           }),
       ),
@@ -202,7 +202,27 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
 
     yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true });
     yield* fileSystem.writeFile(partPath, bytes);
-    yield* fileSystem.rename(partPath, target.absolutePath);
+    if (claims.overwrite) {
+      yield* fileSystem.rename(partPath, target.absolutePath);
+    } else {
+      // rename replaces a file created after the exists check above; link fails
+      // atomically instead, so concurrent non-overwrite uploads cannot clobber.
+      const conflict = yield* fileSystem.link(partPath, target.absolutePath).pipe(
+        Effect.as(false),
+        Effect.catchIf(
+          (error) => error.reason._tag === "AlreadyExists",
+          () => Effect.succeed(true),
+        ),
+      );
+      yield* fileSystem.remove(partPath, { force: true });
+      if (conflict) {
+        return {
+          ok: false,
+          status: 409,
+          detail: "A file already exists at this path.",
+        } satisfies StoreWorkspaceUploadResult;
+      }
+    }
 
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     yield* workspaceEntries.refresh(claims.cwd);

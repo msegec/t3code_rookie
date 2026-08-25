@@ -17,6 +17,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
+import { formatAttachmentUploadProgress } from "~/lib/attachmentUploadState";
 import {
   cancelWorkspaceUpload,
   dismissWorkspaceUpload,
@@ -30,6 +31,7 @@ import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
+import { WorkspaceFileDropOverlay } from "../chat/WorkspaceFileDropOverlay";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 
@@ -110,8 +112,8 @@ function UploadRowButton(props: { label: string; icon: ReactNode; onClick: () =>
         render={
           <Button
             type="button"
-            variant="ghost"
-            size="icon-xs"
+            variant="ghost-muted"
+            size="icon-micro"
             aria-label={props.label}
             onClick={props.onClick}
           />
@@ -137,7 +139,7 @@ function UploadRow(props: { id: string; upload: WorkspaceUploadState }) {
       {upload.status === "uploading" ? (
         <>
           <span className="shrink-0 tabular-nums text-muted-foreground">
-            {Math.round(upload.progress * 100)}%
+            {formatAttachmentUploadProgress(upload.progress)}
           </span>
           <UploadRowButton
             label={`Cancel upload of ${upload.name}`}
@@ -525,18 +527,11 @@ export default function FileBrowserPanel({
       onDrop={handleDrop}
     >
       {dragActive ? (
-        <div
-          className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
+        <WorkspaceFileDropOverlay
+          icon={<Upload className="size-4 text-primary" aria-hidden="true" />}
+          label="Drop files to upload"
           data-file-browser-drop-overlay="true"
-        >
-          <div
-            role="status"
-            className="flex items-center gap-2 rounded-full border border-primary/25 bg-background/95 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg"
-          >
-            <Upload className="size-4 text-primary" aria-hidden="true" />
-            Drop files to upload
-          </div>
-        </div>
+        />
       ) : null}
       <div
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
@@ -577,7 +572,7 @@ export default function FileBrowserPanel({
       )}
       {uploads.length > 0 ? (
         <div
-          className="flex shrink-0 flex-col divide-y divide-border/60 border-t border-border/60"
+          className="flex max-h-40 shrink-0 flex-col divide-y divide-border/60 overflow-y-auto border-t border-border/60"
           data-file-browser-uploads
         >
           {uploads.map(([id, upload]) => (

@@ -288,6 +288,10 @@ export function retryWorkspaceUpload(uploadId: string): void {
   if (!job) {
     return;
   }
+  // A second click can land before the row rerenders; only failed jobs restart.
+  if (useWorkspaceUploadStore.getState().uploadsById[uploadId]?.status !== "failed") {
+    return;
+  }
   job.cancelled = false;
   setUploadState(job.id, {
     status: "uploading",

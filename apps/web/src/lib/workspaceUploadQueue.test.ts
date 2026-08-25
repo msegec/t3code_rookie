@@ -347,6 +347,24 @@ describe("workspaceUploadQueue", () => {
     expect(uploadsById()[uploadId]).toBeUndefined();
   });
 
+  it("retryWorkspaceUpload ignores a second click while the retry is already uploading", async () => {
+    mocks.runAtomCommand.mockResolvedValueOnce(genericMintFailure());
+    const file = makeFile("retry-twice.txt");
+    startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded: vi.fn() });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const [uploadId] = findUpload("retry-twice.txt")!;
+    retryWorkspaceUpload(uploadId);
+    retryWorkspaceUpload(uploadId);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(TestXmlHttpRequest.requests).toHaveLength(1);
+    expect(uploadsById()[uploadId]).toMatchObject({ status: "uploading" });
+  });
+
   it("dismissWorkspaceUpload removes a failed entry", async () => {
     mocks.runAtomCommand.mockResolvedValue(genericMintFailure());
     const file = makeFile("dismiss-me.txt");
