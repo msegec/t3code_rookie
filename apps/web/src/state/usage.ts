@@ -108,12 +108,15 @@ export function useUsage(input: UsageSummaryInput): UsageView {
   const reported = useAtomValue(atom);
 
   const [scanNonce, setScanNonce] = useState(0);
-  const [deadlinePassed, setDeadlinePassed] = useState(false);
+  // The passed flag names the scan it belongs to, so a new window or refresh
+  // invalidates it on the same render instead of one effect tick later.
+  const scanKey = `${scanNonce}:${windowKey}`;
+  const [passedScanKey, setPassedScanKey] = useState<string | null>(null);
   useEffect(() => {
-    setDeadlinePassed(false);
-    const timer = setTimeout(() => setDeadlinePassed(true), OFFLINE_DEADLINE_MS);
+    const timer = setTimeout(() => setPassedScanKey(scanKey), OFFLINE_DEADLINE_MS);
     return () => clearTimeout(timer);
-  }, [windowKey, scanNonce]);
+  }, [scanKey]);
+  const deadlinePassed = passedScanKey === scanKey;
 
   const environments = useMemo(
     () =>
