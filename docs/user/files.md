@@ -13,6 +13,8 @@ message without leaving the tree.
 
 ## Uploading files
 
+Uploading is available in the web and desktop apps. The mobile files view does not support it.
+
 Drag files from your computer onto the files view, or select the upload button at the top of the
 panel to choose files from a picker. Uploads land in the project's root folder. Dragging a folder
 does not upload its contents; drop the files themselves.

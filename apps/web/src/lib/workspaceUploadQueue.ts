@@ -4,14 +4,17 @@ import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { create } from "zustand";
 
-import { requestConfirmDialog } from "../confirmDialog";
+import { readLocalApi } from "../localApi";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { projectEnvironment } from "../state/projects";
 import { readPreparedConnection } from "../state/session";
 import { randomUUID } from "./utils";
+import { uploadXhr } from "./uploadXhr";
 
 const MAX_UPLOADS_PER_ENVIRONMENT = 3;
-const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+// Matches the upload token TTL (see PROJECT_UPLOAD_URL_TTL_MS), since
+// workspace uploads allow files up to 100 MiB.
+const UPLOAD_TIMEOUT_MS = 10 * 60_000;
 
 export type WorkspaceUploadState =
   | {
@@ -85,36 +88,6 @@ function failJob(job: UploadJob, reason: string): void {
   });
 }
 
-function uploadBytes(input: {
-  readonly url: string;
-  readonly file: File;
-  readonly onProgress: (progress: number) => void;
-}): { readonly done: Promise<void>; readonly abort: () => void } {
-  const xhr = new XMLHttpRequest();
-  const done = new Promise<void>((resolve, reject) => {
-    xhr.open("POST", input.url, true);
-    xhr.timeout = UPLOAD_TIMEOUT_MS;
-    xhr.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        input.onProgress(event.loaded / event.total);
-      }
-    });
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-      } else {
-        reject(new Error(`Upload rejected (${xhr.status})`));
-      }
-    });
-    xhr.addEventListener("error", () => reject(new Error("Upload failed")));
-    xhr.addEventListener("timeout", () => reject(new Error("Upload timed out")));
-    xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
-    xhr.send(input.file);
-  });
-
-  return { done, abort: () => xhr.abort() };
-}
-
 function mintUploadUrl(job: UploadJob) {
   return runAtomCommand(
     appAtomRegistry,
@@ -154,7 +127,7 @@ async function runUpload(job: UploadJob): Promise<void> {
       return;
     }
 
-    const confirmed = await requestConfirmDialog(
+    const confirmed = await readLocalApi()?.dialogs.confirm(
       `Replace ${job.file.name}?\nA file named '${job.relativePath}' already exists in this project.`,
     );
     if (job.cancelled) {
@@ -186,9 +159,10 @@ async function runUpload(job: UploadJob): Promise<void> {
   }
 
   let lastStep = -1;
-  const upload = uploadBytes({
+  const upload = uploadXhr({
     url,
     file: job.file,
+    timeoutMs: UPLOAD_TIMEOUT_MS,
     onProgress: (progress) => {
       const step = Math.floor(progress * 20);
       if (step === lastStep || job.cancelled) {

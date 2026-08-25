@@ -315,8 +315,12 @@ export const workspaceUploadRouteLayer = HttpRouter.add(
       });
     }
 
+    // NodeStream.toArrayBuffer treats a falsy maxBytes as "no limit", so a
+    // 0-byte claim (empty files are a valid upload) would otherwise disable
+    // the body limit entirely. Floor it at 1 byte; an empty body still passes.
+    const maxBodySize = FileSystem.Size(Math.max(claims.sizeBytes, 1));
     const body = yield* request.arrayBuffer.pipe(
-      Effect.provideService(HttpServerRequest.MaxBodySize, FileSystem.Size(claims.sizeBytes)),
+      Effect.provideService(HttpServerRequest.MaxBodySize, maxBodySize),
       Effect.orElseSucceed(() => null),
     );
     if (body === null) {

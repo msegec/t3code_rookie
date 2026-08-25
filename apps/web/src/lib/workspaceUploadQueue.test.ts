@@ -25,8 +25,8 @@ vi.mock("../state/session", () => ({
   readPreparedConnection: mocks.readPreparedConnection,
 }));
 
-vi.mock("../confirmDialog", () => ({
-  requestConfirmDialog: mocks.requestConfirmDialog,
+vi.mock("../localApi", () => ({
+  readLocalApi: () => ({ dialogs: { confirm: mocks.requestConfirmDialog } }),
 }));
 
 import {

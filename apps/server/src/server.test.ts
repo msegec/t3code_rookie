@@ -5197,6 +5197,56 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("floors the workspace upload body limit for zero-byte claims", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-upload-empty-",
+      });
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const emptyTarget = yield* client[WS_METHODS.projectsCreateUploadUrl]({
+              cwd: workspaceDir,
+              relativePath: "empty.bin",
+              sizeBytes: 0,
+              overwrite: false,
+            });
+            const emptyResponse = yield* HttpClient.post(emptyTarget.relativeUrl, {
+              body: HttpBody.uint8Array(new Uint8Array(0), "application/octet-stream"),
+            });
+            assert.equal(emptyResponse.status, 204);
+            const emptyPath = path.join(workspaceDir, "empty.bin");
+            assert.isTrue(yield* fs.exists(emptyPath));
+            assert.equal((yield* fs.readFile(emptyPath)).byteLength, 0);
+
+            // Mint a second zero-byte claim and post a chunked body (no
+            // Content-Length, so the header check above is skipped) that
+            // exceeds it. NodeStream.toArrayBuffer treats a falsy maxBytes
+            // as unlimited, so this only fails once the limit is floored at
+            // 1 byte.
+            const oversizedTarget = yield* client[WS_METHODS.projectsCreateUploadUrl]({
+              cwd: workspaceDir,
+              relativePath: "empty-oversized.bin",
+              sizeBytes: 0,
+              overwrite: false,
+            });
+            const oversizedResponse = yield* HttpClient.post(oversizedTarget.relativeUrl, {
+              body: HttpBody.stream(Stream.make(new Uint8Array([1, 2, 3, 4, 5, 6]))),
+            });
+            assert.equal(oversizedResponse.status, 400);
+            assert.isFalse(yield* fs.exists(path.join(workspaceDir, "empty-oversized.bin")));
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("creates a missing workspace root during websocket project.create dispatch", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
