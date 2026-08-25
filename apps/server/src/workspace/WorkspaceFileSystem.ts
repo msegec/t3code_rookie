@@ -465,6 +465,11 @@ export const make = Effect.gen(function* () {
           // size check alone only where the platform reports no inode.
           const claimInode = yield* fileSystem.stat(target.absolutePath).pipe(
             Effect.map((info) => Option.getOrNull(info.ino)),
+            // A stat failure here strands the empty claim, so every later
+            // attempt reads the name as taken; reclaim before surfacing.
+            Effect.tapError(() =>
+              fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
+            ),
             Effect.mapError((cause) => renameError("rename", cause)),
           );
           return yield* fileSystem.rename(source.absolutePath, target.absolutePath).pipe(
@@ -531,6 +536,15 @@ export const make = Effect.gen(function* () {
           return yield* fileSystem
             .rename(path.join(path.dirname(source.absolutePath), onDiskName), target.absolutePath)
             .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+        }
+        // A concurrent writer can replace the source name after the link
+        // lands; removing it then would destroy the newer data. The source is
+        // only removed while it still names the linked inode. Otherwise the
+        // writer's file stays under the source name, the same shape a plain
+        // rename leaves when the source is recreated mid-flight.
+        const sourceStillLinked = yield* isSameFile(source.absolutePath, target.absolutePath);
+        if (!sourceStillLinked) {
+          return;
         }
         yield* fileSystem.remove(source.absolutePath).pipe(
           // A missing source means something else removed it after the link

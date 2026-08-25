@@ -729,14 +729,30 @@ it.layer(LinklessTestLayer, { excludeTestServices: true })(
 
 // Simulates a linkless volume whose rename also fails; when rivalBytesOnRename
 // holds bytes, the rename first replaces the target with them, standing in for
-// a confirmed overwrite landing between the claim and the rename.
+// a confirmed overwrite landing between the claim and the rename. When
+// statErrorPath names a path, stat of that exact path fails, standing in for
+// a volume fault between the claim and the inode capture.
 const rivalBytesOnRename: { current: Uint8Array | null } = { current: null };
+const statErrorPath: { current: string | null } = { current: null };
 const brokenRenameFileSystemLayer = Layer.effect(
   FileSystem.FileSystem,
   Effect.gen(function* () {
     const real = yield* FileSystem.FileSystem;
     return FileSystem.FileSystem.of({
       ...real,
+      stat: (statPath) =>
+        statPath === statErrorPath.current
+          ? Effect.fail(
+              PlatformError.systemError({
+                _tag: "Unknown",
+                module: "FileSystem",
+                method: "stat",
+                syscall: "stat",
+                pathOrDescriptor: statPath,
+                description: "EIO: the volume failed the stat",
+              }),
+            )
+          : real.stat(statPath),
       link: (_fromPath, toPath) =>
         Effect.fail(
           PlatformError.systemError({
@@ -846,6 +862,111 @@ it.layer(BrokenRenameTestLayer, { excludeTestServices: true })(
         Effect.ensuring(
           Effect.sync(() => {
             rivalBytesOnRename.current = null;
+          }),
+        ),
+      ),
+    );
+
+    // A failed claim-inode stat surfaces before any rename runs; without the
+    // reclaim the empty claim would make every retry read the name as taken.
+    it.effect("reclaims the target name when the claim-inode stat fails", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+        statErrorPath.current = path.join(cwd, "src/renamed.md");
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/source.md",
+            newRelativePath: "src/renamed.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryError);
+        expect(error).toMatchObject({ stage: "rename" });
+        expect(NodeFS.existsSync(path.join(cwd, "src/renamed.md"))).toBe(false);
+        expect(NodeFS.existsSync(path.join(cwd, "src/source.md"))).toBe(true);
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            statErrorPath.current = null;
+          }),
+        ),
+      ),
+    );
+  },
+);
+
+// The link lands, then a concurrent writer replaces the source name with a
+// new file before the source removal runs.
+const linkRivalBytes: { current: Uint8Array | null } = { current: null };
+const linkRivalFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const real = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...real,
+      link: (fromPath, toPath) =>
+        real.link(fromPath, toPath).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              const rival = linkRivalBytes.current;
+              if (rival) {
+                // A real writer renames its own staged file onto the source
+                // name, replacing the inode; remove-then-write reproduces it.
+                NodeFS.rmSync(fromPath, { force: true });
+                NodeFS.writeFileSync(fromPath, rival);
+              }
+            }),
+          ),
+        ),
+    });
+  }),
+);
+
+const LinkRivalTestLayer = Layer.empty.pipe(
+  Layer.provideMerge(ProjectLayer),
+  Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
+  Layer.provide(
+    ServerConfig.ServerConfig.layerTest(process.cwd(), {
+      prefix: "t3-workspace-files-test-",
+    }),
+  ),
+  Layer.provideMerge(linkRivalFileSystemLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.layer(LinkRivalTestLayer, { excludeTestServices: true })(
+  "WorkspaceFileSystemLive when a writer replaces the source after the link",
+  (it) => {
+    it.effect("keeps the writer's file instead of removing the source name", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+        linkRivalBytes.current = new TextEncoder().encode("rival\n");
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/source.md",
+          newRelativePath: "src/renamed.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/renamed.md" });
+        // The rename lands under the new name and the writer's file survives
+        // under the old one, the shape a plain rename race would also leave.
+        expect(NodeFS.readFileSync(path.join(cwd, "src/renamed.md"), "utf8")).toBe("source\n");
+        expect(NodeFS.readFileSync(path.join(cwd, "src/source.md"), "utf8")).toBe("rival\n");
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            linkRivalBytes.current = null;
           }),
         ),
       ),
