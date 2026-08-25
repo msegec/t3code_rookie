@@ -328,11 +328,18 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
             if (conflict) {
               return "conflict" as const;
             }
+            // A rival's confirmed overwrite could legitimately be zero bytes,
+            // so size alone cannot identify the claim; the reclaim also
+            // requires the inode captured at claim time, and falls back to
+            // the size check only where the platform reports no inode.
+            const claimInode = yield* fileSystem
+              .stat(target.absolutePath)
+              .pipe(Effect.map((info) => Option.getOrNull(info.ino)));
             yield* fileSystem.rename(partPath, target.absolutePath).pipe(
               Effect.tapError(() =>
                 fileSystem.stat(target.absolutePath).pipe(
                   Effect.flatMap((info) =>
-                    info.size === FileSystem.Size(0)
+                    info.size === FileSystem.Size(0) && Option.getOrNull(info.ino) === claimInode
                       ? fileSystem.remove(target.absolutePath, { force: true })
                       : Effect.void,
                   ),

@@ -437,6 +437,38 @@ describe("WorkspaceUpload", () => {
       ),
     ),
   );
+
+  it.effect("keeps a rival's zero-byte overwrite when the fallback rename fails", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const bytes = new Uint8Array([1, 2, 3]);
+      rivalBytesOnRename.current = new Uint8Array(0);
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "emptied.bin",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toEqual({ ok: false, status: 500, detail: "Failed to persist upload." });
+      // The rival's file matches the claim's size but not its inode; the
+      // reclaim must leave it in place.
+      expect(NodeFS.existsSync(NodePath.join(cwd, "emptied.bin"))).toBe(true);
+      expect(NodeFS.readFileSync(NodePath.join(cwd, "emptied.bin")).byteLength).toBe(0);
+    }).pipe(
+      Effect.provide(brokenRenameTestLayer),
+      Effect.ensuring(
+        Effect.sync(() => {
+          rivalBytesOnRename.current = null;
+        }),
+      ),
+    ),
+  );
 });
 
 const refreshSnapshots: Array<Array<string>> = [];
@@ -505,6 +537,9 @@ const brokenRenameFileSystemLayer = Layer.effect(
         Effect.sync(() => {
           const rival = rivalBytesOnRename.current;
           if (rival) {
+            // A real overwrite renames the rival's staged part onto the
+            // target, replacing the inode; remove-then-write reproduces that.
+            NodeFS.rmSync(toPath, { force: true });
             NodeFS.writeFileSync(toPath, rival);
           }
         }).pipe(
