@@ -621,15 +621,16 @@ export const make = Effect.gen(function* () {
     // lstat examines the directory entry itself, so a dangling symlink is
     // still found and removed; stat would follow it, read NotFound, and
     // report success while the entry stays on disk.
-    const targetStat = yield* Effect.tryPromise({
-      try: () => NodeFSP.lstat(target.absolutePath),
-      catch: (cause) => cause as NodeJS.ErrnoException,
-    }).pipe(
+    const targetStat = yield* Effect.tryPromise(() => NodeFSP.lstat(target.absolutePath)).pipe(
       Effect.catchIf(
-        (error) => error.code === "ENOENT",
+        (error) =>
+          typeof error.cause === "object" &&
+          error.cause !== null &&
+          "code" in error.cause &&
+          error.cause.code === "ENOENT",
         () => Effect.succeed(null),
       ),
-      Effect.mapError((cause) => deleteError("resolve-path", cause)),
+      Effect.mapError((error) => deleteError("resolve-path", error.cause)),
     );
     if (targetStat === null) {
       return;
