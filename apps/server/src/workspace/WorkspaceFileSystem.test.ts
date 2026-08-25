@@ -534,6 +534,47 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    // stat follows the link and reads NotFound, so without lstat the delete
+    // would report success while the entry stays on disk.
+    it.effect("removes a dangling symlink instead of reporting it already gone", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem.makeDirectory(path.join(cwd, "src"));
+        yield* fileSystem.symlink(
+          path.join(cwd, "src/missing.md"),
+          path.join(cwd, "src/broken.md"),
+        );
+
+        yield* workspaceFileSystem.deleteEntry({ cwd, relativePath: "src/broken.md" });
+
+        const names = yield* fileSystem.readDirectory(path.join(cwd, "src"));
+        expect(names).not.toContain("broken.md");
+      }),
+    );
+
+    it.effect("deletes a symlink without touching its target", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+        yield* fileSystem.symlink(path.join(cwd, "src/notes.md"), path.join(cwd, "src/alias.md"));
+
+        yield* workspaceFileSystem.deleteEntry({ cwd, relativePath: "src/alias.md" });
+
+        const aliasExists = yield* fileSystem.exists(path.join(cwd, "src/alias.md"));
+        expect(aliasExists).toBe(false);
+        const contents = yield* fileSystem
+          .readFileString(path.join(cwd, "src/notes.md"))
+          .pipe(Effect.orDie);
+        expect(contents).toBe("# Notes\n");
+      }),
+    );
+
     it.effect("rejects deleting a directory", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -649,6 +690,110 @@ it.layer(LinklessTestLayer, { excludeTestServices: true })(
           .readFileString(path.join(cwd, "src/taken.md"))
           .pipe(Effect.orDie);
         expect(taken).toBe("taken\n");
+      }),
+    );
+
+    // exists() follows the link and reads false for a dangling one; the
+    // O_EXCL claim fails on the entry itself, so the symlink survives.
+    it.effect("rejects renaming onto a dangling symlink without hard links", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+        yield* fileSystem.symlink(
+          path.join(cwd, "src/missing.md"),
+          path.join(cwd, "src/broken.md"),
+        );
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/source.md",
+            newRelativePath: "src/broken.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryTargetExistsError);
+        const names = yield* fileSystem.readDirectory(path.join(cwd, "src"));
+        expect(names).toContain("broken.md");
+        expect(names).toContain("source.md");
+      }),
+    );
+  },
+);
+
+const brokenRenameFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const real = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...real,
+      link: (_fromPath, toPath) =>
+        Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "link",
+            syscall: "link",
+            pathOrDescriptor: toPath,
+            description: "EPERM: the volume rejects hard links",
+          }),
+        ),
+      rename: (_oldPath, newPath) =>
+        Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "rename",
+            syscall: "rename",
+            pathOrDescriptor: newPath,
+            description: "EACCES: the volume failed the rename",
+          }),
+        ),
+    });
+  }),
+);
+
+const BrokenRenameTestLayer = Layer.empty.pipe(
+  Layer.provideMerge(ProjectLayer),
+  Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
+  Layer.provide(
+    ServerConfig.ServerConfig.layerTest(process.cwd(), {
+      prefix: "t3-workspace-files-test-",
+    }),
+  ),
+  Layer.provideMerge(brokenRenameFileSystemLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.layer(BrokenRenameTestLayer, { excludeTestServices: true })(
+  "WorkspaceFileSystemLive when the fallback rename fails",
+  (it) => {
+    it.effect("reclaims the target name so a retry does not read it as taken", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/source.md",
+            newRelativePath: "src/renamed.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryError);
+        expect(error).toMatchObject({ stage: "rename" });
+        const names = yield* fileSystem.readDirectory(path.join(cwd, "src"));
+        expect(names).toContain("source.md");
+        expect(names).not.toContain("renamed.md");
       }),
     );
   },

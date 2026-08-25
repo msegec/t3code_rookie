@@ -428,37 +428,44 @@ export const make = Effect.gen(function* () {
           Effect.catch(() => Effect.succeed("unsupported" as const)),
         );
         if (claim === "unsupported") {
-          // Without hard links there is no atomic no-clobber primitive, so an
-          // exact-name listing plus the volume's own name resolution guard the
-          // target before a plain rename. exists finding the target while the
-          // basenames differ case-insensitively means another entry owns the
-          // name under different casing on a case-insensitive volume; equal
-          // basenames mean the hit is the source itself and the rename is a
-          // case change.
-          const siblingNames = yield* fileSystem
-            .readDirectory(path.dirname(source.absolutePath))
-            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
-          if (siblingNames.includes(path.basename(target.absolutePath))) {
-            return yield* new ProjectRenameEntryTargetExistsError({
-              cwd: input.cwd,
-              relativePath: target.relativePath,
-            });
+          // Without hard links an empty O_EXCL create claims the target name,
+          // so the rename below can only ever replace this rename's own claim
+          // and no window exists between the conflict check and the rename.
+          // The create also fails on entries exists() cannot see, such as a
+          // dangling symlink. When the name is occupied by the source's own
+          // inode, the volume resolves names case-insensitively and the
+          // rename is a case change, which needs no claim: any rival create
+          // at the target fails against the source until the rename lands.
+          const fallbackClaim = yield* fileSystem
+            .writeFile(target.absolutePath, new Uint8Array(0), { flag: "wx" })
+            .pipe(
+              Effect.as("claimed" as const),
+              Effect.catchIf(
+                (error) => error.reason._tag === "AlreadyExists",
+                () => Effect.succeed("occupied" as const),
+              ),
+              Effect.mapError((cause) => renameError("rename", cause)),
+            );
+          if (fallbackClaim === "occupied") {
+            const sameFile = yield* isSameFile(source.absolutePath, target.absolutePath);
+            if (!sameFile) {
+              return yield* new ProjectRenameEntryTargetExistsError({
+                cwd: input.cwd,
+                relativePath: target.relativePath,
+              });
+            }
+            return yield* fileSystem
+              .rename(source.absolutePath, target.absolutePath)
+              .pipe(Effect.mapError((cause) => renameError("rename", cause)));
           }
-          const targetOccupied = yield* fileSystem
-            .exists(target.absolutePath)
-            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
-          const caseChangeOnly =
-            path.basename(source.absolutePath).toLowerCase() ===
-            path.basename(target.absolutePath).toLowerCase();
-          if (targetOccupied && !caseChangeOnly) {
-            return yield* new ProjectRenameEntryTargetExistsError({
-              cwd: input.cwd,
-              relativePath: target.relativePath,
-            });
-          }
-          return yield* fileSystem
-            .rename(source.absolutePath, target.absolutePath)
-            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+          return yield* fileSystem.rename(source.absolutePath, target.absolutePath).pipe(
+            // A failed rename leaves the empty claim at the target; reclaim
+            // it so a retry does not read the name as taken.
+            Effect.tapError(() =>
+              fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
+            ),
+            Effect.mapError((cause) => renameError("rename", cause)),
+          );
         }
         if (claim === "conflict") {
           const sameFile = yield* isSameFile(source.absolutePath, target.absolutePath);
@@ -556,9 +563,15 @@ export const make = Effect.gen(function* () {
       return yield* deleteError("escapes-root");
     }
 
-    const targetStat = yield* fileSystem.stat(target.absolutePath).pipe(
+    // lstat examines the directory entry itself, so a dangling symlink is
+    // still found and removed; stat would follow it, read NotFound, and
+    // report success while the entry stays on disk.
+    const targetStat = yield* Effect.tryPromise({
+      try: () => NodeFSP.lstat(target.absolutePath),
+      catch: (cause) => cause as NodeJS.ErrnoException,
+    }).pipe(
       Effect.catchIf(
-        (error) => error.reason._tag === "NotFound",
+        (error) => error.code === "ENOENT",
         () => Effect.succeed(null),
       ),
       Effect.mapError((cause) => deleteError("resolve-path", cause)),
@@ -566,7 +579,10 @@ export const make = Effect.gen(function* () {
     if (targetStat === null) {
       return;
     }
-    if (targetStat.type === "Directory") {
+    // remove never follows a symlink, so deleting one drops only the link.
+    // Everything else must be a regular file: directories, FIFOs, sockets,
+    // and device nodes stay out of reach, matching renameEntry.
+    if (!targetStat.isFile() && !targetStat.isSymbolicLink()) {
       return yield* deleteError("not-a-file");
     }
 
