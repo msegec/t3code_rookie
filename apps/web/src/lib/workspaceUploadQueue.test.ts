@@ -273,6 +273,64 @@ describe("workspaceUploadQueue", () => {
     expect(findUpload("existing.txt")).toBeUndefined();
   });
 
+  it("prompts to replace and retries with overwrite when the commit loses the race with 409", async () => {
+    const seenOverwrites: Array<boolean | undefined> = [];
+    mocks.runAtomCommand.mockImplementation(
+      async (
+        _registry: unknown,
+        command: unknown,
+        target: {
+          readonly input: { readonly relativePath: string; readonly overwrite?: boolean };
+        },
+      ) => {
+        if (command !== mocks.createUploadUrl) throw new Error("unexpected command");
+        seenOverwrites.push(target.input.overwrite);
+        return mintedResult(target.input.relativePath);
+      },
+    );
+    mocks.requestConfirmDialog.mockResolvedValue(true);
+
+    const file = makeFile("raced.txt");
+    startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded: vi.fn() });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    TestXmlHttpRequest.requests[0]!.complete(409);
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    expect(mocks.requestConfirmDialog).toHaveBeenCalledWith(
+      "Replace raced.txt?\nA file named 'raced.txt' already exists in this project.",
+      { variant: "destructive" },
+    );
+    expect(seenOverwrites).toEqual([undefined, true]);
+    expect(TestXmlHttpRequest.requests).toHaveLength(2);
+    expect(findUpload("raced.txt")![1]).toMatchObject({ status: "uploading" });
+
+    TestXmlHttpRequest.requests[1]!.complete();
+    for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+
+    expect(findUpload("raced.txt")).toBeUndefined();
+  });
+
+  it("marks the entry failed when the user declines to replace after a commit-time 409", async () => {
+    mocks.requestConfirmDialog.mockResolvedValue(false);
+
+    const file = makeFile("raced.txt");
+    startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded: vi.fn() });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    TestXmlHttpRequest.requests[0]!.complete(409);
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    expect(mocks.requestConfirmDialog).toHaveBeenCalledTimes(1);
+    expect(TestXmlHttpRequest.requests).toHaveLength(1);
+    expect(findUpload("raced.txt")![1]).toMatchObject({
+      status: "failed",
+      reason: "File already exists",
+    });
+  });
+
   it("marks the entry failed with 'File already exists' when the user declines to replace", async () => {
     mocks.runAtomCommand.mockImplementation(
       async (

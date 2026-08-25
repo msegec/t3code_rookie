@@ -9,7 +9,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { projectEnvironment } from "../state/projects";
 import { readPreparedConnection } from "../state/session";
 import { randomUUID } from "./utils";
-import { uploadXhr } from "./uploadXhr";
+import { UploadRejectedError, uploadXhr } from "./uploadXhr";
 
 const MAX_UPLOADS_PER_ENVIRONMENT = 3;
 // Matches the upload token TTL (see PROJECT_UPLOAD_URL_TTL_MS), since
@@ -105,97 +105,126 @@ function mintUploadUrl(job: UploadJob) {
   );
 }
 
-async function runUpload(job: UploadJob): Promise<void> {
-  let minted = await mintUploadUrl(job);
-  if (job.cancelled) {
-    jobsById.delete(job.id);
-    return;
-  }
-
-  if (minted._tag !== "Success") {
-    if (!isProjectUploadTargetExistsError(Cause.squash(minted.cause))) {
-      failJob(job, "Upload could not start");
-      return;
-    }
-
-    const confirmed = await readLocalApi()?.dialogs.confirm(
+function confirmReplace(job: UploadJob): Promise<boolean | undefined> {
+  return Promise.resolve(
+    readLocalApi()?.dialogs.confirm(
       `Replace ${job.relativePath}?\nA file named '${job.relativePath}' already exists in this project.`,
       { variant: "destructive" },
-    );
+    ),
+  );
+}
+
+// The mint-time existence check is only advisory: a rival upload can land
+// between it and the server's atomic commit, which then answers 409. Both
+// conflict stages funnel into the same replace confirmation, and the overwrite
+// flag bounds the loop to one retry.
+async function runUpload(job: UploadJob): Promise<void> {
+  for (;;) {
+    let minted = await mintUploadUrl(job);
     if (job.cancelled) {
       jobsById.delete(job.id);
-      return;
-    }
-    if (confirmed !== true) {
-      failJob(job, "File already exists");
       return;
     }
 
-    job.overwrite = true;
-    minted = await mintUploadUrl(job);
-    if (job.cancelled) {
-      jobsById.delete(job.id);
-      return;
-    }
     if (minted._tag !== "Success") {
-      failJob(job, "Upload could not start");
-      return;
-    }
-  }
-
-  const connection = readPreparedConnection(job.environmentId);
-  const url = connection ? resolveAssetUrl(connection.httpBaseUrl, minted.value.relativeUrl) : null;
-  if (!url) {
-    failJob(job, "Not connected");
-    return;
-  }
-
-  let lastStep = -1;
-  const upload = uploadXhr({
-    url,
-    file: job.file,
-    timeoutMs: UPLOAD_TIMEOUT_MS,
-    onProgress: (progress) => {
-      const step = Math.floor(progress * 20);
-      if (step === lastStep || job.cancelled) {
+      if (!isProjectUploadTargetExistsError(Cause.squash(minted.cause))) {
+        failJob(job, "Upload could not start");
         return;
       }
-      lastStep = step;
-      setUploadState(job.id, {
-        status: "uploading",
-        name: job.file.name,
-        relativePath: job.relativePath,
-        environmentId: job.environmentId,
-        cwd: job.cwd,
-        progress,
-      });
-    },
-  });
-  job.abort = upload.abort;
 
-  try {
-    await upload.done;
-    if (job.cancelled) {
-      jobsById.delete(job.id);
+      const confirmed = await confirmReplace(job);
+      if (job.cancelled) {
+        jobsById.delete(job.id);
+        return;
+      }
+      if (confirmed !== true) {
+        failJob(job, "File already exists");
+        return;
+      }
+
+      job.overwrite = true;
+      minted = await mintUploadUrl(job);
+      if (job.cancelled) {
+        jobsById.delete(job.id);
+        return;
+      }
+      if (minted._tag !== "Success") {
+        failJob(job, "Upload could not start");
+        return;
+      }
+    }
+
+    const connection = readPreparedConnection(job.environmentId);
+    const url = connection
+      ? resolveAssetUrl(connection.httpBaseUrl, minted.value.relativeUrl)
+      : null;
+    if (!url) {
+      failJob(job, "Not connected");
       return;
     }
-    jobsById.delete(job.id);
-    clearUploadState(job.id);
+
+    let lastStep = -1;
+    const upload = uploadXhr({
+      url,
+      file: job.file,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+      onProgress: (progress) => {
+        const step = Math.floor(progress * 20);
+        if (step === lastStep || job.cancelled) {
+          return;
+        }
+        lastStep = step;
+        setUploadState(job.id, {
+          status: "uploading",
+          name: job.file.name,
+          relativePath: job.relativePath,
+          environmentId: job.environmentId,
+          cwd: job.cwd,
+          progress,
+        });
+      },
+    });
+    job.abort = upload.abort;
+
     try {
-      job.onUploaded(job.relativePath);
-    } catch (error) {
-      // The upload itself succeeded; a throwing refresh callback must not
-      // resurrect the cleared entry as an unretryable failure.
-      console.error(error);
-    }
-  } catch (error) {
-    if (job.cancelled) {
+      await upload.done;
+      if (job.cancelled) {
+        jobsById.delete(job.id);
+        return;
+      }
       jobsById.delete(job.id);
+      clearUploadState(job.id);
+      try {
+        job.onUploaded(job.relativePath);
+      } catch (error) {
+        // The upload itself succeeded; a throwing refresh callback must not
+        // resurrect the cleared entry as an unretryable failure.
+        console.error(error);
+      }
       return;
+    } catch (error) {
+      if (job.cancelled) {
+        jobsById.delete(job.id);
+        return;
+      }
+      if (error instanceof UploadRejectedError && error.status === 409 && !job.overwrite) {
+        const confirmed = await confirmReplace(job);
+        if (job.cancelled) {
+          jobsById.delete(job.id);
+          return;
+        }
+        if (confirmed !== true) {
+          failJob(job, "File already exists");
+          return;
+        }
+        job.overwrite = true;
+        continue;
+      }
+      failJob(job, error instanceof Error ? error.message : "Upload failed");
+      return;
+    } finally {
+      job.abort = null;
     }
-    failJob(job, error instanceof Error ? error.message : "Upload failed");
-  } finally {
-    job.abort = null;
   }
 }
 
