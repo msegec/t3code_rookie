@@ -332,9 +332,14 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
             // so size alone cannot identify the claim; the reclaim also
             // requires the inode captured at claim time, and falls back to
             // the size check only where the platform reports no inode.
-            const claimInode = yield* fileSystem
-              .stat(target.absolutePath)
-              .pipe(Effect.map((info) => Option.getOrNull(info.ino)));
+            const claimInode = yield* fileSystem.stat(target.absolutePath).pipe(
+              Effect.map((info) => Option.getOrNull(info.ino)),
+              // A stat failure here would strand the empty claim as a
+              // permanent conflict; reclaim before surfacing the error.
+              Effect.tapError(() =>
+                fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
+              ),
+            );
             yield* fileSystem.rename(partPath, target.absolutePath).pipe(
               Effect.tapError(() =>
                 fileSystem.stat(target.absolutePath).pipe(
