@@ -67,7 +67,7 @@ export const issueWorkspaceUploadUrl = Effect.fn("WorkspaceUpload.issueUrl")(fun
         new ProjectCreateUploadUrlError({
           cwd: input.cwd,
           relativePath: input.relativePath,
-          message: "Failed to load the upload signing key.",
+          stage: "signing-key",
           cause,
         }),
     ),
@@ -85,7 +85,7 @@ export const issueWorkspaceUploadUrl = Effect.fn("WorkspaceUpload.issueUrl")(fun
           new ProjectCreateUploadUrlError({
             cwd: input.cwd,
             relativePath: input.relativePath,
-            message: `Failed to resolve '${input.relativePath}' within '${input.cwd}'.`,
+            stage: "resolve-path",
             cause: error,
           }),
       ),
@@ -98,7 +98,7 @@ export const issueWorkspaceUploadUrl = Effect.fn("WorkspaceUpload.issueUrl")(fun
         new ProjectCreateUploadUrlError({
           cwd: input.cwd,
           relativePath: target.relativePath,
-          message: `Failed to check for an existing file at '${target.relativePath}' in '${input.cwd}'.`,
+          stage: "target-check",
           cause,
         }),
     ),
@@ -190,6 +190,14 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const partPath = `${target.absolutePath}.${NodeCrypto.randomUUID()}.part`;
+  const escapesWorkspaceRoot = Effect.fn(function* (directory: string) {
+    const [canonicalRoot, canonicalDir] = yield* Effect.all([
+      fileSystem.realPath(claims.cwd),
+      fileSystem.realPath(directory),
+    ]);
+    const relativeDir = path.relative(canonicalRoot, canonicalDir);
+    return relativeDir.startsWith("..") || path.isAbsolute(relativeDir);
+  });
   return yield* Effect.gen(function* () {
     const targetExists = yield* fileSystem.exists(target.absolutePath);
     if (targetExists && !claims.overwrite) {
@@ -200,16 +208,24 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       } satisfies StoreWorkspaceUploadResult;
     }
 
-    yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true });
-    // The lexical resolve above cannot see symlinked directory components, so
-    // re-check containment against canonical paths before any bytes land, the
-    // same way AssetAccess guards signed reads.
-    const [canonicalRoot, canonicalDir] = yield* Effect.all([
-      fileSystem.realPath(claims.cwd),
-      fileSystem.realPath(path.dirname(target.absolutePath)),
-    ]);
-    const relativeDir = path.relative(canonicalRoot, canonicalDir);
-    if (relativeDir.startsWith("..") || path.isAbsolute(relativeDir)) {
+    // The lexical resolve above cannot see symlinked directory components, and
+    // recursive mkdir follows them, so canonically re-check the deepest
+    // existing ancestor before creating directories and the final directory
+    // before any bytes land, the same way AssetAccess guards signed reads.
+    const targetDirectory = path.dirname(target.absolutePath);
+    let existingAncestor = targetDirectory;
+    while (!(yield* fileSystem.exists(existingAncestor))) {
+      existingAncestor = path.dirname(existingAncestor);
+    }
+    if (yield* escapesWorkspaceRoot(existingAncestor)) {
+      return {
+        ok: false,
+        status: 400,
+        detail: "Upload path resolves outside the project.",
+      } satisfies StoreWorkspaceUploadResult;
+    }
+    yield* fileSystem.makeDirectory(targetDirectory, { recursive: true });
+    if (yield* escapesWorkspaceRoot(targetDirectory)) {
       return {
         ok: false,
         status: 400,

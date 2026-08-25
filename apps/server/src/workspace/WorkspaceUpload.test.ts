@@ -182,7 +182,7 @@ describe("WorkspaceUpload", () => {
       const bytes = new Uint8Array([1, 2, 3]);
       const issued = yield* issueWorkspaceUploadUrl({
         cwd,
-        relativePath: "linked/owned.txt",
+        relativePath: "linked/nested/owned.txt",
         sizeBytes: bytes.byteLength,
       });
       const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));

@@ -329,12 +329,43 @@ export class ProjectUploadTargetExistsError extends Schema.TaggedErrorClass<Proj
   }
 }
 
+export const ProjectCreateUploadUrlStage = Schema.Literals([
+  "signing-key",
+  "resolve-path",
+  "target-check",
+]);
+export type ProjectCreateUploadUrlStage = typeof ProjectCreateUploadUrlStage.Type;
+
+type ProjectCreateUploadUrlFailureContext = {
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly stage: ProjectCreateUploadUrlStage;
+  readonly cause: unknown;
+};
+
+function projectCreateUploadUrlStageMessage(props: ProjectCreateUploadUrlFailureContext): string {
+  switch (props.stage) {
+    case "signing-key":
+      return "Failed to load the upload signing key.";
+    case "resolve-path":
+      return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "target-check":
+      return `Failed to check for an existing file at '${props.relativePath}' in '${props.cwd}'.`;
+  }
+}
+
 export class ProjectCreateUploadUrlError extends Schema.TaggedErrorClass<ProjectCreateUploadUrlError>()(
   "ProjectCreateUploadUrlError",
   {
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    relativePath: Schema.optional(TrimmedNonEmptyString),
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+    stage: ProjectCreateUploadUrlStage,
     message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
+    cause: Schema.Defect(),
   },
-) {}
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ProjectCreateUploadUrlFailureContext) {
+    super({ ...props, message: projectCreateUploadUrlStageMessage(props) } as any);
+  }
+}
