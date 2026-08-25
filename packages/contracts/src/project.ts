@@ -406,6 +406,8 @@ export class ProjectRenameEntryTargetExistsError extends Schema.TaggedErrorClass
   }
 }
 
+export const isProjectRenameEntryTargetExistsError = Schema.is(ProjectRenameEntryTargetExistsError);
+
 export const ProjectRenameEntryStage = Schema.Literals([
   "resolve-path",
   "escapes-root",

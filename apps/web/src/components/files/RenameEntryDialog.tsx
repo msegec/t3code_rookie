@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { isProjectRenameEntryTargetExistsError, type EnvironmentId } from "@t3tools/contracts";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { useEffect, useId, useRef, useState } from "react";
@@ -16,15 +16,6 @@ import {
 import { Input } from "~/components/ui/input";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
-
-function isTargetExistsFailure(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "_tag" in cause &&
-    cause._tag === "ProjectRenameEntryTargetExistsError"
-  );
-}
 
 export function RenameEntryDialog({
   environmentId,
@@ -94,7 +85,7 @@ export function RenameEntryDialog({
       return;
     }
     setRenameError(
-      isTargetExistsFailure(Cause.squash(result.cause))
+      isProjectRenameEntryTargetExistsError(Cause.squash(result.cause))
         ? "A file with that name already exists."
         : "Rename failed. Try again.",
     );
