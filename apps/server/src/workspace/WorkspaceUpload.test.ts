@@ -173,6 +173,29 @@ describe("WorkspaceUpload", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("rejects a store whose directory resolves outside the root through a symlink", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const outside = yield* makeTempWorkspaceRoot();
+      NodeFS.symlinkSync(outside, NodePath.join(cwd, "linked"));
+
+      const bytes = new Uint8Array([1, 2, 3]);
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "linked/owned.txt",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toMatchObject({ ok: false, status: 400 });
+      expect(NodeFS.readdirSync(outside)).toEqual([]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects tampered, malformed, expired, and cross-kind tokens", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempWorkspaceRoot();

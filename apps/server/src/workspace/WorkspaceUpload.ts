@@ -201,6 +201,21 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
     }
 
     yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true });
+    // The lexical resolve above cannot see symlinked directory components, so
+    // re-check containment against canonical paths before any bytes land, the
+    // same way AssetAccess guards signed reads.
+    const [canonicalRoot, canonicalDir] = yield* Effect.all([
+      fileSystem.realPath(claims.cwd),
+      fileSystem.realPath(path.dirname(target.absolutePath)),
+    ]);
+    const relativeDir = path.relative(canonicalRoot, canonicalDir);
+    if (relativeDir.startsWith("..") || path.isAbsolute(relativeDir)) {
+      return {
+        ok: false,
+        status: 400,
+        detail: "Upload path resolves outside the project.",
+      } satisfies StoreWorkspaceUploadResult;
+    }
     yield* fileSystem.writeFile(partPath, bytes);
     if (claims.overwrite) {
       yield* fileSystem.rename(partPath, target.absolutePath);
