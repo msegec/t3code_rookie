@@ -414,6 +414,13 @@ export const make = Effect.gen(function* () {
       );
     }
 
+    // Renaming a file onto its own exact path is a no-op. Without this guard
+    // the identical path would read as a hard link pair below and the source
+    // removal would delete the file's only directory entry.
+    if (source.relativePath === target.relativePath) {
+      return { relativePath: target.relativePath };
+    }
+
     // rename would replace an existing target; link fails atomically instead,
     // so a rename can never clobber another entry. The link and the source
     // removal form one critical section: an interrupt between them would

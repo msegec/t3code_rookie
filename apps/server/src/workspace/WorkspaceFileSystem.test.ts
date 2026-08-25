@@ -347,6 +347,28 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    it.effect("leaves the file untouched when renamed onto its own path", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/notes.md",
+          newRelativePath: "src/notes.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/notes.md" });
+        const contents = yield* fileSystem
+          .readFileString(path.join(cwd, "src/notes.md"))
+          .pipe(Effect.orDie);
+        expect(contents).toBe("# Notes\n");
+      }),
+    );
+
     // A hard-linked target reaches the same-inode path a case-only rename
     // takes on a case-insensitive filesystem, deterministically on Linux.
     it.effect("renames onto another name of the same file without destroying it", () =>
