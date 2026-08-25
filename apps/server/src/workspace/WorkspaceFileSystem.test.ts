@@ -371,7 +371,9 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
 
     // A hard-linked target reaches the same-inode path a case-only rename
     // takes on a case-insensitive filesystem, deterministically on Linux.
-    it.effect("renames onto another name of the same file without destroying it", () =>
+    // Both names are genuine directory entries, so the target counts as
+    // occupied; only a true case change lists a single name.
+    it.effect("rejects renaming onto a hard link of the same file", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
         const fileSystem = yield* FileSystem.FileSystem;
@@ -382,19 +384,22 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           .link(path.join(cwd, "src/notes.md"), path.join(cwd, "src/Notes.md"))
           .pipe(Effect.orDie);
 
-        const result = yield* workspaceFileSystem.renameEntry({
-          cwd,
-          relativePath: "src/notes.md",
-          newRelativePath: "src/Notes.md",
-        });
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/notes.md",
+            newRelativePath: "src/Notes.md",
+          })
+          .pipe(Effect.flip);
 
-        expect(result).toEqual({ relativePath: "src/Notes.md" });
-        const renamed = yield* fileSystem
+        expect(error).toBeInstanceOf(ProjectRenameEntryTargetExistsError);
+        expect(error).toMatchObject({ cwd, relativePath: "src/Notes.md" });
+        const sourceExists = yield* fileSystem.exists(path.join(cwd, "src/notes.md"));
+        expect(sourceExists).toBe(true);
+        const targetContents = yield* fileSystem
           .readFileString(path.join(cwd, "src/Notes.md"))
           .pipe(Effect.orDie);
-        expect(renamed).toBe("# Notes\n");
-        const sourceExists = yield* fileSystem.exists(path.join(cwd, "src/notes.md"));
-        expect(sourceExists).toBe(false);
+        expect(targetContents).toBe("# Notes\n");
       }),
     );
 

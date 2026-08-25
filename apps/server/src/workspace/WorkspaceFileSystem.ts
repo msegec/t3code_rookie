@@ -435,26 +435,23 @@ export const make = Effect.gen(function* () {
           }
           // The conflicting target is another name of the source's own inode.
           // The directory listing reports exact on-disk names and tells the
-          // two shapes apart. Both names listed is a pre-existing hard link
-          // pair, where POSIX rename over another name of the same file is a
-          // no-op, so removing the source entry completes the rename. Only
-          // the source listed is the source under another casing on a
-          // case-insensitive filesystem, where rename applies the case
-          // change. Otherwise the source entry is gone or already carries
-          // the target casing, and the target name holds the data.
+          // two shapes apart. A case change only ever lists one of the names,
+          // so both names listed is a pre-existing hard link pair, where the
+          // target name is occupied like any other conflict. Only the source
+          // listed is the source under another casing on a case-insensitive
+          // filesystem, where rename applies the case change. Otherwise the
+          // source entry is gone or already carries the target casing, and
+          // the target name holds the data.
           const siblingNames = yield* fileSystem
             .readDirectory(path.dirname(source.absolutePath))
             .pipe(Effect.mapError((cause) => renameError("rename", cause)));
           const sourceListed = siblingNames.includes(path.basename(source.absolutePath));
           const targetListed = siblingNames.includes(path.basename(target.absolutePath));
           if (sourceListed && targetListed) {
-            return yield* fileSystem.remove(source.absolutePath).pipe(
-              Effect.catchIf(
-                (error) => error.reason._tag === "NotFound",
-                () => Effect.void,
-              ),
-              Effect.mapError((cause) => renameError("rename", cause)),
-            );
+            return yield* new ProjectRenameEntryTargetExistsError({
+              cwd: input.cwd,
+              relativePath: target.relativePath,
+            });
           }
           if (sourceListed) {
             return yield* fileSystem
