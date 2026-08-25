@@ -325,6 +325,33 @@ describe("WorkspaceUpload", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("reclaims the staging part before the entries refresh", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const bytes = new Uint8Array([1, 2, 3]);
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "probe.bin",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toEqual({ ok: true, relativePath: "probe.bin" });
+
+      // The refresh rebuilds the search index from disk, so a part still
+      // present at refresh time would be indexed as a phantom entry.
+      expect(refreshSnapshots.length).toBeGreaterThan(0);
+      const seenAtRefresh = refreshSnapshots.flat();
+      expect(seenAtRefresh).toContain("probe.bin");
+      expect(seenAtRefresh.some((entry) => entry.endsWith(".part"))).toBe(false);
+    }).pipe(Effect.provide(refreshProbeTestLayer)),
+  );
+
   it.effect("falls back to an exclusive create when the volume rejects hard links", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempWorkspaceRoot();
@@ -356,6 +383,23 @@ describe("WorkspaceUpload", () => {
     }).pipe(Effect.provide(linklessTestLayer)),
   );
 });
+
+const refreshSnapshots: Array<Array<string>> = [];
+const refreshProbeLayer = Layer.effect(
+  WorkspaceEntries.WorkspaceEntries,
+  Effect.gen(function* () {
+    const real = yield* WorkspaceEntries.WorkspaceEntries;
+    return WorkspaceEntries.WorkspaceEntries.of({
+      ...real,
+      refresh: (cwd) =>
+        Effect.sync(() => {
+          refreshSnapshots.push(NodeFS.readdirSync(cwd, { recursive: true }) as Array<string>);
+        }).pipe(Effect.andThen(real.refresh(cwd))),
+    });
+  }),
+);
+
+const refreshProbeTestLayer = refreshProbeLayer.pipe(Layer.provideMerge(testLayer));
 
 const linkRejections: Array<string> = [];
 const linklessFileSystemLayer = Layer.effect(

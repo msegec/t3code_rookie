@@ -287,10 +287,10 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       // the staged part onto the target claims the name atomically instead, so
       // concurrent non-overwrite uploads cannot clobber and a failed write
       // never strands a partial target. FAT and exFAT volumes reject hard
-      // links, so those fall back to an O_EXCL create. A pre-existing file
-      // fails that create with AlreadyExists first, so a target still present
-      // after any other failure is the partial one and is removed, keeping a
-      // retry from hitting a stale conflict.
+      // links, so those claim the name with an empty O_EXCL create and then
+      // rename the part onto their own claim. The failed create removes
+      // nothing, so it can never delete a rival's file; only a failed rename
+      // reclaims the name, and by then the name holds this upload's claim.
       yield* fileSystem.writeFile(partPath, bytes);
       const claim = yield* fileSystem.link(partPath, target.absolutePath).pipe(
         Effect.as("claimed" as const),
@@ -309,15 +309,12 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       }
       if (claim === "unsupported") {
         const conflict = yield* fileSystem
-          .writeFile(target.absolutePath, bytes, { flag: "wx" })
+          .writeFile(target.absolutePath, new Uint8Array(0), { flag: "wx" })
           .pipe(
             Effect.as(false),
             Effect.catchIf(
               (error) => error.reason._tag === "AlreadyExists",
               () => Effect.succeed(true),
-            ),
-            Effect.tapError(() =>
-              fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
             ),
           );
         if (conflict) {
@@ -327,9 +324,20 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
             detail: "A file already exists at this path.",
           } satisfies StoreWorkspaceUploadResult;
         }
+        yield* fileSystem
+          .rename(partPath, target.absolutePath)
+          .pipe(
+            Effect.tapError(() =>
+              fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
+            ),
+          );
       }
     }
 
+    // The link path leaves the part behind on purpose; reclaim it before the
+    // refresh so the rebuilt index never lists a phantom part entry. The
+    // rename paths already consumed it, making this a no-op there.
+    yield* fileSystem.remove(partPath, { force: true }).pipe(Effect.ignore);
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     yield* workspaceEntries.refresh(claims.cwd);
 
