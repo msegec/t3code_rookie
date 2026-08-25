@@ -297,6 +297,9 @@ export function retryWorkspaceUpload(uploadId: string): void {
     return;
   }
   job.cancelled = false;
+  // The target may have changed since the original confirmation, so a retry
+  // re-confirms an overwrite instead of carrying the earlier answer over.
+  job.overwrite = false;
   setUploadState(job.id, {
     status: "uploading",
     name: job.file.name,
