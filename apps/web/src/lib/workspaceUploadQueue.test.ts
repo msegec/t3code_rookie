@@ -198,6 +198,30 @@ describe("workspaceUploadQueue", () => {
     expect(onUploaded).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a completed upload out of the failed state when onUploaded throws", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const file = makeFile("notes.txt");
+    startWorkspaceUploads({
+      environmentId,
+      cwd,
+      files: [file],
+      onUploaded: () => {
+        throw new Error("refresh failed");
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    TestXmlHttpRequest.requests[0]!.complete();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(findUpload("notes.txt")).toBeUndefined();
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
+
   it("marks the entry failed with a reason when minting fails", async () => {
     mocks.runAtomCommand.mockResolvedValue(genericMintFailure());
     const file = makeFile("broken.txt");

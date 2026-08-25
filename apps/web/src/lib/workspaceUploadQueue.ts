@@ -189,7 +189,13 @@ async function runUpload(job: UploadJob): Promise<void> {
     }
     jobsById.delete(job.id);
     clearUploadState(job.id);
-    job.onUploaded();
+    try {
+      job.onUploaded();
+    } catch (error) {
+      // The upload itself succeeded; a throwing refresh callback must not
+      // resurrect the cleared entry as an unretryable failure.
+      console.error(error);
+    }
   } catch (error) {
     if (job.cancelled) {
       jobsById.delete(job.id);
