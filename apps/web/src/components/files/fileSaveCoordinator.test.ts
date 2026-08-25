@@ -160,6 +160,66 @@ describe("FileSaveCoordinator", () => {
     expect(persist).toHaveBeenCalledWith("fresh edit");
   });
 
+  it("a save resolving after reset neither confirms nor blocks later edits", async () => {
+    vi.useFakeTimers();
+    const inFlight = deferred();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockReturnValueOnce(inFlight.promise)
+      .mockResolvedValueOnce(AsyncResult.success(undefined));
+    const onConfirmed = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed,
+    });
+
+    coordinator.change("pre-upload snapshot");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(persist).toHaveBeenCalledOnce();
+
+    coordinator.reset();
+    inFlight.resolve(AsyncResult.success(undefined));
+    await vi.runAllTimersAsync();
+    expect(onConfirmed).not.toHaveBeenCalled();
+
+    coordinator.change("post-upload edit");
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist).toHaveBeenLastCalledWith("post-upload edit");
+    expect(onConfirmed).toHaveBeenCalledWith("post-upload edit");
+  });
+
+  it("an edit made after reset saves once the stale write resolves", async () => {
+    vi.useFakeTimers();
+    const inFlight = deferred();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockReturnValueOnce(inFlight.promise)
+      .mockResolvedValueOnce(AsyncResult.success(undefined));
+    const onConfirmed = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed,
+    });
+
+    coordinator.change("pre-upload snapshot");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(persist).toHaveBeenCalledOnce();
+
+    coordinator.reset();
+    coordinator.change("edited while the stale write was in flight");
+    inFlight.resolve(AsyncResult.success(undefined));
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist).toHaveBeenLastCalledWith("edited while the stale write was in flight");
+    expect(onConfirmed).toHaveBeenCalledOnce();
+    expect(onConfirmed).toHaveBeenCalledWith("edited while the stale write was in flight");
+  });
+
   it("suspend holds saves and resume persists the held edits", async () => {
     vi.useFakeTimers();
     const persist = vi

@@ -16,6 +16,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   private saving = false;
   private disposed = false;
   private suspendCount = 0;
+  private generation = 0;
 
   constructor(private readonly options: FileSaveCoordinatorOptions<A, E>) {}
 
@@ -48,6 +49,10 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
    * where the surface reloads the new contents and editing continues.
    */
   reset(): void {
+    // A save already on the wire belongs to the replaced file; bumping the
+    // generation makes its completion drop the result instead of advancing
+    // the zeroed watermark or confirming stale contents.
+    this.generation += 1;
     this.suspendCount = 0;
     this.clearTimer();
     this.latestRevision = 0;
@@ -101,15 +106,23 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     this.saving = true;
     const contents = this.latestContents;
     const revision = this.latestRevision;
+    const generation = this.generation;
     const result = await this.options.persist(contents);
-    const succeeded = result._tag === "Success";
+    // A reset while the write was on the wire replaced the file under this
+    // snapshot: the result describes bytes that no longer exist, so it must
+    // not advance the watermark or confirm the pre-replacement contents.
+    const stale = generation !== this.generation;
+    const succeeded = !stale && result._tag === "Success";
     if (succeeded) {
       this.persistedRevision = revision;
       this.options.onConfirmed(contents);
     }
 
     this.saving = false;
-    if (revision === this.latestRevision) {
+    if (stale && this.latestRevision <= this.persistedRevision) {
+      return;
+    }
+    if (!stale && revision === this.latestRevision) {
       if (succeeded) this.options.onPendingChange(false);
       return;
     }
