@@ -730,10 +730,14 @@ it.layer(LinklessTestLayer, { excludeTestServices: true })(
 // Simulates a linkless volume whose rename also fails; when rivalBytesOnRename
 // holds bytes, the rename first replaces the target with them, standing in for
 // a confirmed overwrite landing between the claim and the rename. When
-// statErrorPath names a path, stat of that exact path fails, standing in for
-// a volume fault between the claim and the inode capture.
+// statErrorPath names a path, the next stat of that exact path fails once,
+// standing in for a transient volume fault between the claim and the inode
+// capture; when rivalBytesOnStatError holds bytes, the failing stat first
+// replaces the path with them, standing in for a confirmed overwrite landing
+// in that same window.
 const rivalBytesOnRename: { current: Uint8Array | null } = { current: null };
 const statErrorPath: { current: string | null } = { current: null };
+const rivalBytesOnStatError: { current: Uint8Array | null } = { current: null };
 const brokenRenameFileSystemLayer = Layer.effect(
   FileSystem.FileSystem,
   Effect.gen(function* () {
@@ -741,18 +745,27 @@ const brokenRenameFileSystemLayer = Layer.effect(
     return FileSystem.FileSystem.of({
       ...real,
       stat: (statPath) =>
-        statPath === statErrorPath.current
-          ? Effect.fail(
-              PlatformError.systemError({
-                _tag: "Unknown",
-                module: "FileSystem",
-                method: "stat",
-                syscall: "stat",
-                pathOrDescriptor: statPath,
-                description: "EIO: the volume failed the stat",
-              }),
-            )
-          : real.stat(statPath),
+        Effect.suspend(() => {
+          if (statPath !== statErrorPath.current) {
+            return real.stat(statPath);
+          }
+          statErrorPath.current = null;
+          const rival = rivalBytesOnStatError.current;
+          if (rival) {
+            NodeFS.rmSync(statPath, { force: true });
+            NodeFS.writeFileSync(statPath, rival);
+          }
+          return Effect.fail(
+            PlatformError.systemError({
+              _tag: "Unknown",
+              module: "FileSystem",
+              method: "stat",
+              syscall: "stat",
+              pathOrDescriptor: statPath,
+              description: "EIO: the volume failed the stat",
+            }),
+          );
+        }),
       link: (_fromPath, toPath) =>
         Effect.fail(
           PlatformError.systemError({
@@ -893,6 +906,39 @@ it.layer(BrokenRenameTestLayer, { excludeTestServices: true })(
         Effect.ensuring(
           Effect.sync(() => {
             statErrorPath.current = null;
+          }),
+        ),
+      ),
+    );
+
+    // A confirmed overwrite can replace the claim in the same window the stat
+    // fault covers; the reclaim must not delete the rival's stored file.
+    it.effect("keeps a rival's overwrite when the claim-inode stat fails", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+        statErrorPath.current = path.join(cwd, "src/renamed.md");
+        rivalBytesOnStatError.current = new TextEncoder().encode("rival\n");
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/source.md",
+            newRelativePath: "src/renamed.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryError);
+        expect(error).toMatchObject({ stage: "rename" });
+        expect(NodeFS.readFileSync(path.join(cwd, "src/renamed.md"), "utf8")).toBe("rival\n");
+        expect(NodeFS.existsSync(path.join(cwd, "src/source.md"))).toBe(true);
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            statErrorPath.current = null;
+            rivalBytesOnStatError.current = null;
           }),
         ),
       ),
