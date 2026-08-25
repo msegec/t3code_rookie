@@ -347,6 +347,33 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    // A hard-linked target reaches the same-inode path a case-only rename
+    // takes on a case-insensitive filesystem, deterministically on Linux.
+    it.effect("renames onto another name of the same file without destroying it", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+        yield* fileSystem
+          .link(path.join(cwd, "src/notes.md"), path.join(cwd, "src/Notes.md"))
+          .pipe(Effect.orDie);
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/notes.md",
+          newRelativePath: "src/Notes.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/Notes.md" });
+        const renamed = yield* fileSystem
+          .readFileString(path.join(cwd, "src/Notes.md"))
+          .pipe(Effect.orDie);
+        expect(renamed).toBe("# Notes\n");
+      }),
+    );
+
     it.effect("rejects renames that leave the source directory", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

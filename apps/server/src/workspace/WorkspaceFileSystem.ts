@@ -27,6 +27,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -344,6 +345,26 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // A link conflict can be the source itself seen under another name, either
+  // a case variant on a case-insensitive filesystem or a pre-existing hard
+  // link; the same device and inode identifies it. Stat failures count as a
+  // genuine conflict, the safe reading.
+  const isSameFile = Effect.fn(function* (leftPath: string, rightPath: string) {
+    const stats = yield* Effect.all([fileSystem.stat(leftPath), fileSystem.stat(rightPath)]).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    if (stats === null) {
+      return false;
+    }
+    const [left, right] = stats;
+    return (
+      left.dev === right.dev &&
+      Option.isSome(left.ino) &&
+      Option.isSome(right.ino) &&
+      left.ino.value === right.ino.value
+    );
+  });
+
   const renameEntry: WorkspaceFileSystem["Service"]["renameEntry"] = Effect.fn(
     "WorkspaceFileSystem.renameEntry",
   )(function* (input) {
@@ -394,28 +415,52 @@ export const make = Effect.gen(function* () {
     }
 
     // rename would replace an existing target; link fails atomically instead,
-    // so a rename can never clobber another entry.
-    const conflict = yield* fileSystem.link(source.absolutePath, target.absolutePath).pipe(
-      Effect.as(false),
-      Effect.catchIf(
-        (error) => error.reason._tag === "AlreadyExists",
-        () => Effect.succeed(true),
-      ),
-      Effect.mapError((cause) => renameError("rename", cause)),
-    );
-    if (conflict) {
-      return yield* new ProjectRenameEntryTargetExistsError({
-        cwd: input.cwd,
-        relativePath: target.relativePath,
-      });
-    }
-    yield* fileSystem.remove(source.absolutePath).pipe(
-      Effect.catch((cause) =>
-        Effect.gen(function* () {
-          yield* fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore);
-          return yield* renameError("rename", cause);
-        }),
-      ),
+    // so a rename can never clobber another entry. The link and the source
+    // removal form one critical section: an interrupt between them would
+    // strand both names on disk, so the pair runs uninterruptibly.
+    yield* Effect.uninterruptible(
+      Effect.gen(function* () {
+        const conflict = yield* fileSystem.link(source.absolutePath, target.absolutePath).pipe(
+          Effect.as(false),
+          Effect.catchIf(
+            (error) => error.reason._tag === "AlreadyExists",
+            () => Effect.succeed(true),
+          ),
+          Effect.mapError((cause) => renameError("rename", cause)),
+        );
+        if (conflict) {
+          // On a case-insensitive filesystem a case-only rename collides with
+          // the source itself. A same-inode target is the source, so rename,
+          // which applies the case change and cannot clobber another entry.
+          const sameFile = yield* isSameFile(source.absolutePath, target.absolutePath);
+          if (!sameFile) {
+            return yield* new ProjectRenameEntryTargetExistsError({
+              cwd: input.cwd,
+              relativePath: target.relativePath,
+            });
+          }
+          return yield* fileSystem
+            .rename(source.absolutePath, target.absolutePath)
+            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+        }
+        yield* fileSystem.remove(source.absolutePath).pipe(
+          // A missing source means something else removed it after the link
+          // landed, leaving the target as the only copy of the data; rolling
+          // the link back would destroy it. Only real removal failures, where
+          // the source still exists, undo the link.
+          Effect.catchIf(
+            (error) => error.reason._tag === "NotFound",
+            () => Effect.void,
+          ),
+          Effect.catchTags({
+            PlatformError: (cause) =>
+              Effect.gen(function* () {
+                yield* fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore);
+                return yield* renameError("rename", cause);
+              }),
+          }),
+        );
+      }),
     );
 
     yield* workspaceEntries.refresh(input.cwd);
