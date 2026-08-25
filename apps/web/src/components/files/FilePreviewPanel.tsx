@@ -1175,15 +1175,27 @@ export default function FilePreviewPanel({
                 clearProjectFileQueryData(environmentId, cwd, from);
                 const store = useRightPanelStore.getState();
                 const panel = selectThreadRightPanelState(store.byThreadKey, threadRef);
-                const wasOpen = panel.surfaces.some((surface) => surface.id === `file:${from}`);
+                const fromSurface = panel.surfaces.find((surface) => surface.id === `file:${from}`);
                 const previousActiveId = panel.activeSurfaceId;
+                const wasPanelOpen = panel.isOpen;
                 store.closeSurface(threadRef, `file:${from}`);
-                if (!wasOpen) return;
-                store.openFile(threadRef, to);
+                if (!fromSurface) return;
+                // The surface a rename replaces keeps its scroll target; a
+                // tab opened at a line reopens at that line, not at the top.
+                const revealLine =
+                  fromSurface.kind === "file" && fromSurface.revealLine !== null
+                    ? fromSurface.revealLine
+                    : undefined;
+                store.openFile(threadRef, to, revealLine);
                 // Renaming a background tab must not steal focus from the
                 // file the user is looking at.
                 if (previousActiveId !== null && previousActiveId !== `file:${from}`) {
                   store.activateSurface(threadRef, previousActiveId);
+                }
+                // The rename RPC can finish after the user closed the panel;
+                // swapping the surface must not override that close.
+                if (!wasPanelOpen) {
+                  store.close(threadRef);
                 }
               }}
             />
