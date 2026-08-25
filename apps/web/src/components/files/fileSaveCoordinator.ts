@@ -31,6 +31,14 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     if (this.latestRevision > 0) void this.persistLatest();
   }
 
+  /** Drop unsaved edits without persisting; for files removed out from under the surface. */
+  discard(): void {
+    this.disposed = true;
+    this.clearTimer();
+    this.latestRevision = 0;
+    this.options.onPendingChange(false);
+  }
+
   private schedule(delay: number): void {
     this.clearTimer();
     this.timer = setTimeout(() => {

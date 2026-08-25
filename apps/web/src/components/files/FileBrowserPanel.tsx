@@ -50,6 +50,10 @@ interface FileBrowserPanelProps {
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
+  /** A rename succeeded; open surfaces for the old path should follow the file. */
+  onEntryRenamed?: (relativePath: string, newRelativePath: string) => void;
+  /** A delete succeeded; open surfaces for the path should close. */
+  onEntryDeleted?: (relativePath: string) => void;
 }
 
 const TREE_UNSAFE_CSS = `
@@ -216,6 +220,8 @@ export default function FileBrowserPanel({
   selectedPathRevealId,
   onOpenFile,
   onRefreshSelectedFile,
+  onEntryRenamed,
+  onEntryDeleted,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
@@ -311,6 +317,7 @@ export default function FileBrowserPanel({
     const name = relativePath.split("/").at(-1) ?? relativePath;
     const confirmed = await readLocalApi()?.dialogs.confirm(
       `Delete ${name}?\nThis permanently deletes the file from the project.`,
+      { variant: "destructive" },
     );
     if (confirmed !== true) return;
     const result = await runAtomCommand(
@@ -321,6 +328,7 @@ export default function FileBrowserPanel({
     );
     if (result._tag === "Success") {
       entriesQuery.refresh();
+      onEntryDeleted?.(relativePath);
       return;
     }
     const failure = Cause.squash(result.cause);
@@ -630,7 +638,10 @@ export default function FileBrowserPanel({
           cwd={cwd}
           relativePath={renameTarget}
           onClose={() => setRenameTarget(null)}
-          onRenamed={() => entriesQuery.refresh()}
+          onRenamed={(newRelativePath) => {
+            entriesQuery.refresh();
+            onEntryRenamed?.(renameTarget, newRelativePath);
+          }}
         />
       ) : null}
     </div>

@@ -37,7 +37,7 @@ export function RenameEntryDialog({
   readonly cwd: string;
   readonly relativePath: string;
   readonly onClose: () => void;
-  readonly onRenamed: () => void;
+  readonly onRenamed: (newRelativePath: string) => void;
 }) {
   const lastSlash = relativePath.lastIndexOf("/");
   const directoryPrefix = lastSlash === -1 ? "" : relativePath.slice(0, lastSlash + 1);
@@ -76,19 +76,20 @@ export function RenameEntryDialog({
     isRenamingRef.current = true;
     setIsRenaming(true);
     setRenameError(null);
+    const newRelativePath = `${directoryPrefix}${candidate}`;
     const result = await runAtomCommand(
       appAtomRegistry,
       projectEnvironment.renameEntry,
       {
         environmentId,
-        input: { cwd, relativePath, newRelativePath: `${directoryPrefix}${candidate}` },
+        input: { cwd, relativePath, newRelativePath },
       },
       { reportFailure: false },
     );
     isRenamingRef.current = false;
     setIsRenaming(false);
     if (result._tag === "Success") {
-      onRenamed();
+      onRenamed(newRelativePath);
       onClose();
       return;
     }

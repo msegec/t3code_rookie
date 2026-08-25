@@ -27,6 +27,7 @@ import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hoo
 import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
 import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Toggle } from "~/components/ui/toggle";
@@ -393,6 +394,8 @@ interface EditableFileSurfaceProps {
   wordWrap: boolean;
   onPostRender: FilePostRender;
   onPendingChange: (relativePath: string, pending: boolean) => void;
+  /** Receives a callback that drops unsaved edits; used when the file is deleted or renamed away. */
+  discardSavesRef?: { current: (() => void) | null } | undefined;
 }
 
 interface FileSelectionOverride {
@@ -405,9 +408,10 @@ function useFileSaveCoordinator({
   cwd,
   relativePath,
   onPendingChange,
+  discardSavesRef,
 }: Pick<
   EditableFileSurfaceProps,
-  "environmentId" | "cwd" | "relativePath" | "onPendingChange"
+  "environmentId" | "cwd" | "relativePath" | "onPendingChange" | "discardSavesRef"
 >): FileSaveCoordinator {
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
   const coordinator = useMemo(
@@ -428,6 +432,13 @@ function useFileSaveCoordinator({
   );
 
   useEffect(() => () => coordinator.dispose(), [coordinator]);
+  useEffect(() => {
+    if (!discardSavesRef) return;
+    discardSavesRef.current = () => coordinator.discard();
+    return () => {
+      discardSavesRef.current = null;
+    };
+  }, [coordinator, discardSavesRef]);
   return coordinator;
 }
 
@@ -442,6 +453,7 @@ function EditableFileSurface({
   wordWrap,
   onPostRender,
   onPendingChange,
+  discardSavesRef,
 }: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
@@ -462,6 +474,7 @@ function EditableFileSurface({
     cwd,
     relativePath,
     onPendingChange,
+    discardSavesRef,
   });
   const editor = useMemo(
     () =>
@@ -707,6 +720,7 @@ function RenderedMarkdownSurface({
   contents,
   threadRef,
   onPendingChange,
+  discardSavesRef,
 }: Omit<
   EditableFileSurfaceProps,
   | "resolvedTheme"
@@ -723,6 +737,7 @@ function RenderedMarkdownSurface({
     cwd,
     relativePath,
     onPendingChange,
+    discardSavesRef,
   });
 
   return (
@@ -797,6 +812,7 @@ export default function FilePreviewPanel({
     null,
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
+  const discardActiveFileSavesRef = useRef<(() => void) | null>(null);
   const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
   // A reveal still wins over the preference: the line only exists in the source.
   const renderMarkdown =
@@ -1019,6 +1035,7 @@ export default function FilePreviewPanel({
                 threadRef={threadRef}
                 contents={file.data.contents}
                 onPendingChange={onPendingChange}
+                discardSavesRef={discardActiveFileSavesRef}
               />
             ) : file.data.truncated ? (
               <Virtualizer
@@ -1059,6 +1076,7 @@ export default function FilePreviewPanel({
                 wordWrap={wordWrap}
                 onPostRender={onFilePostRender}
                 onPendingChange={onPendingChange}
+                discardSavesRef={discardActiveFileSavesRef}
               />
             )
           ) : null}
@@ -1081,6 +1099,20 @@ export default function FilePreviewPanel({
               selectedPathRevealId={revealRequestId}
               onOpenFile={onOpenFile}
               {...(relativePath && !isImage ? { onRefreshSelectedFile: file.refresh } : {})}
+              onEntryDeleted={(path) => {
+                if (path === relativePath) discardActiveFileSavesRef.current?.();
+                useRightPanelStore.getState().closeSurface(threadRef, `file:${path}`);
+              }}
+              onEntryRenamed={(from, to) => {
+                if (from === relativePath) discardActiveFileSavesRef.current?.();
+                const store = useRightPanelStore.getState();
+                const wasOpen = selectThreadRightPanelState(
+                  store.byThreadKey,
+                  threadRef,
+                ).surfaces.some((surface) => surface.id === `file:${from}`);
+                store.closeSurface(threadRef, `file:${from}`);
+                if (wasOpen) store.openFile(threadRef, to);
+              }}
             />
           </aside>
         ) : null}

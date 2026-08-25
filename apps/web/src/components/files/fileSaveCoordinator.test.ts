@@ -91,4 +91,26 @@ describe("FileSaveCoordinator", () => {
     expect(onPendingChange).toHaveBeenCalledWith(true);
     expect(onPendingChange).not.toHaveBeenCalledWith(false);
   });
+
+  it("discard drops unsaved edits instead of flushing them on dispose", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const onPendingChange = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange,
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("doomed");
+    coordinator.discard();
+    coordinator.dispose();
+    await vi.runAllTimersAsync();
+
+    expect(persist).not.toHaveBeenCalled();
+    expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
+  });
 });
