@@ -11,10 +11,11 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private latestContents = "";
   private latestRevision = 0;
+  private persistedRevision = 0;
   private lastChangeAt = 0;
   private saving = false;
   private disposed = false;
-  private suspended = false;
+  private suspendCount = 0;
 
   constructor(private readonly options: FileSaveCoordinatorOptions<A, E>) {}
 
@@ -33,7 +34,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   dispose(): void {
     this.disposed = true;
     this.clearTimer();
-    if (this.latestRevision > 0) void this.persistLatest();
+    if (this.latestRevision > this.persistedRevision) void this.persistLatest();
   }
 
   /** Drop unsaved edits without persisting; for files removed out from under the surface. */
@@ -47,27 +48,35 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
    * where the surface reloads the new contents and editing continues.
    */
   reset(): void {
-    this.suspended = false;
+    this.suspendCount = 0;
     this.clearTimer();
     this.latestRevision = 0;
+    this.persistedRevision = 0;
     this.options.onPendingChange(false);
   }
 
   /**
-   * Hold pending edits while a rename or delete runs, so a save cannot land
-   * mid-mutation. The mutation's outcome decides what follows: discard() on
-   * success, resume() on failure.
+   * Hold pending edits while a rename, delete, or overwrite upload runs, so a
+   * save cannot land mid-mutation. Holds count: overlapping mutations of the
+   * same file each take one, and saving stays held until every one has been
+   * released by discard(), reset(), or resume().
    */
   suspend(): void {
-    this.suspended = true;
+    this.suspendCount += 1;
     this.clearTimer();
   }
 
-  /** Reinstate saving after a failed rename or delete left the file in place. */
+  /**
+   * Release one hold after a failed mutation left the file in place. Only
+   * edits newer than the last successful save reschedule; a snapshot that
+   * already persisted must not overwrite what another writer put on disk
+   * since.
+   */
   resume(): void {
-    if (!this.suspended) return;
-    this.suspended = false;
-    if (this.latestRevision > 0) this.schedule(0);
+    if (this.suspendCount === 0) return;
+    this.suspendCount -= 1;
+    if (this.suspendCount > 0) return;
+    if (this.latestRevision > this.persistedRevision) this.schedule(0);
   }
 
   private schedule(delay: number): void {
@@ -85,7 +94,9 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   }
 
   private async persistLatest(): Promise<void> {
-    if (this.suspended || this.saving || this.latestRevision === 0) return;
+    if (this.suspendCount > 0 || this.saving || this.latestRevision <= this.persistedRevision) {
+      return;
+    }
 
     this.saving = true;
     const contents = this.latestContents;
@@ -93,6 +104,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     const result = await this.options.persist(contents);
     const succeeded = result._tag === "Success";
     if (succeeded) {
+      this.persistedRevision = revision;
       this.options.onConfirmed(contents);
     }
 

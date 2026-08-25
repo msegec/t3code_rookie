@@ -208,6 +208,77 @@ describe("FileSaveCoordinator", () => {
     expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
   });
 
+  it("resume does not re-persist a snapshot that already saved", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("saved before the mutation");
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledOnce();
+
+    coordinator.suspend();
+    coordinator.resume();
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledOnce();
+  });
+
+  it("resume persists an edit made after the last successful save", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("saved");
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledOnce();
+
+    coordinator.change("edited during the mutation window");
+    coordinator.suspend();
+    coordinator.resume();
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist).toHaveBeenLastCalledWith("edited during the mutation window");
+  });
+
+  it("overlapping suspends hold saves until the last resume", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("held");
+    coordinator.suspend();
+    coordinator.suspend();
+    coordinator.resume();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(persist).not.toHaveBeenCalled();
+
+    coordinator.resume();
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith("held");
+  });
+
   it("dispose while suspended does not flush behind a pending mutation", async () => {
     vi.useFakeTimers();
     const persist = vi

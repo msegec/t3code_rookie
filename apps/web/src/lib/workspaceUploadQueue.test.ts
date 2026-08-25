@@ -297,6 +297,102 @@ describe("workspaceUploadQueue", () => {
     expect(TestXmlHttpRequest.requests).toHaveLength(0);
   });
 
+  it("fires onOverwriteStart at conflict discovery, before the confirm dialog opens", async () => {
+    const events: string[] = [];
+    mocks.runAtomCommand.mockImplementation(
+      async (
+        _registry: unknown,
+        command: unknown,
+        target: { readonly input: { readonly relativePath: string } },
+      ) => {
+        if (command !== mocks.createUploadUrl) throw new Error("unexpected command");
+        return targetExistsFailure(target.input.relativePath);
+      },
+    );
+    let resolveConfirm!: (value: boolean) => void;
+    mocks.requestConfirmDialog.mockImplementation(() => {
+      events.push("dialog");
+      return new Promise<boolean>((resolve) => {
+        resolveConfirm = resolve;
+      });
+    });
+
+    startWorkspaceUploads({
+      environmentId,
+      cwd,
+      files: [makeFile("existing.txt")],
+      onUploaded: vi.fn(),
+      onOverwriteStart: () => events.push("overwrite-start"),
+      onSettled: () => events.push("settled"),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events).toEqual(["overwrite-start", "dialog"]);
+
+    resolveConfirm(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events).toEqual(["overwrite-start", "dialog", "settled"]);
+  });
+
+  it("does not fire onSettled for uploads that never hit a conflict", async () => {
+    const onSettled = vi.fn();
+    startWorkspaceUploads({
+      environmentId,
+      cwd,
+      files: [makeFile("notes.txt")],
+      onUploaded: vi.fn(),
+      onSettled,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    TestXmlHttpRequest.requests[0]!.complete();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(findUpload("notes.txt")).toBeUndefined();
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it("retry leaves the overwrite phase, so a conflict-free retry does not settle again", async () => {
+    mocks.runAtomCommand.mockResolvedValueOnce(targetExistsFailure("existing.txt"));
+    mocks.requestConfirmDialog.mockResolvedValue(false);
+    const onSettled = vi.fn();
+    startWorkspaceUploads({
+      environmentId,
+      cwd,
+      files: [makeFile("existing.txt")],
+      onUploaded: vi.fn(),
+      onSettled,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onSettled).toHaveBeenCalledTimes(1);
+
+    const [uploadId] = findUpload("existing.txt")!;
+    retryWorkspaceUpload(uploadId);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    TestXmlHttpRequest.requests[0]!.complete();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(uploadsById()[uploadId]).toBeUndefined();
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
   it("cancelWorkspaceUpload aborts the in-flight XHR and removes the entry", async () => {
     const file = makeFile("cancel-me.txt");
     startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded: vi.fn() });

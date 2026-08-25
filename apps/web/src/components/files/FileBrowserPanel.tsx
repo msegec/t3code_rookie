@@ -256,10 +256,11 @@ export default function FileBrowserPanel({
         environmentId,
         cwd,
         files,
-        // A confirmed overwrite replaces the open file's bytes outside the
-        // serial save lane, so pending saves hold from the confirmation until
-        // the job settles. A successful upload re-arms saves through
-        // onEntryUploaded's reset, which makes the settle release a no-op.
+        // An overwrite upload replaces the open file's bytes outside the
+        // serial save lane, so pending saves hold from conflict discovery,
+        // before the confirm dialog opens, until the job settles. A successful
+        // upload re-arms saves through onEntryUploaded's reset, which makes
+        // the settle release a no-op.
         onOverwriteStart: (relativePath) => {
           onEntryMutationStart?.(relativePath);
         },

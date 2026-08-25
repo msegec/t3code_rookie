@@ -52,6 +52,7 @@ interface UploadJob {
   readonly onOverwriteStart: ((relativePath: string) => void) | undefined;
   readonly onSettled: ((relativePath: string) => void) | undefined;
   overwrite: boolean;
+  overwriteStarted: boolean;
   cancelled: boolean;
   abort: (() => void) | null;
 }
@@ -120,6 +121,12 @@ async function runUpload(job: UploadJob): Promise<void> {
       return;
     }
 
+    // The overwrite phase begins at conflict discovery rather than at
+    // confirmation: a debounced save could otherwise fire while the confirm
+    // dialog is open and land after the upload replaces the bytes.
+    job.overwriteStarted = true;
+    job.onOverwriteStart?.(job.relativePath);
+
     const confirmed = await readLocalApi()?.dialogs.confirm(
       `Replace ${job.relativePath}?\nA file named '${job.relativePath}' already exists in this project.`,
       { variant: "destructive" },
@@ -134,9 +141,6 @@ async function runUpload(job: UploadJob): Promise<void> {
     }
 
     job.overwrite = true;
-    // The upload replaces the target's bytes outside the serial save lane, so
-    // pending saves of the file hold from here until the job settles.
-    job.onOverwriteStart?.(job.relativePath);
     minted = await mintUploadUrl(job);
     if (job.cancelled) {
       jobsById.delete(job.id);
@@ -225,11 +229,15 @@ function pumpUploads(): void {
         }
       })
       .finally(() => {
-        try {
-          job.onSettled?.(job.relativePath);
-        } catch (error) {
-          // A throwing settle callback must not stall the queue.
-          console.error(error);
+        // Settle pairs with onOverwriteStart: only jobs that entered the
+        // overwrite phase took a save hold, so only those release one.
+        if (job.overwriteStarted) {
+          try {
+            job.onSettled?.(job.relativePath);
+          } catch (error) {
+            // A throwing settle callback must not stall the queue.
+            console.error(error);
+          }
         }
         const remaining = (activeUploadsByEnvironment.get(job.environmentId) ?? 1) - 1;
         if (remaining > 0) {
@@ -247,9 +255,9 @@ export function startWorkspaceUploads(input: {
   readonly cwd: string;
   readonly files: ReadonlyArray<File>;
   readonly onUploaded: (relativePath: string) => void;
-  /** An overwrite of the path was confirmed and is about to run. */
+  /** The path collided with an existing file; the confirm dialog is about to open. */
   readonly onOverwriteStart?: (relativePath: string) => void;
-  /** The job reached a terminal state: stored, failed, or cancelled. */
+  /** A job that fired onOverwriteStart reached a terminal state: stored, failed, or cancelled. */
   readonly onSettled?: (relativePath: string) => void;
 }): void {
   for (const file of input.files) {
@@ -268,6 +276,7 @@ export function startWorkspaceUploads(input: {
       onOverwriteStart: input.onOverwriteStart,
       onSettled: input.onSettled,
       overwrite: false,
+      overwriteStarted: false,
       cancelled: false,
       abort: null,
     };
@@ -317,6 +326,7 @@ export function retryWorkspaceUpload(uploadId: string): void {
   // The target may have changed since the original confirmation, so a retry
   // re-confirms an overwrite instead of carrying the earlier answer over.
   job.overwrite = false;
+  job.overwriteStarted = false;
   setUploadState(job.id, {
     status: "uploading",
     name: job.file.name,
