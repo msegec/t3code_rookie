@@ -60,6 +60,7 @@ import { fileBreadcrumbs } from "./filePath";
 import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import {
+  clearProjectFileQueryData,
   confirmProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
@@ -813,6 +814,20 @@ export default function FilePreviewPanel({
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const discardActiveFileSavesRef = useRef<(() => void) | null>(null);
+  // The delete and rename callbacks below can fire after a thread switch, when
+  // discardActiveFileSavesRef already points at the new thread's editor. This
+  // ref tracks what that editor shows now, so a stale callback cannot discard
+  // an unrelated file's pending edits.
+  const activeEditorFileRef = useRef({ environmentId, cwd, relativePath });
+  useEffect(() => {
+    activeEditorFileRef.current = { environmentId, cwd, relativePath };
+  });
+  const editorShowsFile = (path: string) => {
+    const active = activeEditorFileRef.current;
+    return (
+      active.environmentId === environmentId && active.cwd === cwd && active.relativePath === path
+    );
+  };
   const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
   // A reveal still wins over the preference: the line only exists in the source.
   const renderMarkdown =
@@ -1100,18 +1115,25 @@ export default function FilePreviewPanel({
               onOpenFile={onOpenFile}
               {...(relativePath && !isImage ? { onRefreshSelectedFile: file.refresh } : {})}
               onEntryDeleted={(path) => {
-                if (path === relativePath) discardActiveFileSavesRef.current?.();
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.();
+                clearProjectFileQueryData(environmentId, cwd, path);
                 useRightPanelStore.getState().closeSurface(threadRef, `file:${path}`);
               }}
               onEntryRenamed={(from, to) => {
-                if (from === relativePath) discardActiveFileSavesRef.current?.();
+                if (editorShowsFile(from)) discardActiveFileSavesRef.current?.();
+                clearProjectFileQueryData(environmentId, cwd, from);
                 const store = useRightPanelStore.getState();
-                const wasOpen = selectThreadRightPanelState(
-                  store.byThreadKey,
-                  threadRef,
-                ).surfaces.some((surface) => surface.id === `file:${from}`);
+                const panel = selectThreadRightPanelState(store.byThreadKey, threadRef);
+                const wasOpen = panel.surfaces.some((surface) => surface.id === `file:${from}`);
+                const previousActiveId = panel.activeSurfaceId;
                 store.closeSurface(threadRef, `file:${from}`);
-                if (wasOpen) store.openFile(threadRef, to);
+                if (!wasOpen) return;
+                store.openFile(threadRef, to);
+                // Renaming a background tab must not steal focus from the
+                // file the user is looking at.
+                if (previousActiveId !== null && previousActiveId !== `file:${from}`) {
+                  store.activateSurface(threadRef, previousActiveId);
+                }
               }}
             />
           </aside>
