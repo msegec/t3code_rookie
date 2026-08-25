@@ -1,3 +1,10 @@
+/** A non-2xx response; carries the status so callers can react to specific codes. */
+export class UploadRejectedError extends Error {
+  constructor(readonly status: number) {
+    super(`Upload rejected (${status})`);
+  }
+}
+
 export function uploadXhr(input: {
   readonly url: string;
   readonly file: File;
@@ -21,7 +28,7 @@ export function uploadXhr(input: {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        reject(new Error(`Upload rejected (${xhr.status})`));
+        reject(new UploadRejectedError(xhr.status));
       }
     });
     xhr.addEventListener("error", () => reject(new Error("Upload failed")));
