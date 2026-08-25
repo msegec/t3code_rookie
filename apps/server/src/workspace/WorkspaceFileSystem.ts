@@ -429,9 +429,6 @@ export const make = Effect.gen(function* () {
           Effect.mapError((cause) => renameError("rename", cause)),
         );
         if (conflict) {
-          // On a case-insensitive filesystem a case-only rename collides with
-          // the source itself. A same-inode target is the source, so rename,
-          // which applies the case change and cannot clobber another entry.
           const sameFile = yield* isSameFile(source.absolutePath, target.absolutePath);
           if (!sameFile) {
             return yield* new ProjectRenameEntryTargetExistsError({
@@ -439,9 +436,35 @@ export const make = Effect.gen(function* () {
               relativePath: target.relativePath,
             });
           }
-          return yield* fileSystem
-            .rename(source.absolutePath, target.absolutePath)
+          // The conflicting target is another name of the source's own inode.
+          // The directory listing reports exact on-disk names and tells the
+          // two shapes apart. Both names listed is a pre-existing hard link
+          // pair, where POSIX rename over another name of the same file is a
+          // no-op, so removing the source entry completes the rename. Only
+          // the source listed is the source under another casing on a
+          // case-insensitive filesystem, where rename applies the case
+          // change. Otherwise the source entry is gone or already carries
+          // the target casing, and the target name holds the data.
+          const siblingNames = yield* fileSystem
+            .readDirectory(path.dirname(source.absolutePath))
             .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+          const sourceListed = siblingNames.includes(path.basename(source.absolutePath));
+          const targetListed = siblingNames.includes(path.basename(target.absolutePath));
+          if (sourceListed && targetListed) {
+            return yield* fileSystem.remove(source.absolutePath).pipe(
+              Effect.catchIf(
+                (error) => error.reason._tag === "NotFound",
+                () => Effect.void,
+              ),
+              Effect.mapError((cause) => renameError("rename", cause)),
+            );
+          }
+          if (sourceListed) {
+            return yield* fileSystem
+              .rename(source.absolutePath, target.absolutePath)
+              .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+          }
+          return;
         }
         yield* fileSystem.remove(source.absolutePath).pipe(
           // A missing source means something else removed it after the link

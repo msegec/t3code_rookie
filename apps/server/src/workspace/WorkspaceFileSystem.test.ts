@@ -371,6 +371,8 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           .readFileString(path.join(cwd, "src/Notes.md"))
           .pipe(Effect.orDie);
         expect(renamed).toBe("# Notes\n");
+        const sourceExists = yield* fileSystem.exists(path.join(cwd, "src/notes.md"));
+        expect(sourceExists).toBe(false);
       }),
     );
 
