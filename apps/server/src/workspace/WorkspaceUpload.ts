@@ -279,20 +279,21 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
         detail: "Upload path resolves outside the project.",
       } satisfies StoreWorkspaceUploadResult;
     }
-    yield* fileSystem.writeFile(partPath, bytes);
     if (claims.overwrite) {
+      yield* fileSystem.writeFile(partPath, bytes);
       yield* fileSystem.rename(partPath, target.absolutePath);
     } else {
-      // rename replaces a file created after the exists check above; link fails
-      // atomically instead, so concurrent non-overwrite uploads cannot clobber.
-      const conflict = yield* fileSystem.link(partPath, target.absolutePath).pipe(
+      // rename replaces a file created after the exists check above; an O_EXCL
+      // create fails atomically instead, so concurrent non-overwrite uploads
+      // cannot clobber. Hard links would too, but FAT and exFAT volumes reject
+      // them.
+      const conflict = yield* fileSystem.writeFile(target.absolutePath, bytes, { flag: "wx" }).pipe(
         Effect.as(false),
         Effect.catchIf(
           (error) => error.reason._tag === "AlreadyExists",
           () => Effect.succeed(true),
         ),
       );
-      yield* fileSystem.remove(partPath, { force: true });
       if (conflict) {
         return {
           ok: false,
