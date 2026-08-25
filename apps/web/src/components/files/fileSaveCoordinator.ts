@@ -14,6 +14,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   private lastChangeAt = 0;
   private saving = false;
   private disposed = false;
+  private suspended = false;
 
   constructor(private readonly options: FileSaveCoordinatorOptions<A, E>) {}
 
@@ -34,9 +35,27 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   /** Drop unsaved edits without persisting; for files removed out from under the surface. */
   discard(): void {
     this.disposed = true;
+    this.suspended = false;
     this.clearTimer();
     this.latestRevision = 0;
     this.options.onPendingChange(false);
+  }
+
+  /**
+   * Hold pending edits while a rename or delete runs, so a save cannot land
+   * mid-mutation. The mutation's outcome decides what follows: discard() on
+   * success, resume() on failure.
+   */
+  suspend(): void {
+    this.suspended = true;
+    this.clearTimer();
+  }
+
+  /** Reinstate saving after a failed rename or delete left the file in place. */
+  resume(): void {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (this.latestRevision > 0) this.schedule(0);
   }
 
   private schedule(delay: number): void {
@@ -54,7 +73,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   }
 
   private async persistLatest(): Promise<void> {
-    if (this.saving || this.latestRevision === 0) return;
+    if (this.suspended || this.saving || this.latestRevision === 0) return;
 
     this.saving = true;
     const contents = this.latestContents;

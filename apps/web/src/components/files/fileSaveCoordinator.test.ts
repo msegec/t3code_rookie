@@ -113,4 +113,72 @@ describe("FileSaveCoordinator", () => {
     expect(persist).not.toHaveBeenCalled();
     expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
   });
+
+  it("suspend holds saves and resume persists the held edits", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const onPendingChange = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange,
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("held");
+    coordinator.suspend();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(persist).not.toHaveBeenCalled();
+
+    coordinator.resume();
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith("held");
+    expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
+  });
+
+  it("suspend then discard drops the held edits", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const onPendingChange = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange,
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("doomed");
+    coordinator.suspend();
+    coordinator.discard();
+    coordinator.dispose();
+    await vi.runAllTimersAsync();
+
+    expect(persist).not.toHaveBeenCalled();
+    expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
+  });
+
+  it("dispose while suspended does not flush behind a pending mutation", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("unflushed");
+    coordinator.suspend();
+    coordinator.dispose();
+    await vi.runAllTimersAsync();
+
+    expect(persist).not.toHaveBeenCalled();
+  });
 });

@@ -23,6 +23,7 @@ export function RenameEntryDialog({
   relativePath,
   onClose,
   onRenameStart,
+  onRenameFailed,
   onRenamed,
 }: {
   readonly environmentId: EnvironmentId;
@@ -31,6 +32,8 @@ export function RenameEntryDialog({
   readonly onClose: () => void;
   /** The rename is about to run; pending saves for the path must not enqueue behind it. */
   readonly onRenameStart?: () => void;
+  /** The rename failed and the file kept its name; held saves may run again. */
+  readonly onRenameFailed?: () => void;
   readonly onRenamed: (newRelativePath: string) => void;
 }) {
   const lastSlash = relativePath.lastIndexOf("/");
@@ -88,6 +91,7 @@ export function RenameEntryDialog({
       onClose();
       return;
     }
+    onRenameFailed?.();
     setRenameError(
       isProjectRenameEntryTargetExistsError(Cause.squash(result.cause))
         ? "A file with that name already exists."

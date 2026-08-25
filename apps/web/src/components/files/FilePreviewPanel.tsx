@@ -395,8 +395,17 @@ interface EditableFileSurfaceProps {
   wordWrap: boolean;
   onPostRender: FilePostRender;
   onPendingChange: (relativePath: string, pending: boolean) => void;
-  /** Receives a callback that drops unsaved edits; used when the file is deleted or renamed away. */
-  discardSavesRef?: { current: (() => void) | null } | undefined;
+  /**
+   * Receives the active editor's save controls: suspend before a rename or
+   * delete, then discard on success or resume on failure.
+   */
+  discardSavesRef?: { current: FileSaveControls | null } | undefined;
+}
+
+interface FileSaveControls {
+  suspend: () => void;
+  resume: () => void;
+  discard: () => void;
 }
 
 interface FileSelectionOverride {
@@ -435,7 +444,11 @@ function useFileSaveCoordinator({
   useEffect(() => () => coordinator.dispose(), [coordinator]);
   useEffect(() => {
     if (!discardSavesRef) return;
-    discardSavesRef.current = () => coordinator.discard();
+    discardSavesRef.current = {
+      suspend: () => coordinator.suspend(),
+      resume: () => coordinator.resume(),
+      discard: () => coordinator.discard(),
+    };
     return () => {
       discardSavesRef.current = null;
     };
@@ -813,7 +826,7 @@ export default function FilePreviewPanel({
     null,
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
-  const discardActiveFileSavesRef = useRef<(() => void) | null>(null);
+  const discardActiveFileSavesRef = useRef<FileSaveControls | null>(null);
   // The delete and rename callbacks below can fire after a thread switch, when
   // discardActiveFileSavesRef already points at the new thread's editor. This
   // ref tracks what that editor shows now, so a stale callback cannot discard
@@ -1115,15 +1128,18 @@ export default function FilePreviewPanel({
               onOpenFile={onOpenFile}
               {...(relativePath && !isImage ? { onRefreshSelectedFile: file.refresh } : {})}
               onEntryMutationStart={(path) => {
-                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.();
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.suspend();
+              }}
+              onEntryMutationFailed={(path) => {
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.resume();
               }}
               onEntryDeleted={(path) => {
-                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.();
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.discard();
                 clearProjectFileQueryData(environmentId, cwd, path);
                 useRightPanelStore.getState().closeSurface(threadRef, `file:${path}`);
               }}
               onEntryRenamed={(from, to) => {
-                if (editorShowsFile(from)) discardActiveFileSavesRef.current?.();
+                if (editorShowsFile(from)) discardActiveFileSavesRef.current?.discard();
                 clearProjectFileQueryData(environmentId, cwd, from);
                 const store = useRightPanelStore.getState();
                 const panel = selectThreadRightPanelState(store.byThreadKey, threadRef);

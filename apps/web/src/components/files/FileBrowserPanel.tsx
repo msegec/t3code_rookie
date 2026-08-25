@@ -54,9 +54,11 @@ interface FileBrowserPanelProps {
    * A rename or delete is about to run. Saves and mutations share one serial
    * per-path command queue, so a save enqueued during the mutation would land
    * after it and recreate the file; pending saves for the path must be
-   * dropped before the mutation enqueues.
+   * held before the mutation enqueues.
    */
   onEntryMutationStart?: (relativePath: string) => void;
+  /** The mutation failed and the file is still in place; held saves may run again. */
+  onEntryMutationFailed?: (relativePath: string) => void;
   /** A rename succeeded; open surfaces for the old path should follow the file. */
   onEntryRenamed?: (relativePath: string, newRelativePath: string) => void;
   /** A delete succeeded; open surfaces for the path should close. */
@@ -228,6 +230,7 @@ export default function FileBrowserPanel({
   onOpenFile,
   onRefreshSelectedFile,
   onEntryMutationStart,
+  onEntryMutationFailed,
   onEntryRenamed,
   onEntryDeleted,
 }: FileBrowserPanelProps) {
@@ -340,6 +343,7 @@ export default function FileBrowserPanel({
       onEntryDeleted?.(relativePath);
       return;
     }
+    onEntryMutationFailed?.(relativePath);
     const failure = Cause.squash(result.cause);
     toastManager.add({
       type: "error",
@@ -648,6 +652,7 @@ export default function FileBrowserPanel({
           relativePath={renameTarget}
           onClose={() => setRenameTarget(null)}
           onRenameStart={() => onEntryMutationStart?.(renameTarget)}
+          onRenameFailed={() => onEntryMutationFailed?.(renameTarget)}
           onRenamed={(newRelativePath) => {
             entriesQuery.refresh();
             onEntryRenamed?.(renameTarget, newRelativePath);
