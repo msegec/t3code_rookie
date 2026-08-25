@@ -408,6 +408,7 @@ export class ProjectRenameEntryTargetExistsError extends Schema.TaggedErrorClass
 
 export const ProjectRenameEntryStage = Schema.Literals([
   "resolve-path",
+  "escapes-root",
   "not-a-file",
   "cross-directory",
   "rename",
@@ -425,6 +426,8 @@ function projectRenameEntryStageMessage(props: ProjectRenameEntryFailureContext)
   switch (props.stage) {
     case "resolve-path":
       return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "escapes-root":
+      return `'${props.relativePath}' resolves outside the project.`;
     case "not-a-file":
       return `'${props.relativePath}' is not a file.`;
     case "cross-directory":
@@ -458,7 +461,12 @@ export const ProjectDeleteEntryInput = Schema.Struct({
 });
 export type ProjectDeleteEntryInput = typeof ProjectDeleteEntryInput.Type;
 
-export const ProjectDeleteEntryStage = Schema.Literals(["resolve-path", "not-a-file", "remove"]);
+export const ProjectDeleteEntryStage = Schema.Literals([
+  "resolve-path",
+  "escapes-root",
+  "not-a-file",
+  "remove",
+]);
 export type ProjectDeleteEntryStage = typeof ProjectDeleteEntryStage.Type;
 
 type ProjectDeleteEntryFailureContext = {
@@ -472,6 +480,8 @@ function projectDeleteEntryStageMessage(props: ProjectDeleteEntryFailureContext)
   switch (props.stage) {
     case "resolve-path":
       return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "escapes-root":
+      return `'${props.relativePath}' resolves outside the project.`;
     case "not-a-file":
       return `'${props.relativePath}' is not a file; only files can be deleted from the files view.`;
     case "remove":

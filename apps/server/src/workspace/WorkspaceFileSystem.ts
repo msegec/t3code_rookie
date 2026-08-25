@@ -401,10 +401,7 @@ export const make = Effect.gen(function* () {
       path.dirname(source.absolutePath),
     ).pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
     if (escapes) {
-      return yield* renameError(
-        "resolve-path",
-        `'${source.relativePath}' resolves outside the project.`,
-      );
+      return yield* renameError("escapes-root");
     }
 
     // Renaming a file onto its own exact path is a no-op. Without this guard
@@ -524,10 +521,7 @@ export const make = Effect.gen(function* () {
       return;
     }
     if (escapes) {
-      return yield* deleteError(
-        "resolve-path",
-        `'${target.relativePath}' resolves outside the project.`,
-      );
+      return yield* deleteError("escapes-root");
     }
 
     const targetStat = yield* fileSystem.stat(target.absolutePath).pipe(

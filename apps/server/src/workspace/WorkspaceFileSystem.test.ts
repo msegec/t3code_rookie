@@ -492,7 +492,7 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           .pipe(Effect.flip);
 
         expect(error).toBeInstanceOf(ProjectRenameEntryError);
-        expect(error).toMatchObject({ stage: "resolve-path" });
+        expect(error).toMatchObject({ stage: "escapes-root" });
         const untouched = yield* fileSystem
           .readFileString(path.join(outside, "owned.txt"))
           .pipe(Effect.orDie);
