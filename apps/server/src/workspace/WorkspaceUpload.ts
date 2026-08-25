@@ -178,7 +178,7 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       workspaceRoot: claims.cwd,
       relativePath: claims.relativePath,
     })
-    .pipe(Effect.catchTag("WorkspacePathOutsideRootError", () => Effect.succeed(null)));
+    .pipe(Effect.catchTags({ WorkspacePathOutsideRootError: () => Effect.succeed(null) }));
   if (!target) {
     return {
       ok: false,
