@@ -196,6 +196,51 @@ describe("WorkspaceUpload", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("stores a file whose basename approaches the filename length limit", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const bytes = new Uint8Array([1, 2, 3]);
+      const relativePath = `${"a".repeat(230)}.bin`;
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath,
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toEqual({ ok: true, relativePath });
+      expect(NodeFS.readFileSync(NodePath.join(cwd, relativePath))).toEqual(Buffer.from(bytes));
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("stores into an in-root directory whose name starts with dots", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const bytes = new Uint8Array([4, 5, 6]);
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "..config/file.txt",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toEqual({ ok: true, relativePath: "..config/file.txt" });
+      expect(NodeFS.readFileSync(NodePath.join(cwd, "..config/file.txt"))).toEqual(
+        Buffer.from(bytes),
+      );
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects tampered, malformed, expired, and cross-kind tokens", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempWorkspaceRoot();

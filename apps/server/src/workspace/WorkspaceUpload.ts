@@ -189,14 +189,21 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const partPath = `${target.absolutePath}.${NodeCrypto.randomUUID()}.part`;
+  // The part file lives beside the target under a fixed-length name so a long
+  // target basename cannot push the temporary filename past the 255-byte
+  // filesystem component limit.
+  const partPath = path.join(path.dirname(target.absolutePath), `.${NodeCrypto.randomUUID()}.part`);
   const escapesWorkspaceRoot = Effect.fn(function* (directory: string) {
     const [canonicalRoot, canonicalDir] = yield* Effect.all([
       fileSystem.realPath(claims.cwd),
       fileSystem.realPath(directory),
     ]);
     const relativeDir = path.relative(canonicalRoot, canonicalDir);
-    return relativeDir.startsWith("..") || path.isAbsolute(relativeDir);
+    return (
+      relativeDir === ".." ||
+      relativeDir.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeDir)
+    );
   });
   return yield* Effect.gen(function* () {
     const targetExists = yield* fileSystem.exists(target.absolutePath);
@@ -261,15 +268,11 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
     return { ok: true, relativePath: target.relativePath } satisfies StoreWorkspaceUploadResult;
   }).pipe(
     Effect.catch((cause) =>
-      fileSystem.remove(partPath, { force: true }).pipe(
-        Effect.orElseSucceed(() => undefined),
-        Effect.andThen(
-          Effect.logError("Failed to persist workspace upload.", {
-            cwd: claims.cwd,
-            relativePath: claims.relativePath,
-            cause,
-          }),
-        ),
+      Effect.logError("Failed to persist workspace upload.", {
+        cwd: claims.cwd,
+        relativePath: claims.relativePath,
+        cause,
+      }).pipe(
         Effect.as({
           ok: false,
           status: 500,
@@ -277,5 +280,8 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
         } satisfies StoreWorkspaceUploadResult),
       ),
     ),
+    // Effect.catch does not run on fiber interruption, so the part file is
+    // reclaimed here on every exit, including a client that drops mid-upload.
+    Effect.ensuring(fileSystem.remove(partPath, { force: true }).pipe(Effect.ignore)),
   );
 });
