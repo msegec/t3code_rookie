@@ -9,6 +9,7 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -323,4 +324,69 @@ describe("WorkspaceUpload", () => {
       expect(yield* validateWorkspaceUploadToken(token)).toBeNull();
     }).pipe(Effect.provide(testLayer)),
   );
+
+  it.effect("falls back to an exclusive create when the volume rejects hard links", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const bytes = new Uint8Array([9, 8, 7]);
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "fat.bin",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toEqual({ ok: true, relativePath: "fat.bin" });
+      expect(linkRejections.length).toBeGreaterThan(0);
+      expect(NodeFS.readFileSync(NodePath.join(cwd, "fat.bin"))).toEqual(Buffer.from(bytes));
+      const siblingEntries = NodeFS.readdirSync(cwd);
+      expect(siblingEntries.some((entry) => entry.endsWith(".part"))).toBe(false);
+
+      const conflicted = yield* storeWorkspaceUpload(claims, bytes);
+      expect(conflicted).toEqual({
+        ok: false,
+        status: 409,
+        detail: "A file already exists at this path.",
+      });
+    }).pipe(Effect.provide(linklessTestLayer)),
+  );
 });
+
+const linkRejections: Array<string> = [];
+const linklessFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const real = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...real,
+      link: (fromPath, toPath) => {
+        linkRejections.push(toPath);
+        return Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "link",
+            syscall: "link",
+            pathOrDescriptor: toPath,
+            description: "EPERM: the volume rejects hard links",
+          }),
+        );
+      },
+    });
+  }),
+);
+
+const linklessTestLayer = Layer.empty.pipe(
+  Layer.provideMerge(ServerSecretStore.layer),
+  Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(VcsProcess.layer),
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-workspace-upload-test-" })),
+  Layer.provideMerge(linklessFileSystemLayer),
+  Layer.provideMerge(NodeServices.layer),
+);

@@ -283,23 +283,50 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       yield* fileSystem.writeFile(partPath, bytes);
       yield* fileSystem.rename(partPath, target.absolutePath);
     } else {
-      // rename replaces a file created after the exists check above; an O_EXCL
-      // create fails atomically instead, so concurrent non-overwrite uploads
-      // cannot clobber. Hard links would too, but FAT and exFAT volumes reject
-      // them.
-      const conflict = yield* fileSystem.writeFile(target.absolutePath, bytes, { flag: "wx" }).pipe(
-        Effect.as(false),
+      // rename replaces a file created after the exists check above; linking
+      // the staged part onto the target claims the name atomically instead, so
+      // concurrent non-overwrite uploads cannot clobber and a failed write
+      // never strands a partial target. FAT and exFAT volumes reject hard
+      // links, so those fall back to an O_EXCL create. A pre-existing file
+      // fails that create with AlreadyExists first, so a target still present
+      // after any other failure is the partial one and is removed, keeping a
+      // retry from hitting a stale conflict.
+      yield* fileSystem.writeFile(partPath, bytes);
+      const claim = yield* fileSystem.link(partPath, target.absolutePath).pipe(
+        Effect.as("claimed" as const),
         Effect.catchIf(
           (error) => error.reason._tag === "AlreadyExists",
-          () => Effect.succeed(true),
+          () => Effect.succeed("conflict" as const),
         ),
+        Effect.catch(() => Effect.succeed("unsupported" as const)),
       );
-      if (conflict) {
+      if (claim === "conflict") {
         return {
           ok: false,
           status: 409,
           detail: "A file already exists at this path.",
         } satisfies StoreWorkspaceUploadResult;
+      }
+      if (claim === "unsupported") {
+        const conflict = yield* fileSystem
+          .writeFile(target.absolutePath, bytes, { flag: "wx" })
+          .pipe(
+            Effect.as(false),
+            Effect.catchIf(
+              (error) => error.reason._tag === "AlreadyExists",
+              () => Effect.succeed(true),
+            ),
+            Effect.tapError(() =>
+              fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
+            ),
+          );
+        if (conflict) {
+          return {
+            ok: false,
+            status: 409,
+            detail: "A file already exists at this path.",
+          } satisfies StoreWorkspaceUploadResult;
+        }
       }
     }
 
