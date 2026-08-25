@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 
 import * as ServerConfig from "../config.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -554,3 +555,101 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
     );
   });
 });
+
+const linkRejections: Array<string> = [];
+const linklessFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const real = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...real,
+      link: (fromPath, toPath) => {
+        linkRejections.push(toPath);
+        return Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "link",
+            syscall: "link",
+            pathOrDescriptor: toPath,
+            description: "EPERM: the volume rejects hard links",
+          }),
+        );
+      },
+    });
+  }),
+);
+
+const LinklessTestLayer = Layer.empty.pipe(
+  Layer.provideMerge(ProjectLayer),
+  Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
+  Layer.provide(
+    ServerConfig.ServerConfig.layerTest(process.cwd(), {
+      prefix: "t3-workspace-files-test-",
+    }),
+  ),
+  Layer.provideMerge(linklessFileSystemLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.layer(LinklessTestLayer, { excludeTestServices: true })(
+  "WorkspaceFileSystemLive without hard links",
+  (it) => {
+    it.effect("renames a file when the volume rejects hard links", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/notes.md",
+          newRelativePath: "src/journal.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/journal.md" });
+        expect(linkRejections.length).toBeGreaterThan(0);
+        const renamed = yield* fileSystem
+          .readFileString(path.join(cwd, "src/journal.md"))
+          .pipe(Effect.orDie);
+        expect(renamed).toBe("# Notes\n");
+        const sourceExists = yield* fileSystem.exists(path.join(cwd, "src/notes.md"));
+        expect(sourceExists).toBe(false);
+      }),
+    );
+
+    it.effect("still rejects renaming onto an existing entry without hard links", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+        yield* writeTextFile(cwd, "src/taken.md", "taken\n");
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/source.md",
+            newRelativePath: "src/taken.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryTargetExistsError);
+        expect(error).toMatchObject({ cwd, relativePath: "src/taken.md" });
+        const source = yield* fileSystem
+          .readFileString(path.join(cwd, "src/source.md"))
+          .pipe(Effect.orDie);
+        expect(source).toBe("source\n");
+        const taken = yield* fileSystem
+          .readFileString(path.join(cwd, "src/taken.md"))
+          .pipe(Effect.orDie);
+        expect(taken).toBe("taken\n");
+      }),
+    );
+  },
+);

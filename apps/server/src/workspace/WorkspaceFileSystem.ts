@@ -417,15 +417,50 @@ export const make = Effect.gen(function* () {
     // strand both names on disk, so the pair runs uninterruptibly.
     yield* Effect.uninterruptible(
       Effect.gen(function* () {
-        const conflict = yield* fileSystem.link(source.absolutePath, target.absolutePath).pipe(
-          Effect.as(false),
+        const claim = yield* fileSystem.link(source.absolutePath, target.absolutePath).pipe(
+          Effect.as("linked" as const),
           Effect.catchIf(
             (error) => error.reason._tag === "AlreadyExists",
-            () => Effect.succeed(true),
+            () => Effect.succeed("conflict" as const),
           ),
-          Effect.mapError((cause) => renameError("rename", cause)),
+          // FAT and exFAT volumes reject hard links; a real failure of any
+          // other kind resurfaces from the fallback rename below.
+          Effect.catch(() => Effect.succeed("unsupported" as const)),
         );
-        if (conflict) {
+        if (claim === "unsupported") {
+          // Without hard links there is no atomic no-clobber primitive, so an
+          // exact-name listing plus the volume's own name resolution guard the
+          // target before a plain rename. exists finding the target while the
+          // basenames differ case-insensitively means another entry owns the
+          // name under different casing on a case-insensitive volume; equal
+          // basenames mean the hit is the source itself and the rename is a
+          // case change.
+          const siblingNames = yield* fileSystem
+            .readDirectory(path.dirname(source.absolutePath))
+            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+          if (siblingNames.includes(path.basename(target.absolutePath))) {
+            return yield* new ProjectRenameEntryTargetExistsError({
+              cwd: input.cwd,
+              relativePath: target.relativePath,
+            });
+          }
+          const targetOccupied = yield* fileSystem
+            .exists(target.absolutePath)
+            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+          const caseChangeOnly =
+            path.basename(source.absolutePath).toLowerCase() ===
+            path.basename(target.absolutePath).toLowerCase();
+          if (targetOccupied && !caseChangeOnly) {
+            return yield* new ProjectRenameEntryTargetExistsError({
+              cwd: input.cwd,
+              relativePath: target.relativePath,
+            });
+          }
+          return yield* fileSystem
+            .rename(source.absolutePath, target.absolutePath)
+            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
+        }
+        if (claim === "conflict") {
           const sameFile = yield* isSameFile(source.absolutePath, target.absolutePath);
           if (!sameFile) {
             return yield* new ProjectRenameEntryTargetExistsError({
