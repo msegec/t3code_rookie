@@ -398,6 +398,37 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    // A symlink at the target stats to the source's inode but is its own
+    // entry; treating it as the same file would delete the source and leave
+    // the symlink dangling.
+    it.effect("rejects renaming onto a symlink that points at the source", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+        yield* fileSystem
+          .symlink(path.join(cwd, "src/notes.md"), path.join(cwd, "src/link.md"))
+          .pipe(Effect.orDie);
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/notes.md",
+            newRelativePath: "src/link.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryTargetExistsError);
+        expect(error).toMatchObject({ cwd, relativePath: "src/link.md" });
+        const source = yield* fileSystem
+          .readFileString(path.join(cwd, "src/notes.md"))
+          .pipe(Effect.orDie);
+        expect(source).toBe("# Notes\n");
+      }),
+    );
+
     it.effect("rejects renames that leave the source directory", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

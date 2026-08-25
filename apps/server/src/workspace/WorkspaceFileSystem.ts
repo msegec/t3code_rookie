@@ -27,7 +27,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -347,22 +346,22 @@ export const make = Effect.gen(function* () {
 
   // A link conflict can be the source itself seen under another name, either
   // a case variant on a case-insensitive filesystem or a pre-existing hard
-  // link; the same device and inode identifies it. Stat failures count as a
-  // genuine conflict, the safe reading.
+  // link; the same device and inode identifies it. lstat, not stat: a symlink
+  // pointing at the source is a distinct entry, and following it here would
+  // let the rename delete the source and leave the symlink dangling. Stat
+  // failures count as a genuine conflict, the safe reading.
   const isSameFile = Effect.fn(function* (leftPath: string, rightPath: string) {
-    const stats = yield* Effect.all([fileSystem.stat(leftPath), fileSystem.stat(rightPath)]).pipe(
-      Effect.orElseSucceed(() => null),
-    );
+    const stats = yield* Effect.tryPromise(() =>
+      Promise.all([
+        NodeFSP.lstat(leftPath, { bigint: true }),
+        NodeFSP.lstat(rightPath, { bigint: true }),
+      ]),
+    ).pipe(Effect.orElseSucceed(() => null));
     if (stats === null) {
       return false;
     }
     const [left, right] = stats;
-    return (
-      left.dev === right.dev &&
-      Option.isSome(left.ino) &&
-      Option.isSome(right.ino) &&
-      left.ino.value === right.ino.value
-    );
+    return left.dev === right.dev && left.ino === right.ino;
   });
 
   const renameEntry: WorkspaceFileSystem["Service"]["renameEntry"] = Effect.fn(
