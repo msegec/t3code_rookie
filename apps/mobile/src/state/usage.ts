@@ -19,7 +19,7 @@ import {
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { appAtomRegistry } from "./atom-registry";
 import { environmentPresentations } from "./presentation";
@@ -31,7 +31,18 @@ export interface EnvironmentUsageStatus {
   readonly isPending: boolean;
   readonly error: string | null;
   readonly summary: UsageSummary | null;
+  /** Connection is live, so the environment will eventually answer. */
+  readonly connected: boolean;
+  /** Unreachable past the scan deadline; excluded from totals unless it answers later. */
+  readonly offline: boolean;
 }
+
+/**
+ * How long an unreachable device may hold the page. Past this, devices without
+ * a live connection show as offline and the totals move on; a connected device
+ * that is still scanning keeps its wait.
+ */
+const OFFLINE_DEADLINE_MS = 7_500;
 
 /**
  * Reads every environment's summary for one window.
@@ -54,6 +65,8 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         isPending: result.waiting,
         error: result._tag === "Failure" ? "This environment could not report usage." : null,
         summary: Option.getOrNull(AsyncResult.value(result)),
+        connected: presentation.connection.phase === "connected",
+        offline: false,
       });
     }
     return statuses;
@@ -67,8 +80,8 @@ export interface UsageView {
   readonly isPending: boolean;
   /**
    * True while environments that have not failed are still answering. Failed
-   * environments are reported through their own error rows: totals will not
-   * improve by waiting on them, so they must not read as "still reporting".
+   * and offline environments are reported through their own rows: totals will
+   * not improve by waiting on them, so they must not read as "still reporting".
    */
   readonly isPartial: boolean;
   readonly refresh: () => void;
@@ -95,7 +108,27 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     ],
   );
   const atom = usageByWindowAtom(windowKey);
-  const environments = useAtomValue(atom);
+  const reported = useAtomValue(atom);
+
+  const [scanNonce, setScanNonce] = useState(0);
+  const [deadlinePassed, setDeadlinePassed] = useState(false);
+  useEffect(() => {
+    setDeadlinePassed(false);
+    const timer = setTimeout(() => setDeadlinePassed(true), OFFLINE_DEADLINE_MS);
+    return () => clearTimeout(timer);
+  }, [windowKey, scanNonce]);
+
+  const environments = useMemo(
+    () =>
+      deadlinePassed
+        ? reported.map((environment) =>
+            environment.summary === null && environment.error === null && !environment.connected
+              ? { ...environment, offline: true }
+              : environment,
+          )
+        : reported,
+    [reported, deadlinePassed],
+  );
 
   // Refreshing only the derived atom would re-read the per-environment SWR
   // queries within their stale window and change nothing. Refresh each
@@ -107,6 +140,7 @@ export function useUsage(input: UsageSummaryInput): UsageView {
         serverEnvironment.usageSummary({ environmentId: environment.environmentId, input }),
       );
     }
+    setScanNonce((nonce) => nonce + 1);
   }, [environments, windowKey]);
 
   const merged = useMemo(() => {
@@ -126,7 +160,8 @@ export function useUsage(input: UsageSummaryInput): UsageView {
 
   const answeredCount = environments.filter((environment) => environment.summary !== null).length;
   const stillReporting = environments.filter(
-    (environment) => environment.summary === null && environment.error === null,
+    (environment) =>
+      environment.summary === null && environment.error === null && !environment.offline,
   ).length;
 
   return {

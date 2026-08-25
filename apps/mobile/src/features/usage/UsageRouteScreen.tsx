@@ -459,12 +459,16 @@ function UsageCoverageNotice(props: {
   readonly isPartial: boolean;
 }) {
   const failed = props.environments.filter((environment) => environment.error !== null);
+  const offline = props.environments.filter(
+    (environment) => environment.offline && environment.summary === null,
+  );
   const stale = props.environments.filter((environment) =>
     props.merged.staleEnvironments.includes(environment.environmentId),
   );
   const duplicateSources = props.merged.duplicateSources;
   if (
     failed.length === 0 &&
+    offline.length === 0 &&
     stale.length === 0 &&
     duplicateSources.length === 0 &&
     !props.isPartial
@@ -482,6 +486,11 @@ function UsageCoverageNotice(props: {
       {failed.map((environment) => (
         <Text key={environment.environmentId} className="text-sm text-foreground-muted">
           {environment.label} could not report usage.
+        </Text>
+      ))}
+      {offline.map((environment) => (
+        <Text key={environment.environmentId} className="text-sm text-foreground-muted">
+          {environment.label} is offline and excluded from totals.
         </Text>
       ))}
       {stale.map((environment) => (
