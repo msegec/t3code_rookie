@@ -53,7 +53,10 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     // generation makes its completion drop the result instead of advancing
     // the zeroed watermark or confirming stale contents.
     this.generation += 1;
-    this.suspendCount = 0;
+    // Only the settling mutation's own hold is released; an overlapping
+    // mutation still writing keeps its hold, so a later edit cannot save
+    // mid-mutation and overwrite that writer's result.
+    if (this.suspendCount > 0) this.suspendCount -= 1;
     this.clearTimer();
     this.latestRevision = 0;
     this.persistedRevision = 0;

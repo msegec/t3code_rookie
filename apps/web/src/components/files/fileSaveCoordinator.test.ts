@@ -339,6 +339,31 @@ describe("FileSaveCoordinator", () => {
     expect(persist).toHaveBeenCalledWith("held");
   });
 
+  it("reset releases only the settling mutation's hold", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.suspend();
+    coordinator.suspend();
+    coordinator.reset();
+    coordinator.change("edited while the other mutation still writes");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(persist).not.toHaveBeenCalled();
+
+    coordinator.resume();
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith("edited while the other mutation still writes");
+  });
+
   it("dispose while suspended does not flush behind a pending mutation", async () => {
     vi.useFakeTimers();
     const persist = vi
