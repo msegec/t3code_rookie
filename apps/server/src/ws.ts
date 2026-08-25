@@ -1943,6 +1943,14 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.projectsCreateUploadUrl, issueWorkspaceUploadUrl(input), {
             "rpc.aggregate": "workspace",
           }),
+        [WS_METHODS.projectsRenameEntry]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsRenameEntry, workspaceFileSystem.renameEntry(input), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.projectsDeleteEntry]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsDeleteEntry, workspaceFileSystem.deleteEntry(input), {
+            "rpc.aggregate": "workspace",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",

@@ -9,11 +9,19 @@
  */
 import * as NodeFSP from "node:fs/promises";
 
-import type {
-  ProjectReadFileInput,
-  ProjectReadFileResult,
-  ProjectWriteFileInput,
-  ProjectWriteFileResult,
+import {
+  ProjectDeleteEntryError,
+  ProjectRenameEntryError,
+  ProjectRenameEntryTargetExistsError,
+  type ProjectDeleteEntryInput,
+  type ProjectDeleteEntryStage,
+  type ProjectReadFileInput,
+  type ProjectReadFileResult,
+  type ProjectRenameEntryInput,
+  type ProjectRenameEntryResult,
+  type ProjectRenameEntryStage,
+  type ProjectWriteFileInput,
+  type ProjectWriteFileResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -123,6 +131,26 @@ export class WorkspaceFileSystem extends Context.Service<
       ProjectWriteFileResult,
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
     >;
+    /**
+     * Rename a file to a new name in the same directory.
+     *
+     * Never overwrites: an existing entry at the new name fails with
+     * `ProjectRenameEntryTargetExistsError`. Directories are rejected.
+     */
+    readonly renameEntry: (
+      input: ProjectRenameEntryInput,
+    ) => Effect.Effect<
+      ProjectRenameEntryResult,
+      ProjectRenameEntryError | ProjectRenameEntryTargetExistsError
+    >;
+    /**
+     * Delete a file relative to the workspace root.
+     *
+     * Deleting an already-missing file succeeds. Directories are rejected.
+     */
+    readonly deleteEntry: (
+      input: ProjectDeleteEntryInput,
+    ) => Effect.Effect<void, ProjectDeleteEntryError>;
   }
 >()("t3/workspace/WorkspaceFileSystem") {}
 
@@ -297,7 +325,167 @@ export const make = Effect.gen(function* () {
     return { relativePath: target.relativePath };
   });
 
-  return WorkspaceFileSystem.of({ readFile, writeFile });
+  // The lexical resolve cannot see symlinked directory components, so rename
+  // and delete canonically re-check the entry's parent directory before
+  // mutating, the same way storeWorkspaceUpload guards uploads.
+  const directoryEscapesWorkspaceRoot = Effect.fn(function* (
+    workspaceRoot: string,
+    directory: string,
+  ) {
+    const [canonicalRoot, canonicalDir] = yield* Effect.all([
+      fileSystem.realPath(workspaceRoot),
+      fileSystem.realPath(directory),
+    ]);
+    const relativeDir = path.relative(canonicalRoot, canonicalDir);
+    return (
+      relativeDir === ".." ||
+      relativeDir.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeDir)
+    );
+  });
+
+  const renameEntry: WorkspaceFileSystem["Service"]["renameEntry"] = Effect.fn(
+    "WorkspaceFileSystem.renameEntry",
+  )(function* (input) {
+    const renameError = (stage: ProjectRenameEntryStage, cause: unknown) =>
+      new ProjectRenameEntryError({
+        cwd: input.cwd,
+        relativePath: input.relativePath,
+        stage,
+        cause,
+      });
+
+    const [source, target] = yield* Effect.all([
+      workspacePaths.resolveRelativePathWithinRoot({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+      }),
+      workspacePaths.resolveRelativePathWithinRoot({
+        workspaceRoot: input.cwd,
+        relativePath: input.newRelativePath,
+      }),
+    ]).pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
+    if (path.dirname(source.relativePath) !== path.dirname(target.relativePath)) {
+      return yield* renameError(
+        "cross-directory",
+        `'${target.relativePath}' is outside the directory of '${source.relativePath}'.`,
+      );
+    }
+
+    const sourceStat = yield* fileSystem
+      .stat(source.absolutePath)
+      .pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
+    if (sourceStat.type !== "File") {
+      return yield* renameError(
+        "not-a-file",
+        `'${source.relativePath}' is a ${sourceStat.type}, not a file.`,
+      );
+    }
+
+    const escapes = yield* directoryEscapesWorkspaceRoot(
+      input.cwd,
+      path.dirname(source.absolutePath),
+    ).pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
+    if (escapes) {
+      return yield* renameError(
+        "resolve-path",
+        `'${source.relativePath}' resolves outside the project.`,
+      );
+    }
+
+    // rename would replace an existing target; link fails atomically instead,
+    // so a rename can never clobber another entry.
+    const conflict = yield* fileSystem.link(source.absolutePath, target.absolutePath).pipe(
+      Effect.as(false),
+      Effect.catchIf(
+        (error) => error.reason._tag === "AlreadyExists",
+        () => Effect.succeed(true),
+      ),
+      Effect.mapError((cause) => renameError("rename", cause)),
+    );
+    if (conflict) {
+      return yield* new ProjectRenameEntryTargetExistsError({
+        cwd: input.cwd,
+        relativePath: target.relativePath,
+      });
+    }
+    yield* fileSystem.remove(source.absolutePath).pipe(
+      Effect.catch((cause) =>
+        Effect.gen(function* () {
+          yield* fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore);
+          return yield* renameError("rename", cause);
+        }),
+      ),
+    );
+
+    yield* workspaceEntries.refresh(input.cwd);
+    return { relativePath: target.relativePath };
+  });
+
+  const deleteEntry: WorkspaceFileSystem["Service"]["deleteEntry"] = Effect.fn(
+    "WorkspaceFileSystem.deleteEntry",
+  )(function* (input) {
+    const deleteError = (stage: ProjectDeleteEntryStage, cause: unknown) =>
+      new ProjectDeleteEntryError({
+        cwd: input.cwd,
+        relativePath: input.relativePath,
+        stage,
+        cause,
+      });
+
+    const target = yield* workspacePaths
+      .resolveRelativePathWithinRoot({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+      })
+      .pipe(Effect.mapError((cause) => deleteError("resolve-path", cause)));
+
+    // A parent directory that fails to canonicalize as missing means the entry
+    // is already gone, which counts as a successful delete.
+    const escapes = yield* directoryEscapesWorkspaceRoot(
+      input.cwd,
+      path.dirname(target.absolutePath),
+    ).pipe(
+      Effect.catchIf(
+        (error) => error.reason._tag === "NotFound",
+        () => Effect.succeed(null),
+      ),
+      Effect.mapError((cause) => deleteError("resolve-path", cause)),
+    );
+    if (escapes === null) {
+      return;
+    }
+    if (escapes) {
+      return yield* deleteError(
+        "resolve-path",
+        `'${target.relativePath}' resolves outside the project.`,
+      );
+    }
+
+    const targetStat = yield* fileSystem.stat(target.absolutePath).pipe(
+      Effect.catchIf(
+        (error) => error.reason._tag === "NotFound",
+        () => Effect.succeed(null),
+      ),
+      Effect.mapError((cause) => deleteError("resolve-path", cause)),
+    );
+    if (targetStat === null) {
+      return;
+    }
+    if (targetStat.type === "Directory") {
+      return yield* deleteError(
+        "not-a-file",
+        `'${target.relativePath}' is a directory; directories cannot be deleted from the files view yet.`,
+      );
+    }
+
+    yield* fileSystem
+      .remove(target.absolutePath, { force: true })
+      .pipe(Effect.mapError((cause) => deleteError("remove", cause)));
+    yield* workspaceEntries.refresh(input.cwd);
+  });
+
+  return WorkspaceFileSystem.of({ readFile, writeFile, renameEntry, deleteEntry });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

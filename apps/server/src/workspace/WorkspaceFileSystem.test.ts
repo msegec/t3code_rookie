@@ -1,5 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
+import {
+  ProjectDeleteEntryError,
+  ProjectRenameEntryError,
+  ProjectRenameEntryTargetExistsError,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -262,6 +267,202 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           .stat(escapedPath)
           .pipe(Effect.orElseSucceed(() => null));
         expect(escapedStat).toBeNull();
+      }),
+    );
+  });
+
+  describe("renameEntry", () => {
+    it.effect("renames a file within its directory", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/notes.md",
+          newRelativePath: "src/journal.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/journal.md" });
+        const renamed = yield* fileSystem
+          .readFileString(path.join(cwd, "src/journal.md"))
+          .pipe(Effect.orDie);
+        expect(renamed).toBe("# Notes\n");
+        const sourceExists = yield* fileSystem.exists(path.join(cwd, "src/notes.md"));
+        expect(sourceExists).toBe(false);
+      }),
+    );
+
+    it.effect("invalidates workspace entry search cache after renames", () =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "notes.md", "# Notes\n");
+        const beforeRename = yield* workspaceEntries.list({ cwd });
+        expect(beforeRename.entries.some((entry) => entry.path === "journal.md")).toBe(false);
+
+        yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "notes.md",
+          newRelativePath: "journal.md",
+        });
+
+        const afterRename = yield* workspaceEntries.list({ cwd });
+        expect(afterRename.entries.some((entry) => entry.path === "journal.md")).toBe(true);
+        expect(afterRename.entries.some((entry) => entry.path === "notes.md")).toBe(false);
+      }),
+    );
+
+    it.effect("rejects renaming onto an existing entry without overwriting it", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+        yield* writeTextFile(cwd, "src/taken.md", "taken\n");
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/source.md",
+            newRelativePath: "src/taken.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryTargetExistsError);
+        expect(error).toMatchObject({ cwd, relativePath: "src/taken.md" });
+        const source = yield* fileSystem
+          .readFileString(path.join(cwd, "src/source.md"))
+          .pipe(Effect.orDie);
+        expect(source).toBe("source\n");
+        const taken = yield* fileSystem
+          .readFileString(path.join(cwd, "src/taken.md"))
+          .pipe(Effect.orDie);
+        expect(taken).toBe("taken\n");
+      }),
+    );
+
+    it.effect("rejects renames that leave the source directory", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/notes.md",
+            newRelativePath: "docs/notes.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryError);
+        expect(error).toMatchObject({
+          cwd,
+          relativePath: "src/notes.md",
+          stage: "cross-directory",
+        });
+      }),
+    );
+
+    it.effect("rejects renaming a directory", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem.makeDirectory(path.join(cwd, "src"));
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src",
+            newRelativePath: "lib",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryError);
+        expect(error).toMatchObject({ stage: "not-a-file" });
+      }),
+    );
+
+    it.effect("rejects renames whose directory resolves outside the root through a symlink", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outside = yield* makeTempDir;
+        yield* writeTextFile(outside, "owned.txt", "outside\n");
+        yield* fileSystem.symlink(outside, path.join(cwd, "linked"));
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "linked/owned.txt",
+            newRelativePath: "linked/renamed.txt",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryError);
+        expect(error).toMatchObject({ stage: "resolve-path" });
+        const untouched = yield* fileSystem
+          .readFileString(path.join(outside, "owned.txt"))
+          .pipe(Effect.orDie);
+        expect(untouched).toBe("outside\n");
+        const renamedExists = yield* fileSystem.exists(path.join(outside, "renamed.txt"));
+        expect(renamedExists).toBe(false);
+      }),
+    );
+  });
+
+  describe("deleteEntry", () => {
+    it.effect("deletes a file relative to the workspace root", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+
+        yield* workspaceFileSystem.deleteEntry({ cwd, relativePath: "src/notes.md" });
+
+        const exists = yield* fileSystem.exists(path.join(cwd, "src/notes.md"));
+        expect(exists).toBe(false);
+      }),
+    );
+
+    it.effect("succeeds when the file is already missing", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+
+        yield* workspaceFileSystem.deleteEntry({ cwd, relativePath: "missing/notes.md" });
+      }),
+    );
+
+    it.effect("rejects deleting a directory", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem.makeDirectory(path.join(cwd, "src"));
+        yield* writeTextFile(cwd, "src/index.ts", "export {};\n");
+
+        const error = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src" })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectDeleteEntryError);
+        expect(error).toMatchObject({ stage: "not-a-file" });
+        const stillThere = yield* fileSystem.exists(path.join(cwd, "src/index.ts"));
+        expect(stillThere).toBe(true);
       }),
     );
   });
