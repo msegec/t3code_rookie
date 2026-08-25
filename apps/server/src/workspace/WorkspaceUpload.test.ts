@@ -382,6 +382,61 @@ describe("WorkspaceUpload", () => {
       });
     }).pipe(Effect.provide(linklessTestLayer)),
   );
+
+  it.effect("reclaims the empty claim when the fallback rename fails", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const bytes = new Uint8Array([1, 2, 3]);
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "held.bin",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toEqual({ ok: false, status: 500, detail: "Failed to persist upload." });
+      // The reclaim removed the empty claim, so a retry does not read the
+      // name as taken.
+      expect(NodeFS.existsSync(NodePath.join(cwd, "held.bin"))).toBe(false);
+    }).pipe(Effect.provide(brokenRenameTestLayer)),
+  );
+
+  it.effect("keeps a rival's content when the fallback rename fails", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const bytes = new Uint8Array([1, 2, 3]);
+      const rival = new Uint8Array([42, 42]);
+      rivalBytesOnRename.current = rival;
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "contested.bin",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toEqual({ ok: false, status: 500, detail: "Failed to persist upload." });
+      // A confirmed overwrite that replaced the claim before the failed
+      // rename must survive the reclaim.
+      expect(NodeFS.readFileSync(NodePath.join(cwd, "contested.bin"))).toEqual(Buffer.from(rival));
+    }).pipe(
+      Effect.provide(brokenRenameTestLayer),
+      Effect.ensuring(
+        Effect.sync(() => {
+          rivalBytesOnRename.current = null;
+        }),
+      ),
+    ),
+  );
 });
 
 const refreshSnapshots: Array<Array<string>> = [];
@@ -423,6 +478,61 @@ const linklessFileSystemLayer = Layer.effect(
       },
     });
   }),
+);
+
+// Simulates a linkless volume whose rename also fails; when rivalBytesOnRename
+// holds bytes, the rename first replaces the target with them, standing in for
+// a confirmed overwrite landing between the claim and the rename.
+const rivalBytesOnRename: { current: Uint8Array | null } = { current: null };
+const brokenRenameFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const real = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...real,
+      link: (_fromPath, toPath) =>
+        Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "link",
+            syscall: "link",
+            pathOrDescriptor: toPath,
+            description: "EPERM: the volume rejects hard links",
+          }),
+        ),
+      rename: (_fromPath, toPath) =>
+        Effect.sync(() => {
+          const rival = rivalBytesOnRename.current;
+          if (rival) {
+            NodeFS.writeFileSync(toPath, rival);
+          }
+        }).pipe(
+          Effect.andThen(
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "rename",
+                syscall: "rename",
+                pathOrDescriptor: toPath,
+                description: "EACCES: rename rejected",
+              }),
+            ),
+          ),
+        ),
+    });
+  }),
+);
+
+const brokenRenameTestLayer = Layer.empty.pipe(
+  Layer.provideMerge(ServerSecretStore.layer),
+  Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(VcsProcess.layer),
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-workspace-upload-test-" })),
+  Layer.provideMerge(brokenRenameFileSystemLayer),
+  Layer.provideMerge(NodeServices.layer),
 );
 
 const linklessTestLayer = Layer.empty.pipe(

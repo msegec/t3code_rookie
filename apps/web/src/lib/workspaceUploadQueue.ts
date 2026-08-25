@@ -48,7 +48,7 @@ interface UploadJob {
   readonly cwd: string;
   readonly relativePath: string;
   readonly file: File;
-  readonly onUploaded: () => void;
+  readonly onUploaded: (relativePath: string) => void;
   overwrite: boolean;
   cancelled: boolean;
   abort: (() => void) | null;
@@ -119,7 +119,7 @@ async function runUpload(job: UploadJob): Promise<void> {
     }
 
     const confirmed = await readLocalApi()?.dialogs.confirm(
-      `Replace ${job.file.name}?\nA file named '${job.relativePath}' already exists in this project.`,
+      `Replace ${job.relativePath}?\nA file named '${job.relativePath}' already exists in this project.`,
       { variant: "destructive" },
     );
     if (job.cancelled) {
@@ -182,7 +182,7 @@ async function runUpload(job: UploadJob): Promise<void> {
     jobsById.delete(job.id);
     clearUploadState(job.id);
     try {
-      job.onUploaded();
+      job.onUploaded(job.relativePath);
     } catch (error) {
       // The upload itself succeeded; a throwing refresh callback must not
       // resurrect the cleared entry as an unretryable failure.
@@ -235,12 +235,14 @@ export function startWorkspaceUploads(input: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly files: ReadonlyArray<File>;
-  readonly onUploaded: () => void;
+  readonly onUploaded: (relativePath: string) => void;
 }): void {
   for (const file of input.files) {
     const id = randomUUID();
-    // Uploads land at the project root in v1.
-    const relativePath = file.name;
+    // Uploads land at the project root in v1. The RPC schema trims the path
+    // on encode, so an untrimmed name would store the file under a different
+    // path than the one the job reports.
+    const relativePath = file.name.trim();
     const job: UploadJob = {
       id,
       environmentId: input.environmentId,
@@ -253,6 +255,10 @@ export function startWorkspaceUploads(input: {
       abort: null,
     };
     jobsById.set(id, job);
+    if (relativePath === "") {
+      failJob(job, "File name is empty");
+      continue;
+    }
     queue.push(job);
     setUploadState(id, {
       status: "uploading",

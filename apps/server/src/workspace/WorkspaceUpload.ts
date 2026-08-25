@@ -290,7 +290,8 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       // links, so those claim the name with an empty O_EXCL create and then
       // rename the part onto their own claim. The failed create removes
       // nothing, so it can never delete a rival's file; only a failed rename
-      // reclaims the name, and by then the name holds this upload's claim.
+      // reclaims the name, and only while the name still holds the empty
+      // claim.
       yield* fileSystem.writeFile(partPath, bytes);
       const claim = yield* fileSystem.link(partPath, target.absolutePath).pipe(
         Effect.as("claimed" as const),
@@ -308,29 +309,47 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
         } satisfies StoreWorkspaceUploadResult;
       }
       if (claim === "unsupported") {
-        const conflict = yield* fileSystem
-          .writeFile(target.absolutePath, new Uint8Array(0), { flag: "wx" })
-          .pipe(
-            Effect.as(false),
-            Effect.catchIf(
-              (error) => error.reason._tag === "AlreadyExists",
-              () => Effect.succeed(true),
-            ),
-          );
-        if (conflict) {
+        // The claim and the rename onto it form one critical section: an
+        // interrupt between them would strand a permanent empty file at the
+        // target, so the pair runs uninterruptibly. The failed-rename reclaim
+        // checks that the name still holds the empty claim, so a confirmed
+        // overwrite landing in between can never have its content deleted.
+        const fallback = yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const conflict = yield* fileSystem
+              .writeFile(target.absolutePath, new Uint8Array(0), { flag: "wx" })
+              .pipe(
+                Effect.as(false),
+                Effect.catchIf(
+                  (error) => error.reason._tag === "AlreadyExists",
+                  () => Effect.succeed(true),
+                ),
+              );
+            if (conflict) {
+              return "conflict" as const;
+            }
+            yield* fileSystem.rename(partPath, target.absolutePath).pipe(
+              Effect.tapError(() =>
+                fileSystem.stat(target.absolutePath).pipe(
+                  Effect.flatMap((info) =>
+                    info.size === FileSystem.Size(0)
+                      ? fileSystem.remove(target.absolutePath, { force: true })
+                      : Effect.void,
+                  ),
+                  Effect.ignore,
+                ),
+              ),
+            );
+            return "stored" as const;
+          }),
+        );
+        if (fallback === "conflict") {
           return {
             ok: false,
             status: 409,
             detail: "A file already exists at this path.",
           } satisfies StoreWorkspaceUploadResult;
         }
-        yield* fileSystem
-          .rename(partPath, target.absolutePath)
-          .pipe(
-            Effect.tapError(() =>
-              fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
-            ),
-          );
       }
     }
 
