@@ -27,3 +27,14 @@ and gives you retry and dismiss buttons.
 
 Uploading works the same way whether you're connected locally, over a remote network, or through a
 tunnel.
+
+## Renaming and deleting files
+
+Right-click a file for **Rename** and **Delete**. Renaming and deleting work on files only;
+folders are not yet supported.
+
+Rename opens a dialog prefilled with the current name. The file keeps its place: renaming changes
+the name, not the folder. If a file with the new name already exists, the rename is refused and
+the existing file is left untouched.
+
+Delete asks for confirmation first, then permanently removes the file from the project.

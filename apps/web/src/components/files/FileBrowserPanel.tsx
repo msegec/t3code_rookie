@@ -2,9 +2,11 @@ import type {
   ContextMenuItem as TreeContextMenuItem,
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
-import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
+import type { ContextMenuItem, EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
+import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import * as Cause from "effect/Cause";
 import { RotateCcw, RotateCw, Upload, XIcon } from "lucide-react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,11 +31,14 @@ import {
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { projectEnvironment } from "~/state/projects";
 
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { WorkspaceFileDropOverlay } from "../chat/WorkspaceFileDropOverlay";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
+import { RenameEntryDialog } from "./RenameEntryDialog";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -283,6 +288,7 @@ export default function FileBrowserPanel({
     [entries],
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
   const previousTreePathsRef = useRef<readonly string[]>([]);
   const syncingSelectionRef = useRef(false);
@@ -301,6 +307,30 @@ export default function FileBrowserPanel({
     return () => document.removeEventListener("contextmenu", capturePointer, true);
   }, []);
 
+  const confirmAndDeleteEntry = async (relativePath: string) => {
+    const name = relativePath.split("/").at(-1) ?? relativePath;
+    const confirmed = await readLocalApi()?.dialogs.confirm(
+      `Delete ${name}?\nThis permanently deletes the file from the project.`,
+    );
+    if (confirmed !== true) return;
+    const result = await runAtomCommand(
+      appAtomRegistry,
+      projectEnvironment.deleteEntry,
+      { environmentId, input: { cwd, relativePath } },
+      { reportFailure: false },
+    );
+    if (result._tag === "Success") {
+      entriesQuery.refresh();
+      return;
+    }
+    const failure = Cause.squash(result.cause);
+    toastManager.add({
+      type: "error",
+      title: "Failed to delete file",
+      description: failure instanceof Error ? failure.message : "An error occurred.",
+    });
+  };
+
   const showEntryContextMenu = async (
     item: TreeContextMenuItem,
     context: TreeContextMenuOpenContext,
@@ -318,14 +348,19 @@ export default function FileBrowserPanel({
     const position = pointerIsFresh
       ? { x: pointer.x, y: pointer.y }
       : { x: anchorRect.left, y: anchorRect.bottom };
-    try {
-      const clicked = await api.contextMenu.show(
-        [
-          { id: "copy-mention", label: "Copy mention" },
-          { id: "add-to-chat", label: "Add to chat" },
-        ],
-        position,
+    const menuItems: ContextMenuItem<"copy-mention" | "add-to-chat" | "rename" | "delete">[] = [
+      { id: "copy-mention", label: "Copy mention" },
+      { id: "add-to-chat", label: "Add to chat" },
+    ];
+    // Rename and delete operate on files only in v1; directories stay read-only.
+    if (entryKindsRef.current.get(relativePath) === "file") {
+      menuItems.push(
+        { id: "rename", label: "Rename", separatorBefore: true },
+        { id: "delete", label: "Delete", destructive: true },
       );
+    }
+    try {
+      const clicked = await api.contextMenu.show(menuItems, position);
       if (clicked === "copy-mention") {
         try {
           await writeTextToClipboard(mention);
@@ -357,6 +392,14 @@ export default function FileBrowserPanel({
             description: "The chat isn't ready to accept input right now.",
           });
         }
+        return;
+      }
+      if (clicked === "rename") {
+        setRenameTarget(relativePath);
+        return;
+      }
+      if (clicked === "delete") {
+        await confirmAndDeleteEntry(relativePath);
       }
     } finally {
       context.close();
@@ -579,6 +622,16 @@ export default function FileBrowserPanel({
             <UploadRow key={id} id={id} upload={upload} />
           ))}
         </div>
+      ) : null}
+      {renameTarget !== null ? (
+        <RenameEntryDialog
+          key={renameTarget}
+          environmentId={environmentId}
+          cwd={cwd}
+          relativePath={renameTarget}
+          onClose={() => setRenameTarget(null)}
+          onRenamed={() => entriesQuery.refresh()}
+        />
       ) : null}
     </div>
   );
