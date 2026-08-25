@@ -312,7 +312,10 @@ export type ProjectCreateUploadUrlInput = typeof ProjectCreateUploadUrlInput.Typ
 
 export const ProjectCreateUploadUrlResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
-  relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  // The signed token base64url-encodes the workspace cwd, so the bound must
+  // clear a PATH_MAX (4096) cwd plus the longest relative path after the
+  // 4/3 encoding overhead.
+  relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(8192)),
   expiresAt: Schema.Number,
 });
 export type ProjectCreateUploadUrlResult = typeof ProjectCreateUploadUrlResult.Type;
