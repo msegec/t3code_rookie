@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { isProjectUploadTargetExistsError, type EnvironmentId } from "@t3tools/contracts";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
@@ -105,15 +105,6 @@ function mintUploadUrl(job: UploadJob) {
   );
 }
 
-function isTargetExistsFailure(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "_tag" in cause &&
-    cause._tag === "ProjectUploadTargetExistsError"
-  );
-}
-
 async function runUpload(job: UploadJob): Promise<void> {
   let minted = await mintUploadUrl(job);
   if (job.cancelled) {
@@ -122,13 +113,14 @@ async function runUpload(job: UploadJob): Promise<void> {
   }
 
   if (minted._tag !== "Success") {
-    if (!isTargetExistsFailure(Cause.squash(minted.cause))) {
+    if (!isProjectUploadTargetExistsError(Cause.squash(minted.cause))) {
       failJob(job, "Upload could not start");
       return;
     }
 
     const confirmed = await readLocalApi()?.dialogs.confirm(
       `Replace ${job.file.name}?\nA file named '${job.relativePath}' already exists in this project.`,
+      { variant: "destructive" },
     );
     if (job.cancelled) {
       jobsById.delete(job.id);

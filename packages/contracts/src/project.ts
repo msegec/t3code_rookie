@@ -332,9 +332,12 @@ export class ProjectUploadTargetExistsError extends Schema.TaggedErrorClass<Proj
   }
 }
 
+export const isProjectUploadTargetExistsError = Schema.is(ProjectUploadTargetExistsError);
+
 export const ProjectCreateUploadUrlStage = Schema.Literals([
   "signing-key",
   "resolve-path",
+  "target-not-file",
   "target-check",
 ]);
 export type ProjectCreateUploadUrlStage = typeof ProjectCreateUploadUrlStage.Type;
@@ -343,7 +346,7 @@ type ProjectCreateUploadUrlFailureContext = {
   readonly cwd: string;
   readonly relativePath: string;
   readonly stage: ProjectCreateUploadUrlStage;
-  readonly cause: unknown;
+  readonly cause?: unknown;
 };
 
 function projectCreateUploadUrlStageMessage(props: ProjectCreateUploadUrlFailureContext): string {
@@ -352,6 +355,8 @@ function projectCreateUploadUrlStageMessage(props: ProjectCreateUploadUrlFailure
       return "Failed to load the upload signing key.";
     case "resolve-path":
       return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "target-not-file":
+      return `'${props.relativePath}' already exists as a folder; uploads can only replace files.`;
     case "target-check":
       return `Failed to check for an existing file at '${props.relativePath}' in '${props.cwd}'.`;
   }
@@ -364,7 +369,9 @@ export class ProjectCreateUploadUrlError extends Schema.TaggedErrorClass<Project
     relativePath: TrimmedNonEmptyString,
     stage: ProjectCreateUploadUrlStage,
     message: TrimmedNonEmptyString,
-    cause: Schema.Defect(),
+    // Validation stages fail without an underlying error, so a cause only
+    // accompanies real I/O failures.
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off

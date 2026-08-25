@@ -5,7 +5,7 @@ import type {
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { RotateCw, Upload, XIcon } from "lucide-react";
+import { RotateCcw, RotateCw, Upload, XIcon } from "lucide-react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -161,7 +161,7 @@ function UploadRow(props: { id: string; upload: WorkspaceUploadState }) {
           </Tooltip>
           <UploadRowButton
             label={`Retry upload of ${upload.name}`}
-            icon={<RotateCw />}
+            icon={<RotateCcw />}
             onClick={() => retryWorkspaceUpload(id)}
           />
           <UploadRowButton

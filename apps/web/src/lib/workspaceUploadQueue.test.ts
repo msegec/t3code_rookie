@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectUploadTargetExistsError } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -114,11 +114,7 @@ function mintedResult(relativePath: string) {
 function targetExistsFailure(relativePath: string) {
   return {
     _tag: "Failure" as const,
-    cause: Cause.fail({
-      _tag: "ProjectUploadTargetExistsError",
-      cwd,
-      relativePath,
-    }),
+    cause: Cause.fail(new ProjectUploadTargetExistsError({ cwd, relativePath })),
   };
 }
 
@@ -266,6 +262,7 @@ describe("workspaceUploadQueue", () => {
 
     expect(mocks.requestConfirmDialog).toHaveBeenCalledWith(
       "Replace existing.txt?\nA file named 'existing.txt' already exists in this project.",
+      { variant: "destructive" },
     );
     expect(TestXmlHttpRequest.requests).toHaveLength(1);
     TestXmlHttpRequest.requests[0]!.complete();

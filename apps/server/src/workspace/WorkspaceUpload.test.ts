@@ -132,6 +132,24 @@ describe("WorkspaceUpload", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("rejects a mint whose target is a directory, even with overwrite", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* fileSystem.makeDirectory(NodePath.join(cwd, "folder"));
+
+      const error = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "folder",
+        sizeBytes: 3,
+        overwrite: true,
+      }).pipe(Effect.flip);
+
+      expect(error._tag).toBe("ProjectCreateUploadUrlError");
+      expect(error).toMatchObject({ stage: "target-not-file" });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects a store body whose size does not match the claims", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempWorkspaceRoot();
@@ -170,6 +188,30 @@ describe("WorkspaceUpload", () => {
 
       const result = yield* storeWorkspaceUpload(claims, bytes);
       expect(result).toMatchObject({ ok: false, status: 409 });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects a store when a directory appeared at the target after mint", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bytes = new Uint8Array([5, 6, 7]);
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "raced-folder",
+        sizeBytes: bytes.byteLength,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      yield* fileSystem.makeDirectory(NodePath.join(cwd, "raced-folder"));
+
+      const result = yield* storeWorkspaceUpload(claims, bytes);
+      expect(result).toMatchObject({ ok: false, status: 409 });
+      expect(NodeFS.readdirSync(NodePath.join(cwd, "raced-folder"))).toEqual([]);
     }).pipe(Effect.provide(testLayer)),
   );
 

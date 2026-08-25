@@ -103,11 +103,31 @@ export const issueWorkspaceUploadUrl = Effect.fn("WorkspaceUpload.issueUrl")(fun
         }),
     ),
   );
-  if (targetExists && input.overwrite !== true) {
-    return yield* new ProjectUploadTargetExistsError({
-      cwd: input.cwd,
-      relativePath: target.relativePath,
-    });
+  if (targetExists) {
+    const targetInfo = yield* fileSystem.stat(target.absolutePath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProjectCreateUploadUrlError({
+            cwd: input.cwd,
+            relativePath: target.relativePath,
+            stage: "target-check",
+            cause,
+          }),
+      ),
+    );
+    if (targetInfo.type !== "File") {
+      return yield* new ProjectCreateUploadUrlError({
+        cwd: input.cwd,
+        relativePath: target.relativePath,
+        stage: "target-not-file",
+      });
+    }
+    if (input.overwrite !== true) {
+      return yield* new ProjectUploadTargetExistsError({
+        cwd: input.cwd,
+        relativePath: target.relativePath,
+      });
+    }
   }
 
   const nowMs = yield* Clock.currentTimeMillis;
@@ -207,12 +227,24 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
   });
   return yield* Effect.gen(function* () {
     const targetExists = yield* fileSystem.exists(target.absolutePath);
-    if (targetExists && !claims.overwrite) {
-      return {
-        ok: false,
-        status: 409,
-        detail: "A file already exists at this path.",
-      } satisfies StoreWorkspaceUploadResult;
+    if (targetExists) {
+      const targetInfo = yield* fileSystem.stat(target.absolutePath);
+      if (targetInfo.type !== "File") {
+        // Overwrite renames the part file onto the target, which must never
+        // replace a directory that appeared after the URL was minted.
+        return {
+          ok: false,
+          status: 409,
+          detail: "A folder exists at this path.",
+        } satisfies StoreWorkspaceUploadResult;
+      }
+      if (!claims.overwrite) {
+        return {
+          ok: false,
+          status: 409,
+          detail: "A file already exists at this path.",
+        } satisfies StoreWorkspaceUploadResult;
+      }
     }
 
     // The lexical resolve above cannot see symlinked directory components, and
@@ -222,7 +254,15 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
     const targetDirectory = path.dirname(target.absolutePath);
     let existingAncestor = targetDirectory;
     while (!(yield* fileSystem.exists(existingAncestor))) {
-      existingAncestor = path.dirname(existingAncestor);
+      const parent = path.dirname(existingAncestor);
+      if (parent === existingAncestor) {
+        return {
+          ok: false,
+          status: 500,
+          detail: "Failed to resolve the workspace upload target.",
+        } satisfies StoreWorkspaceUploadResult;
+      }
+      existingAncestor = parent;
     }
     if (yield* escapesWorkspaceRoot(existingAncestor)) {
       return {
