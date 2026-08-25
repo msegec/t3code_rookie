@@ -780,11 +780,10 @@ const brokenRenameFileSystemLayer = Layer.effect(
       rename: (_oldPath, newPath) =>
         Effect.sync(() => {
           const rival = rivalBytesOnRename.current;
-          if (rival) {
-            // A real overwrite renames the rival's staged part onto the
-            // target, replacing the inode; remove-then-write reproduces that.
-            NodeFS.rmSync(newPath, { force: true });
-            NodeFS.writeFileSync(newPath, rival);
+          if (rival !== null) {
+            const rivalPath = `${newPath}.rival`;
+            NodeFS.writeFileSync(rivalPath, rival, { flag: "wx" });
+            NodeFS.renameSync(rivalPath, newPath);
           }
         }).pipe(
           Effect.andThen(
