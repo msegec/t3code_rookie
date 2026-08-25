@@ -27,6 +27,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -458,11 +459,26 @@ export const make = Effect.gen(function* () {
               .rename(source.absolutePath, target.absolutePath)
               .pipe(Effect.mapError((cause) => renameError("rename", cause)));
           }
+          // A rival's confirmed overwrite can replace the claim before the
+          // rename and can legitimately be zero bytes, so the failed-rename
+          // reclaim below requires the inode captured at claim time, with the
+          // size check alone only where the platform reports no inode.
+          const claimInode = yield* fileSystem.stat(target.absolutePath).pipe(
+            Effect.map((info) => Option.getOrNull(info.ino)),
+            Effect.mapError((cause) => renameError("rename", cause)),
+          );
           return yield* fileSystem.rename(source.absolutePath, target.absolutePath).pipe(
             // A failed rename leaves the empty claim at the target; reclaim
             // it so a retry does not read the name as taken.
             Effect.tapError(() =>
-              fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
+              fileSystem.stat(target.absolutePath).pipe(
+                Effect.flatMap((info) =>
+                  info.size === FileSystem.Size(0) && Option.getOrNull(info.ino) === claimInode
+                    ? fileSystem.remove(target.absolutePath, { force: true })
+                    : Effect.void,
+                ),
+                Effect.ignore,
+              ),
             ),
             Effect.mapError((cause) => renameError("rename", cause)),
           );
@@ -481,9 +497,7 @@ export const make = Effect.gen(function* () {
           // so both names listed is a pre-existing hard link pair, where the
           // target name is occupied like any other conflict. Only the source
           // listed is the source under another casing on a case-insensitive
-          // filesystem, where rename applies the case change. Otherwise the
-          // source entry is gone or already carries the target casing, and
-          // the target name holds the data.
+          // filesystem, where rename applies the case change.
           const siblingNames = yield* fileSystem
             .readDirectory(path.dirname(source.absolutePath))
             .pipe(Effect.mapError((cause) => renameError("rename", cause)));
@@ -500,7 +514,23 @@ export const make = Effect.gen(function* () {
               .rename(source.absolutePath, target.absolutePath)
               .pipe(Effect.mapError((cause) => renameError("rename", cause)));
           }
-          return;
+          // The file can also sit on disk under a third casing that matches
+          // neither typed name, which the listing checks above cannot see.
+          // Resolve the entry that folds to the source name and rename from
+          // it so the case change still lands. No such entry means the name
+          // already carries the target casing or the data moved on, and the
+          // rename is done.
+          const sourceFold = path.basename(source.absolutePath).toLowerCase();
+          const targetName = path.basename(target.absolutePath);
+          const onDiskName = siblingNames.find(
+            (name) => name !== targetName && name.toLowerCase() === sourceFold,
+          );
+          if (onDiskName === undefined) {
+            return;
+          }
+          return yield* fileSystem
+            .rename(path.join(path.dirname(source.absolutePath), onDiskName), target.absolutePath)
+            .pipe(Effect.mapError((cause) => renameError("rename", cause)));
         }
         yield* fileSystem.remove(source.absolutePath).pipe(
           // A missing source means something else removed it after the link

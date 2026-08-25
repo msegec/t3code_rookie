@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
 import {
@@ -724,6 +727,10 @@ it.layer(LinklessTestLayer, { excludeTestServices: true })(
   },
 );
 
+// Simulates a linkless volume whose rename also fails; when rivalBytesOnRename
+// holds bytes, the rename first replaces the target with them, standing in for
+// a confirmed overwrite landing between the claim and the rename.
+const rivalBytesOnRename: { current: Uint8Array | null } = { current: null };
 const brokenRenameFileSystemLayer = Layer.effect(
   FileSystem.FileSystem,
   Effect.gen(function* () {
@@ -742,15 +749,27 @@ const brokenRenameFileSystemLayer = Layer.effect(
           }),
         ),
       rename: (_oldPath, newPath) =>
-        Effect.fail(
-          PlatformError.systemError({
-            _tag: "PermissionDenied",
-            module: "FileSystem",
-            method: "rename",
-            syscall: "rename",
-            pathOrDescriptor: newPath,
-            description: "EACCES: the volume failed the rename",
-          }),
+        Effect.sync(() => {
+          const rival = rivalBytesOnRename.current;
+          if (rival) {
+            // A real overwrite renames the rival's staged part onto the
+            // target, replacing the inode; remove-then-write reproduces that.
+            NodeFS.rmSync(newPath, { force: true });
+            NodeFS.writeFileSync(newPath, rival);
+          }
+        }).pipe(
+          Effect.andThen(
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "rename",
+                syscall: "rename",
+                pathOrDescriptor: newPath,
+                description: "EACCES: the volume failed the rename",
+              }),
+            ),
+          ),
         ),
     });
   }),
@@ -795,6 +814,41 @@ it.layer(BrokenRenameTestLayer, { excludeTestServices: true })(
         expect(names).toContain("source.md");
         expect(names).not.toContain("renamed.md");
       }),
+    );
+
+    // A zero-byte rival is indistinguishable from the claim by size, so this
+    // pins the reclaim's inode comparison.
+    it.effect("keeps a rival's zero-byte overwrite when the fallback rename fails", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/source.md", "source\n");
+        rivalBytesOnRename.current = new Uint8Array(0);
+
+        const error = yield* workspaceFileSystem
+          .renameEntry({
+            cwd,
+            relativePath: "src/source.md",
+            newRelativePath: "src/renamed.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectRenameEntryError);
+        expect(error).toMatchObject({ stage: "rename" });
+        // The rival replaced the claim before the failed rename; the reclaim
+        // must not delete it.
+        const target = path.join(cwd, "src/renamed.md");
+        expect(NodeFS.existsSync(target)).toBe(true);
+        expect(NodeFS.readFileSync(target).byteLength).toBe(0);
+        expect(NodeFS.existsSync(path.join(cwd, "src/source.md"))).toBe(true);
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            rivalBytesOnRename.current = null;
+          }),
+        ),
+      ),
     );
   },
 );
