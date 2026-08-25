@@ -418,7 +418,7 @@ type ProjectRenameEntryFailureContext = {
   readonly cwd: string;
   readonly relativePath: string;
   readonly stage: ProjectRenameEntryStage;
-  readonly cause: unknown;
+  readonly cause?: unknown;
 };
 
 function projectRenameEntryStageMessage(props: ProjectRenameEntryFailureContext): string {
@@ -441,7 +441,9 @@ export class ProjectRenameEntryError extends Schema.TaggedErrorClass<ProjectRena
     relativePath: TrimmedNonEmptyString,
     stage: ProjectRenameEntryStage,
     message: TrimmedNonEmptyString,
-    cause: Schema.Defect(),
+    // Validation stages fail without an underlying error, so a cause only
+    // accompanies real I/O failures.
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
@@ -463,7 +465,7 @@ type ProjectDeleteEntryFailureContext = {
   readonly cwd: string;
   readonly relativePath: string;
   readonly stage: ProjectDeleteEntryStage;
-  readonly cause: unknown;
+  readonly cause?: unknown;
 };
 
 function projectDeleteEntryStageMessage(props: ProjectDeleteEntryFailureContext): string {
@@ -471,7 +473,7 @@ function projectDeleteEntryStageMessage(props: ProjectDeleteEntryFailureContext)
     case "resolve-path":
       return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
     case "not-a-file":
-      return `'${props.relativePath}' is not a file.`;
+      return `'${props.relativePath}' is not a file; only files can be deleted from the files view.`;
     case "remove":
       return `Failed to delete '${props.relativePath}' in '${props.cwd}'.`;
   }
@@ -484,7 +486,9 @@ export class ProjectDeleteEntryError extends Schema.TaggedErrorClass<ProjectDele
     relativePath: TrimmedNonEmptyString,
     stage: ProjectDeleteEntryStage,
     message: TrimmedNonEmptyString,
-    cause: Schema.Defect(),
+    // Validation stages fail without an underlying error, so a cause only
+    // accompanies real I/O failures.
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off

@@ -367,7 +367,7 @@ export const make = Effect.gen(function* () {
   const renameEntry: WorkspaceFileSystem["Service"]["renameEntry"] = Effect.fn(
     "WorkspaceFileSystem.renameEntry",
   )(function* (input) {
-    const renameError = (stage: ProjectRenameEntryStage, cause: unknown) =>
+    const renameError = (stage: ProjectRenameEntryStage, cause?: unknown) =>
       new ProjectRenameEntryError({
         cwd: input.cwd,
         relativePath: input.relativePath,
@@ -386,20 +386,14 @@ export const make = Effect.gen(function* () {
       }),
     ]).pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
     if (path.dirname(source.relativePath) !== path.dirname(target.relativePath)) {
-      return yield* renameError(
-        "cross-directory",
-        `'${target.relativePath}' is outside the directory of '${source.relativePath}'.`,
-      );
+      return yield* renameError("cross-directory");
     }
 
     const sourceStat = yield* fileSystem
       .stat(source.absolutePath)
       .pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
     if (sourceStat.type !== "File") {
-      return yield* renameError(
-        "not-a-file",
-        `'${source.relativePath}' is a ${sourceStat.type}, not a file.`,
-      );
+      return yield* renameError("not-a-file");
     }
 
     const escapes = yield* directoryEscapesWorkspaceRoot(
@@ -499,7 +493,7 @@ export const make = Effect.gen(function* () {
   const deleteEntry: WorkspaceFileSystem["Service"]["deleteEntry"] = Effect.fn(
     "WorkspaceFileSystem.deleteEntry",
   )(function* (input) {
-    const deleteError = (stage: ProjectDeleteEntryStage, cause: unknown) =>
+    const deleteError = (stage: ProjectDeleteEntryStage, cause?: unknown) =>
       new ProjectDeleteEntryError({
         cwd: input.cwd,
         relativePath: input.relativePath,
@@ -547,10 +541,7 @@ export const make = Effect.gen(function* () {
       return;
     }
     if (targetStat.type === "Directory") {
-      return yield* deleteError(
-        "not-a-file",
-        `'${target.relativePath}' is a directory; directories cannot be deleted from the files view yet.`,
-      );
+      return yield* deleteError("not-a-file");
     }
 
     yield* fileSystem
