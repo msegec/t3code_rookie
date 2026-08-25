@@ -27,6 +27,7 @@ import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hoo
 import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
 import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -1137,7 +1138,27 @@ export default function FilePreviewPanel({
                 // stale optimistic overlay and pending edits so a later save
                 // cannot write the pre-upload snapshot over the upload.
                 clearProjectFileQueryData(environmentId, cwd, path);
-                if (!editorShowsFile(path) || isImage) return;
+                if (!editorShowsFile(path)) return;
+                if (isImage) {
+                  // The image preview renders a signed asset URL whose query
+                  // stays fresh for minutes; re-mint it so the overwritten
+                  // bytes replace the stale bitmap immediately.
+                  if (absolutePath) {
+                    appAtomRegistry.refresh(
+                      assetEnvironment.createUrl({
+                        environmentId,
+                        input: {
+                          resource: {
+                            _tag: "workspace-file",
+                            threadId: threadRef.threadId,
+                            path: absolutePath,
+                          },
+                        },
+                      }),
+                    );
+                  }
+                  return;
+                }
                 discardActiveFileSavesRef.current?.reset();
                 file.refresh();
               }}

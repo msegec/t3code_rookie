@@ -49,6 +49,8 @@ interface UploadJob {
   readonly relativePath: string;
   readonly file: File;
   readonly onUploaded: (relativePath: string) => void;
+  readonly onOverwriteStart: ((relativePath: string) => void) | undefined;
+  readonly onSettled: ((relativePath: string) => void) | undefined;
   overwrite: boolean;
   cancelled: boolean;
   abort: (() => void) | null;
@@ -132,6 +134,9 @@ async function runUpload(job: UploadJob): Promise<void> {
     }
 
     job.overwrite = true;
+    // The upload replaces the target's bytes outside the serial save lane, so
+    // pending saves of the file hold from here until the job settles.
+    job.onOverwriteStart?.(job.relativePath);
     minted = await mintUploadUrl(job);
     if (job.cancelled) {
       jobsById.delete(job.id);
@@ -220,6 +225,12 @@ function pumpUploads(): void {
         }
       })
       .finally(() => {
+        try {
+          job.onSettled?.(job.relativePath);
+        } catch (error) {
+          // A throwing settle callback must not stall the queue.
+          console.error(error);
+        }
         const remaining = (activeUploadsByEnvironment.get(job.environmentId) ?? 1) - 1;
         if (remaining > 0) {
           activeUploadsByEnvironment.set(job.environmentId, remaining);
@@ -236,6 +247,10 @@ export function startWorkspaceUploads(input: {
   readonly cwd: string;
   readonly files: ReadonlyArray<File>;
   readonly onUploaded: (relativePath: string) => void;
+  /** An overwrite of the path was confirmed and is about to run. */
+  readonly onOverwriteStart?: (relativePath: string) => void;
+  /** The job reached a terminal state: stored, failed, or cancelled. */
+  readonly onSettled?: (relativePath: string) => void;
 }): void {
   for (const file of input.files) {
     const id = randomUUID();
@@ -250,6 +265,8 @@ export function startWorkspaceUploads(input: {
       relativePath,
       file,
       onUploaded: input.onUploaded,
+      onOverwriteStart: input.onOverwriteStart,
+      onSettled: input.onSettled,
       overwrite: false,
       cancelled: false,
       abort: null,

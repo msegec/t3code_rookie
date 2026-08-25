@@ -51,13 +51,17 @@ interface FileBrowserPanelProps {
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
   /**
-   * A rename or delete is about to run. Saves and mutations share one serial
-   * per-project command queue, so a save enqueued during the mutation would
-   * land after it and recreate the file; pending saves for the path must be
-   * held before the mutation enqueues.
+   * A rename, delete, or confirmed overwrite upload is about to run. Saves
+   * and mutations share one serial per-project command queue, so a save
+   * enqueued during the mutation would land after it and recreate the file,
+   * and uploads bypass the queue entirely; pending saves for the path must
+   * be held before the mutation runs.
    */
   onEntryMutationStart?: (relativePath: string) => void;
-  /** The mutation failed and the file is still in place; held saves may run again. */
+  /**
+   * The mutation failed, or the upload settled, and the file is still in
+   * place; held saves may run again.
+   */
   onEntryMutationFailed?: (relativePath: string) => void;
   /** A rename succeeded; open surfaces for the old path should follow the file. */
   onEntryRenamed?: (relativePath: string, newRelativePath: string) => void;
@@ -252,13 +256,30 @@ export default function FileBrowserPanel({
         environmentId,
         cwd,
         files,
+        // A confirmed overwrite replaces the open file's bytes outside the
+        // serial save lane, so pending saves hold from the confirmation until
+        // the job settles. A successful upload re-arms saves through
+        // onEntryUploaded's reset, which makes the settle release a no-op.
+        onOverwriteStart: (relativePath) => {
+          onEntryMutationStart?.(relativePath);
+        },
+        onSettled: (relativePath) => {
+          onEntryMutationFailed?.(relativePath);
+        },
         onUploaded: (relativePath) => {
           entriesQuery.refresh();
           onEntryUploaded?.(relativePath);
         },
       });
     },
-    [cwd, entriesQuery, environmentId, onEntryUploaded],
+    [
+      cwd,
+      entriesQuery,
+      environmentId,
+      onEntryMutationFailed,
+      onEntryMutationStart,
+      onEntryUploaded,
+    ],
   );
   // The shared drop handlers manage drag-active state, but their onDrop reads
   // event.dataTransfer.files directly, which includes an unreadable stand-in
