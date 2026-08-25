@@ -92,14 +92,18 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
+    // Saves, renames, and deletes share one serial lane per project. A rename
+    // and a delete key on different paths when the rename targets the deleted
+    // path, so per-path lanes would let the delete run concurrently and
+    // remove the freshly renamed file; one lane orders every pair, including
+    // a save racing a mutation of its own path.
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",
       tag: WS_METHODS.projectsWriteFile,
       scheduler: fileScheduler,
       concurrency: {
         mode: "serial",
-        key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd]),
       },
     }),
     createUploadUrl: createEnvironmentRpcCommand(runtime, {
@@ -112,8 +116,7 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: fileScheduler,
       concurrency: {
         mode: "serial",
-        key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd]),
       },
     }),
     deleteEntry: createEnvironmentRpcCommand(runtime, {
@@ -122,8 +125,7 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: fileScheduler,
       concurrency: {
         mode: "serial",
-        key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd]),
       },
     }),
   };

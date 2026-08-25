@@ -19,6 +19,10 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   constructor(private readonly options: FileSaveCoordinatorOptions<A, E>) {}
 
   change(contents: string): void {
+    // After discard() the file is gone from disk; a late editor change (for
+    // example the cache-key rotation replacing the contents) must not revive
+    // the revision and recreate the file.
+    if (this.disposed) return;
     this.latestContents = contents;
     this.latestRevision += 1;
     this.lastChangeAt = Date.now();
@@ -35,6 +39,14 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   /** Drop unsaved edits without persisting; for files removed out from under the surface. */
   discard(): void {
     this.disposed = true;
+    this.reset();
+  }
+
+  /**
+   * Drop unsaved edits but keep saving alive; for files replaced on disk,
+   * where the surface reloads the new contents and editing continues.
+   */
+  reset(): void {
     this.suspended = false;
     this.clearTimer();
     this.latestRevision = 0;

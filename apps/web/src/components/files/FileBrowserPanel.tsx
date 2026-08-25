@@ -52,8 +52,8 @@ interface FileBrowserPanelProps {
   onRefreshSelectedFile?: () => void;
   /**
    * A rename or delete is about to run. Saves and mutations share one serial
-   * per-path command queue, so a save enqueued during the mutation would land
-   * after it and recreate the file; pending saves for the path must be
+   * per-project command queue, so a save enqueued during the mutation would
+   * land after it and recreate the file; pending saves for the path must be
    * held before the mutation enqueues.
    */
   onEntryMutationStart?: (relativePath: string) => void;
@@ -63,6 +63,11 @@ interface FileBrowserPanelProps {
   onEntryRenamed?: (relativePath: string, newRelativePath: string) => void;
   /** A delete succeeded; open surfaces for the path should close. */
   onEntryDeleted?: (relativePath: string) => void;
+  /**
+   * An upload landed at the path, possibly replacing an open file; stale
+   * cached contents and pending edits for it should be dropped.
+   */
+  onEntryUploaded?: (relativePath: string) => void;
 }
 
 const TREE_UNSAFE_CSS = `
@@ -233,6 +238,7 @@ export default function FileBrowserPanel({
   onEntryMutationFailed,
   onEntryRenamed,
   onEntryDeleted,
+  onEntryUploaded,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
@@ -246,10 +252,13 @@ export default function FileBrowserPanel({
         environmentId,
         cwd,
         files,
-        onUploaded: () => entriesQuery.refresh(),
+        onUploaded: (relativePath) => {
+          entriesQuery.refresh();
+          onEntryUploaded?.(relativePath);
+        },
       });
     },
-    [cwd, entriesQuery, environmentId],
+    [cwd, entriesQuery, environmentId, onEntryUploaded],
   );
   // The shared drop handlers manage drag-active state, but their onDrop reads
   // event.dataTransfer.files directly, which includes an unreadable stand-in

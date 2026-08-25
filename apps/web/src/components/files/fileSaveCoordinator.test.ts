@@ -114,6 +114,52 @@ describe("FileSaveCoordinator", () => {
     expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
   });
 
+  it("ignores changes made after discard", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const onPendingChange = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange,
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.discard();
+    coordinator.change("late editor churn");
+    await vi.runAllTimersAsync();
+
+    expect(persist).not.toHaveBeenCalled();
+    expect(onPendingChange).not.toHaveBeenCalledWith(true);
+  });
+
+  it("reset drops pending edits but later changes still save", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const onPendingChange = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange,
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("stale pre-upload edit");
+    coordinator.reset();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(persist).not.toHaveBeenCalled();
+    expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
+
+    coordinator.change("fresh edit");
+    await vi.runAllTimersAsync();
+    expect(persist).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith("fresh edit");
+  });
+
   it("suspend holds saves and resume persists the held edits", async () => {
     vi.useFakeTimers();
     const persist = vi

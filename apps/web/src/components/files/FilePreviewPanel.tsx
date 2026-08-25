@@ -406,6 +406,7 @@ interface FileSaveControls {
   suspend: () => void;
   resume: () => void;
   discard: () => void;
+  reset: () => void;
 }
 
 interface FileSelectionOverride {
@@ -448,6 +449,7 @@ function useFileSaveCoordinator({
       suspend: () => coordinator.suspend(),
       resume: () => coordinator.resume(),
       discard: () => coordinator.discard(),
+      reset: () => coordinator.reset(),
     };
     return () => {
       discardSavesRef.current = null;
@@ -1129,6 +1131,15 @@ export default function FilePreviewPanel({
               {...(relativePath && !isImage ? { onRefreshSelectedFile: file.refresh } : {})}
               onEntryMutationStart={(path) => {
                 if (editorShowsFile(path)) discardActiveFileSavesRef.current?.suspend();
+              }}
+              onEntryUploaded={(path) => {
+                // An overwrite upload replaced the bytes on disk; drop the
+                // stale optimistic overlay and pending edits so a later save
+                // cannot write the pre-upload snapshot over the upload.
+                clearProjectFileQueryData(environmentId, cwd, path);
+                if (!editorShowsFile(path) || isImage) return;
+                discardActiveFileSavesRef.current?.reset();
+                file.refresh();
               }}
               onEntryMutationFailed={(path) => {
                 if (editorShowsFile(path)) discardActiveFileSavesRef.current?.resume();
