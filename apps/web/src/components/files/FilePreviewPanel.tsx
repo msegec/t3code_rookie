@@ -1114,6 +1114,9 @@ export default function FilePreviewPanel({
               selectedPathRevealId={revealRequestId}
               onOpenFile={onOpenFile}
               {...(relativePath && !isImage ? { onRefreshSelectedFile: file.refresh } : {})}
+              onEntryMutationStart={(path) => {
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.();
+              }}
               onEntryDeleted={(path) => {
                 if (editorShowsFile(path)) discardActiveFileSavesRef.current?.();
                 clearProjectFileQueryData(environmentId, cwd, path);

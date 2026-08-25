@@ -50,6 +50,13 @@ interface FileBrowserPanelProps {
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
+  /**
+   * A rename or delete is about to run. Saves and mutations share one serial
+   * per-path command queue, so a save enqueued during the mutation would land
+   * after it and recreate the file; pending saves for the path must be
+   * dropped before the mutation enqueues.
+   */
+  onEntryMutationStart?: (relativePath: string) => void;
   /** A rename succeeded; open surfaces for the old path should follow the file. */
   onEntryRenamed?: (relativePath: string, newRelativePath: string) => void;
   /** A delete succeeded; open surfaces for the path should close. */
@@ -220,6 +227,7 @@ export default function FileBrowserPanel({
   selectedPathRevealId,
   onOpenFile,
   onRefreshSelectedFile,
+  onEntryMutationStart,
   onEntryRenamed,
   onEntryDeleted,
 }: FileBrowserPanelProps) {
@@ -320,6 +328,7 @@ export default function FileBrowserPanel({
       { variant: "destructive" },
     );
     if (confirmed !== true) return;
+    onEntryMutationStart?.(relativePath);
     const result = await runAtomCommand(
       appAtomRegistry,
       projectEnvironment.deleteEntry,
@@ -638,6 +647,7 @@ export default function FileBrowserPanel({
           cwd={cwd}
           relativePath={renameTarget}
           onClose={() => setRenameTarget(null)}
+          onRenameStart={() => onEntryMutationStart?.(renameTarget)}
           onRenamed={(newRelativePath) => {
             entriesQuery.refresh();
             onEntryRenamed?.(renameTarget, newRelativePath);
