@@ -379,3 +379,116 @@ export class ProjectCreateUploadUrlError extends Schema.TaggedErrorClass<Project
     super({ ...props, message: projectCreateUploadUrlStageMessage(props) } as any);
   }
 }
+
+export const ProjectRenameEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  newRelativePath: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH),
+  ),
+});
+export type ProjectRenameEntryInput = typeof ProjectRenameEntryInput.Type;
+
+export const ProjectRenameEntryResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+});
+export type ProjectRenameEntryResult = typeof ProjectRenameEntryResult.Type;
+
+export class ProjectRenameEntryTargetExistsError extends Schema.TaggedErrorClass<ProjectRenameEntryTargetExistsError>()(
+  "ProjectRenameEntryTargetExistsError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+  },
+) {
+  override get message(): string {
+    return `A file already exists at '${this.relativePath}' in '${this.cwd}'.`;
+  }
+}
+
+export const ProjectRenameEntryStage = Schema.Literals([
+  "resolve-path",
+  "not-a-file",
+  "cross-directory",
+  "rename",
+]);
+export type ProjectRenameEntryStage = typeof ProjectRenameEntryStage.Type;
+
+type ProjectRenameEntryFailureContext = {
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly stage: ProjectRenameEntryStage;
+  readonly cause: unknown;
+};
+
+function projectRenameEntryStageMessage(props: ProjectRenameEntryFailureContext): string {
+  switch (props.stage) {
+    case "resolve-path":
+      return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "not-a-file":
+      return `'${props.relativePath}' is not a file.`;
+    case "cross-directory":
+      return `Cannot rename '${props.relativePath}' into a different directory.`;
+    case "rename":
+      return `Failed to rename '${props.relativePath}' in '${props.cwd}'.`;
+  }
+}
+
+export class ProjectRenameEntryError extends Schema.TaggedErrorClass<ProjectRenameEntryError>()(
+  "ProjectRenameEntryError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+    stage: ProjectRenameEntryStage,
+    message: TrimmedNonEmptyString,
+    cause: Schema.Defect(),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ProjectRenameEntryFailureContext) {
+    super({ ...props, message: projectRenameEntryStageMessage(props) } as any);
+  }
+}
+
+export const ProjectDeleteEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+});
+export type ProjectDeleteEntryInput = typeof ProjectDeleteEntryInput.Type;
+
+export const ProjectDeleteEntryStage = Schema.Literals(["resolve-path", "not-a-file", "remove"]);
+export type ProjectDeleteEntryStage = typeof ProjectDeleteEntryStage.Type;
+
+type ProjectDeleteEntryFailureContext = {
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly stage: ProjectDeleteEntryStage;
+  readonly cause: unknown;
+};
+
+function projectDeleteEntryStageMessage(props: ProjectDeleteEntryFailureContext): string {
+  switch (props.stage) {
+    case "resolve-path":
+      return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "not-a-file":
+      return `'${props.relativePath}' is not a file.`;
+    case "remove":
+      return `Failed to delete '${props.relativePath}' in '${props.cwd}'.`;
+  }
+}
+
+export class ProjectDeleteEntryError extends Schema.TaggedErrorClass<ProjectDeleteEntryError>()(
+  "ProjectDeleteEntryError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+    stage: ProjectDeleteEntryStage,
+    message: TrimmedNonEmptyString,
+    cause: Schema.Defect(),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ProjectDeleteEntryFailureContext) {
+    super({ ...props, message: projectDeleteEntryStageMessage(props) } as any);
+  }
+}

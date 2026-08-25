@@ -115,12 +115,18 @@ import {
   ProjectCreateUploadUrlError,
   ProjectCreateUploadUrlInput,
   ProjectCreateUploadUrlResult,
+  ProjectDeleteEntryError,
+  ProjectDeleteEntryInput,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
   ProjectReadFileError,
   ProjectReadFileInput,
   ProjectReadFileResult,
+  ProjectRenameEntryError,
+  ProjectRenameEntryInput,
+  ProjectRenameEntryResult,
+  ProjectRenameEntryTargetExistsError,
   ProjectSearchContentsError,
   ProjectSearchContentsInput,
   ProjectSearchContentsResult,
@@ -221,6 +227,8 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
   projectsCreateUploadUrl: "projects.createUploadUrl",
+  projectsRenameEntry: "projects.renameEntry",
+  projectsDeleteEntry: "projects.deleteEntry",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -681,6 +689,21 @@ export const WsProjectsCreateUploadUrlRpc = Rpc.make(WS_METHODS.projectsCreateUp
   ]),
 });
 
+export const WsProjectsRenameEntryRpc = Rpc.make(WS_METHODS.projectsRenameEntry, {
+  payload: ProjectRenameEntryInput,
+  success: ProjectRenameEntryResult,
+  error: Schema.Union([
+    ProjectRenameEntryError,
+    ProjectRenameEntryTargetExistsError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
+export const WsProjectsDeleteEntryRpc = Rpc.make(WS_METHODS.projectsDeleteEntry, {
+  payload: ProjectDeleteEntryInput,
+  error: Schema.Union([ProjectDeleteEntryError, EnvironmentAuthorizationError]),
+});
+
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1082,6 +1105,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsProjectsCreateUploadUrlRpc,
+  WsProjectsRenameEntryRpc,
+  WsProjectsDeleteEntryRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
