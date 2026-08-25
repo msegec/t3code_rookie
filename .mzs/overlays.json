@@ -34,6 +34,11 @@
       "kind": "pull-request",
       "number": 8162,
       "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 8196,
+      "headRepository": "msegec/t3code_rookie"
     }
   ],
   "tests": [
@@ -50,6 +55,7 @@
     "apps/server/src/workspace/WorkspaceUpload.test.ts",
     "apps/web/src/lib/workspaceUploadQueue.test.ts",
     "apps/web/src/lib/attachmentUploadQueue.test.ts",
-    "apps/server/src/workspace/WorkspaceFileSystem.test.ts"
+    "apps/server/src/workspace/WorkspaceFileSystem.test.ts",
+    "apps/web/src/components/usage/UsagePage.test.tsx"
   ]
 }
