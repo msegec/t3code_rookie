@@ -335,9 +335,20 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
             const claimInode = yield* fileSystem.stat(target.absolutePath).pipe(
               Effect.map((info) => Option.getOrNull(info.ino)),
               // A stat failure here would strand the empty claim as a
-              // permanent conflict; reclaim before surfacing the error.
+              // permanent conflict. With no inode to identify the claim by,
+              // the reclaim re-stats and removes only a zero-byte file, so a
+              // rival's non-empty overwrite is never deleted; when the fault
+              // persists the claim stays, trading a retryable conflict for
+              // zero data loss.
               Effect.tapError(() =>
-                fileSystem.remove(target.absolutePath, { force: true }).pipe(Effect.ignore),
+                fileSystem.stat(target.absolutePath).pipe(
+                  Effect.flatMap((info) =>
+                    info.size === FileSystem.Size(0)
+                      ? fileSystem.remove(target.absolutePath, { force: true })
+                      : Effect.void,
+                  ),
+                  Effect.ignore,
+                ),
               ),
             );
             yield* fileSystem.rename(partPath, target.absolutePath).pipe(
