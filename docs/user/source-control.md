@@ -25,7 +25,7 @@ T3 Code works with the platforms your team already uses:
 
 - On the repository step, type at least two characters and T3 Code searches GitHub as you type
 - **Your repositories** are listed first, then other matches under **GitHub**
-- Each row shows the repository name and its description. Pick one to go straight to choosing a destination
+- Each row shows the repository name and, when available, its description. Pick one to go straight to choosing a destination
 - Typing an exact `owner/repo` path and pressing Enter still works, on every provider
 - On the web, arrow keys move through the results and Enter picks the highlighted one. With nothing highlighted, Enter looks up the path you typed
 - On mobile, tap a result to pick it
