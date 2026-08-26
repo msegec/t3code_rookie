@@ -164,7 +164,7 @@ describe("codeColorPreviewParts", () => {
         removeProperty: () => undefined,
       },
       ownerDocument: {
-        getSelection: () => ({ anchorNode: caret, focusNode: caret }),
+        getSelection: () => null,
         createTextNode: (textContent: string) => ({ textContent }),
         createElement: () => ({
           className: "",
@@ -179,6 +179,7 @@ describe("codeColorPreviewParts", () => {
     } as unknown as HTMLElement;
     const root = {
       querySelectorAll: () => [token],
+      getSelection: () => ({ anchorNode: caret, focusNode: caret }),
     } as unknown as ParentNode;
 
     applyCodeColorPreviews(root, "json");

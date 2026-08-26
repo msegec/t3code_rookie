@@ -80,12 +80,15 @@ export function codeColorPreviewParts(
 export function applyCodeColorPreviews(root: ParentNode, language: string): void {
   const allowShortForms = allowShortColorForms(language);
   if (allowShortForms === null) return;
+  const rootSelection = (
+    root as ParentNode & { getSelection?: () => Selection | null }
+  ).getSelection?.();
 
   for (const token of root.querySelectorAll<HTMLElement>("[data-line] span")) {
     if (token.childElementCount > 0 || token.classList.contains("chat-markdown-color-literal")) {
       continue;
     }
-    const selection = token.ownerDocument.getSelection();
+    const selection = rootSelection ?? token.ownerDocument.getSelection();
     if (
       (selection?.anchorNode && token.contains(selection.anchorNode)) ||
       (selection?.focusNode && token.contains(selection.focusNode))
