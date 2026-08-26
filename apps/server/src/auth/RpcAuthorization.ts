@@ -74,6 +74,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsReviewerCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRequestReviewers]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
+  [WS_METHODS.sourceControlSearchRepositories]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlCloneRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsListEntries]: AuthOrchestrationReadScope,

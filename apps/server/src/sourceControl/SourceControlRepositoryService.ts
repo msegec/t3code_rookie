@@ -17,6 +17,8 @@ import {
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryInfo,
   type SourceControlRepositoryLookupInput,
+  type SourceControlRepositorySearchInput,
+  type SourceControlRepositorySearchOutput,
 } from "@t3tools/contracts";
 
 import { ServerConfig } from "../config.ts";
@@ -30,6 +32,9 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly lookupRepository: (
       input: SourceControlRepositoryLookupInput,
     ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
+    readonly searchRepositories: (
+      input: SourceControlRepositorySearchInput,
+    ) => Effect.Effect<SourceControlRepositorySearchOutput, SourceControlRepositoryError>;
     readonly cloneRepository: (
       input: SourceControlCloneRepositoryInput,
     ) => Effect.Effect<SourceControlCloneRepositoryResult, SourceControlRepositoryError>;
@@ -125,6 +130,20 @@ export const make = Effect.gen(function* () {
     });
     return toRepositoryInfo(providerKind, urls);
   });
+
+  const searchRepositories = Effect.fn("SourceControlRepositoryService.searchRepositories")(
+    function* (input: SourceControlRepositorySearchInput) {
+      const providerKind = yield* ensureConcreteProvider({
+        operation: "searchRepositories",
+        provider: input.provider,
+      });
+      const provider = yield* providers.get(providerKind);
+      return yield* provider.searchRepositories({
+        cwd: input.cwd ?? config.cwd,
+        query: input.query.trim(),
+      });
+    },
+  );
 
   const normalizeDestinationPath = Effect.fn("SourceControlRepositoryService.normalizeDestination")(
     function* (destinationPath: string) {
@@ -278,6 +297,8 @@ export const make = Effect.gen(function* () {
   return SourceControlRepositoryService.of({
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
+    searchRepositories: (input) =>
+      searchRepositories(input).pipe(mapRepositoryError("searchRepositories", input.provider)),
     cloneRepository: (input) =>
       cloneRepository(input).pipe(
         mapRepositoryError("cloneRepository", input.provider ?? "unknown"),

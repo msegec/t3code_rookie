@@ -118,6 +118,33 @@ it.effect("looks up repositories through the requested provider without search",
   }).pipe(Effect.provide(makeLayer({ provider })));
 });
 
+it.effect("searches repositories through the requested provider", () => {
+  const calls: Array<{ cwd: string; query: string }> = [];
+  const searchResult = {
+    supported: true,
+    results: [{ ...CLONE_URLS, ownedByViewer: true }],
+  };
+  const provider = makeProvider({
+    searchRepositories: (input) =>
+      Effect.sync(() => {
+        calls.push({ cwd: input.cwd, query: input.query });
+        return searchResult;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.searchRepositories({
+      provider: "github",
+      query: "t3code",
+      cwd: "/workspace",
+    });
+
+    assert.deepStrictEqual(result, searchResult);
+    assert.deepStrictEqual(calls, [{ cwd: "/workspace", query: "t3code" }]);
+  }).pipe(Effect.provide(makeLayer({ provider })));
+});
+
 it.effect("preserves provider failures without deriving the repository message from them", () => {
   const providerCause = new SourceControlProviderError({
     provider: "github",

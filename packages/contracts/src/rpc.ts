@@ -1036,6 +1036,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
   WsSourceControlLookupRepositoryRpc,
+  WsSourceControlSearchRepositoriesRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
   WsProjectsListEntriesRpc,
