@@ -2177,7 +2177,9 @@ function OpenCommandPaletteDialog(props: {
         value: repositoryResultItemValue(repositorySearchFlow.environmentId, result.nameWithOwner),
         searchTerms: [result.nameWithOwner],
         title: result.nameWithOwner,
-        ...(result.description ? { description: result.description } : {}),
+        ...(result.description
+          ? { description: <span className="block truncate">{result.description}</span> }
+          : {}),
         icon: remoteProjectSourceIcon(repositorySearchFlow.source, ITEM_ICON_CLASS),
         keepOpen: true,
         run: async () => {
