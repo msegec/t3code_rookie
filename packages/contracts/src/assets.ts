@@ -6,7 +6,6 @@ import {
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
   ProjectFaviconPath,
 } from "./orchestration.ts";
-import { ProjectAccent } from "./t3ProjectFile.ts";
 
 const ASSET_PATH_MAX_LENGTH = 1024;
 
@@ -38,7 +37,6 @@ export const AssetCreateUrlResult = Schema.Struct({
   sourcePath: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
   ),
-  projectAccent: Schema.optional(ProjectAccent),
 });
 export type AssetCreateUrlResult = typeof AssetCreateUrlResult.Type;
 

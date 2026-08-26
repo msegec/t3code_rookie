@@ -4,7 +4,6 @@ import type { CSSProperties } from "react";
 export interface ProjectAccentRowStyle extends CSSProperties {
   "--project-accent-color"?: string;
   "--project-accent-idle"?: string;
-  "--project-accent-hover"?: string;
   "--project-accent-selected"?: string;
 }
 
@@ -25,7 +24,6 @@ export function projectAccentRowStyle(
     ? { "--project-accent-color": accent }
     : {
         "--project-accent-idle": accent.idle,
-        "--project-accent-hover": accent.hover,
         "--project-accent-selected": accent.selected,
       };
 }

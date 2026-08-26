@@ -105,6 +105,8 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as ProjectAccents from "./project/ProjectAccents.ts";
+import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
@@ -396,6 +398,7 @@ const makeWsRpcLayer = (
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+      const projectFaviconResolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const analytics = yield* AnalyticsService.AnalyticsService;
       // Every command dispatched on this connection carries the connecting
@@ -677,23 +680,31 @@ const makeWsRpcLayer = (
           projectId,
           projectionSnapshotQuery.getProjectShellById(projectId),
         ).pipe(
-          Effect.map(
-            Option.flatMap((project) =>
-              Option.match(project, {
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.succeedNone,
+              onSome: Option.match({
                 onNone: () =>
-                  Option.some<OrchestrationShellStreamEvent>({
+                  Effect.succeedSome<OrchestrationShellStreamEvent>({
                     kind: "project-removed" as const,
                     sequence,
                     projectId,
                   }),
+                // The upsert carries the accent for the same reason the
+                // snapshot does: a project that changes must not hand the
+                // client a record the rows then have to repaint.
                 onSome: (nextProject) =>
-                  Option.some<OrchestrationShellStreamEvent>({
-                    kind: "project-upserted" as const,
-                    sequence,
-                    project: nextProject,
-                  }),
+                  ProjectAccents.withProjectAccent(projectFaviconResolver, nextProject).pipe(
+                    Effect.map((project) =>
+                      Option.some<OrchestrationShellStreamEvent>({
+                        kind: "project-upserted" as const,
+                        sequence,
+                        project,
+                      }),
+                    ),
+                  ),
               }),
-            ),
+            }),
           ),
         );
 
@@ -1300,6 +1311,13 @@ const makeWsRpcLayer = (
               const bufferedLiveStream = coalesceShellLiveStream(Stream.fromQueue(liveBuffer));
 
               const loadSnapshot = projectionSnapshotQuery.getShellSnapshot().pipe(
+                // Accents ride on the snapshot so sidebar rows never paint once
+                // without them and once with them. See ProjectAccents.
+                Effect.flatMap((snapshot) =>
+                  ProjectAccents.withProjectAccents(projectFaviconResolver, snapshot.projects).pipe(
+                    Effect.map((projects) => ({ ...snapshot, projects })),
+                  ),
+                ),
                 Effect.tapError((cause) =>
                   Effect.logError("orchestration shell snapshot load failed", { cause }),
                 ),

@@ -52,20 +52,19 @@ describe("T3ProjectFile", () => {
     expect(() => decode({ accentColor: "#1688f0cc" })).toThrow();
   });
 
-  it("accepts exact idle, hover, and selected accent colors", () => {
+  it("accepts exact idle and selected accent colors", () => {
     expect(
       decode({
         accentColor: {
           idle: "#071525",
-          hover: "#102b46",
           selected: "#173b60",
         },
       }).accentColor,
-    ).toEqual({ idle: "#071525", hover: "#102b46", selected: "#173b60" });
+    ).toEqual({ idle: "#071525", selected: "#173b60" });
   });
 
   it("requires every exact accent state", () => {
-    expect(() => decode({ accentColor: { idle: "#071525", hover: "#102b46" } })).toThrow();
+    expect(() => decode({ accentColor: { idle: "#071525" } })).toThrow();
   });
 
   it("rejects scripts without a command", () => {

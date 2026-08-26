@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import appStyles from "./index.css?raw";
 import { projectAccentRowState, projectAccentRowStyle } from "./projectAccent";
 
 describe("projectAccentRowState", () => {
@@ -25,17 +26,21 @@ describe("projectAccentRowStyle", () => {
     expect(
       projectAccentRowStyle({
         idle: "#071525",
-        hover: "#102b46",
         selected: "#173b60",
       }),
     ).toEqual({
       "--project-accent-idle": "#071525",
-      "--project-accent-hover": "#102b46",
       "--project-accent-selected": "#173b60",
     });
   });
 
   it("does not add accent styles without project configuration", () => {
     expect(projectAccentRowStyle(null)).toBeUndefined();
+  });
+});
+
+describe("project accent row interaction", () => {
+  it("keeps the accent gradient stable while a row is hovered", () => {
+    expect(appStyles).not.toMatch(/\[data-project-accent\][^,{]*:hover/);
   });
 });

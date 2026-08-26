@@ -286,3 +286,12 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(ProjectFaviconResolver, make);
+
+/**
+ * The resolver with its own dependencies satisfied, for the several places
+ * that assemble project payloads and only need the service itself.
+ */
+export const layerLive = layer.pipe(
+  Layer.provide(WorkspacePaths.layer),
+  Layer.provide(T3ProjectFileLoader.layer),
+);

@@ -1,4 +1,4 @@
-import type { AssetResource, ProjectAccent } from "@t3tools/contracts";
+import type { AssetResource } from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
   AssetPreviewTypeValidationError,
@@ -195,7 +195,6 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   let claims: AssetClaims;
   let fileName: string;
   let sourcePath: string | undefined;
-  let projectAccent: ProjectAccent | undefined;
 
   switch (input.resource._tag) {
     case "workspace-file": {
@@ -307,16 +306,6 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         ),
       );
       const faviconResolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
-      projectAccent = yield* faviconResolver.resolveAccent(workspaceRoot).pipe(
-        Effect.mapError(
-          (cause) =>
-            new AssetProjectFaviconResolutionError({
-              resource: input.resource,
-              cause,
-            }),
-        ),
-        Effect.map((color) => color ?? undefined),
-      );
       const faviconPath = yield* faviconResolver
         .resolvePath(workspaceRoot, input.projectFaviconPath ?? undefined)
         .pipe(
@@ -435,7 +424,6 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     relativeUrl: `${ASSET_ROUTE_PREFIX}/${token}/${encodeURIComponent(fileName)}`,
     expiresAt,
     ...(sourcePath !== undefined ? { sourcePath } : {}),
-    ...(projectAccent !== undefined ? { projectAccent } : {}),
   };
 });
 
