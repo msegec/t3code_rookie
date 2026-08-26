@@ -1,5 +1,9 @@
-import { WS_METHODS } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import {
+  WS_METHODS,
+  type SourceControlRepositorySearchInput,
+  type SourceControlRepositorySearchOutput,
+} from "@t3tools/contracts";
+import { Atom, type AsyncResult } from "effect/unstable/reactivity";
 
 import {
   createAtomCommandScheduler,
@@ -24,6 +28,10 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       label: "environment-data:source-control:repository",
       tag: WS_METHODS.sourceControlLookupRepository,
     }),
+    repositorySearch: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:source-control:repository-search",
+      tag: WS_METHODS.sourceControlSearchRepositories,
+    }),
     cloneRepository: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:clone-repository",
       tag: WS_METHODS.sourceControlCloneRepository,
@@ -46,3 +54,27 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     }),
   };
 }
+
+type AssertTrue<T extends true> = T;
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+type RepositorySearchAtomFamily = ReturnType<
+  typeof createSourceControlEnvironmentAtoms<never, never>
+>["repositorySearch"];
+type RepositorySearchValue =
+  ReturnType<RepositorySearchAtomFamily> extends Atom.Atom<
+    AsyncResult.AsyncResult<infer A, infer _E>
+  >
+    ? A
+    : never;
+
+/**
+ * Compile-time proof that `repositorySearch` carries the repository search contract, so
+ * dropping the key or pointing it at another RPC tag fails here instead of in web or mobile.
+ */
+type _RepositorySearchTakesSearchInput = AssertTrue<
+  Exact<Parameters<RepositorySearchAtomFamily>[0]["input"], SourceControlRepositorySearchInput>
+>;
+type _RepositorySearchYieldsSearchOutput = AssertTrue<
+  Exact<RepositorySearchValue, SourceControlRepositorySearchOutput>
+>;
