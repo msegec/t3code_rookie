@@ -2496,7 +2496,10 @@ function OpenCommandPaletteDialog(props: {
               variant="outline"
               size="xs"
               tabIndex={-1}
-              className="absolute inset-e-2.5 top-1/2 gap-1.5 pe-1 ps-2 -translate-y-1/2"
+              className={cn(
+                "absolute inset-e-2.5 top-1/2 pe-1 ps-2 -translate-y-1/2",
+                hasHighlightedRepositoryItem ? "gap-1" : "gap-1.5",
+              )}
               aria-label={`${remoteProjectButtonLabel ?? "Continue"} (${remoteProjectShortcutLabel})`}
               disabled={!canSubmitRemoteProjectFlow}
               onMouseDown={(event) => {
@@ -2597,7 +2600,9 @@ function OpenCommandPaletteDialog(props: {
         // inner input must reserve enough room for the full action label.
         className:
           addProjectCloneFlow?.step === "repository"
-            ? "*:data-[slot=autocomplete-input]:pe-32!"
+            ? hasHighlightedRepositoryItem
+              ? "*:data-[slot=autocomplete-input]:pe-38!"
+              : "*:data-[slot=autocomplete-input]:pe-32!"
             : isBrowsing
               ? browseInputEndPaddingClass({
                   willCreateProjectPath,
