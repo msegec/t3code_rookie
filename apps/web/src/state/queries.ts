@@ -8,6 +8,10 @@ import {
   makeThreadSearchKey,
   type EnvironmentThreadSearchMatch,
 } from "@t3tools/client-runtime/state/thread-search";
+import {
+  resolveRepositorySearchAnswer,
+  type RepositorySearchAnswer,
+} from "@t3tools/client-runtime/state/source-control";
 import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
 import type {
   EnvironmentId,
@@ -23,7 +27,7 @@ import type {
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { orchestrationEnvironment } from "./orchestration";
@@ -129,13 +133,17 @@ export interface RepositorySearchView {
 /**
  * Debounced repository search for the add-project flow. Results blank while the query settles,
  * because a previous owner prefix's matches actively mislead, and each settled query subscribes to
- * its own atom so a late response cannot overwrite a newer one.
+ * its own atom so a late response cannot overwrite a newer one. `supported` and `error` stay sticky
+ * per environment+provider across keystrokes, so a provider already known unsupported keeps its
+ * exact-path affordance instead of flashing the searching state on every character.
  */
 export function useRepositorySearch(target: RepositorySearchTarget): RepositorySearchView {
   const normalizedQuery = target.query.trim();
   const debouncedQuery = useDebouncedValue(normalizedQuery, REPOSITORY_SEARCH_DEBOUNCE_MS);
   const environmentId = target.environmentId;
   const provider = target.provider;
+  const answerMemoryRef = useRef<Map<string, RepositorySearchAnswer> | null>(null);
+  answerMemoryRef.current ??= new Map();
   const canSearch =
     environmentId !== null &&
     provider !== null &&
@@ -150,13 +158,21 @@ export function useRepositorySearch(target: RepositorySearchTarget): RepositoryS
           input: { provider, query: settledQuery },
         }),
   );
+  const answer = resolveRepositorySearchAnswer({
+    memory: answerMemoryRef.current,
+    environmentId,
+    provider,
+    canSearch,
+    data: result.data,
+    error: result.error,
+  });
 
   return {
     results: isDebouncing
       ? EMPTY_REPOSITORY_SEARCH_RESULTS
       : (result.data?.results ?? EMPTY_REPOSITORY_SEARCH_RESULTS),
-    supported: result.data?.supported ?? true,
-    error: result.error,
+    supported: answer.supported,
+    error: answer.error,
     isPending: canSearch && (isDebouncing || result.isPending),
     canSearch,
   };

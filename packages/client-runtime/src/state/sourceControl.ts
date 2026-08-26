@@ -1,5 +1,7 @@
 import {
   WS_METHODS,
+  type EnvironmentId,
+  type SourceControlProviderKind,
   type SourceControlRepositorySearchInput,
   type SourceControlRepositorySearchOutput,
 } from "@t3tools/contracts";
@@ -53,6 +55,46 @@ export function createSourceControlEnvironmentAtoms<R, E>(
         }),
     }),
   };
+}
+
+export interface RepositorySearchAnswer {
+  readonly supported: boolean;
+  readonly error: string | null;
+}
+
+const DEFAULT_REPOSITORY_SEARCH_ANSWER: RepositorySearchAnswer = { supported: true, error: null };
+
+/**
+ * Sticky `supported`/`error` for the repository search views. Each settled query subscribes to its
+ * own atom, so every keystroke starts a pending atom that knows nothing; without memory the UI
+ * flashes the searching state and rediscovers `supported: false` on every character. Search support
+ * is static per provider, so the last settled answer for an environment+provider stands in while
+ * the next query is pending, and the next settled answer (including a recovery from a transient
+ * error) replaces it. Callers own `memory` and scope it to the mounted view.
+ */
+export function resolveRepositorySearchAnswer(input: {
+  readonly memory: Map<string, RepositorySearchAnswer>;
+  readonly environmentId: EnvironmentId | null;
+  readonly provider: SourceControlProviderKind | null;
+  /** False when the query is too short to search; remembered answers do not apply there. */
+  readonly canSearch: boolean;
+  readonly data: { readonly supported: boolean } | null;
+  readonly error: string | null;
+}): RepositorySearchAnswer {
+  const key =
+    input.environmentId !== null && input.provider !== null
+      ? `${input.environmentId}:${input.provider}`
+      : null;
+  const settled =
+    input.data !== null || input.error !== null
+      ? { supported: input.data?.supported ?? true, error: input.error }
+      : null;
+  if (settled !== null) {
+    if (key !== null) input.memory.set(key, settled);
+    return settled;
+  }
+  if (!input.canSearch || key === null) return DEFAULT_REPOSITORY_SEARCH_ANSWER;
+  return input.memory.get(key) ?? DEFAULT_REPOSITORY_SEARCH_ANSWER;
 }
 
 type AssertTrue<T extends true> = T;

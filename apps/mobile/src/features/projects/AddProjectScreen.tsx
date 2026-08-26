@@ -31,6 +31,10 @@ import {
   inferProjectTitleFromPath,
   isWindowsPlatform,
 } from "@t3tools/client-runtime/state/projects";
+import {
+  resolveRepositorySearchAnswer,
+  type RepositorySearchAnswer,
+} from "@t3tools/client-runtime/state/source-control";
 import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { CommonActions, StackActions, useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
@@ -686,10 +690,22 @@ function RepositorySearchResults(props: {
         : groupRepositorySearchResults(searchState.data?.results ?? [], provider),
     [provider, searchState.data?.results],
   );
+  // Sticky per environment+provider, so a provider already known unsupported keeps its exact-path
+  // affordance instead of flashing "Searching repositories…" on every keystroke's fresh atom.
+  const answerMemoryRef = useRef<Map<string, RepositorySearchAnswer> | null>(null);
+  answerMemoryRef.current ??= new Map();
+  const answer = resolveRepositorySearchAnswer({
+    memory: answerMemoryRef.current,
+    environmentId: props.environment.environmentId,
+    provider,
+    canSearch,
+    data: searchState.data,
+    error: searchState.error,
+  });
   const emptyStateMessage = repositorySearchEmptyState({
     source: props.source,
-    supported: searchState.data?.supported ?? true,
-    error: searchState.error,
+    supported: answer.supported,
+    error: answer.error,
     isPending: canSearch && (searchTarget === null || searchState.isPending),
     canSearch,
   });
