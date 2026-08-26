@@ -19,8 +19,9 @@ To use automatic detection again, select **Automatic**.
 
 ## Sidebar accent
 
-Add `accentColor` to `t3.json` to tint every sidebar thread row for the project. A single color
-generates restrained idle, hover, and selected tints:
+Add `accentColor` to `t3.json` to tint every sidebar thread row for the project. The tint is
+strongest at the right edge of the row and fades out toward the left. A single color generates
+restrained idle, hover, and selected tints:
 
 ```json
 {

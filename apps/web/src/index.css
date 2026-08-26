@@ -1543,41 +1543,49 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 /* No [data-app-sidebar] ancestor scope: the mobile sheet sidebar renders
    without that attribute. Keep the state rules after the hover rule so
-   active and selected surfaces stay stable under the pointer. */
+   active and selected surfaces stay stable under the pointer. The accent
+   paints as a background-image gradient over the row's own surface color,
+   strongest at the right edge and fading out to the left, so hover and
+   selected base surfaces keep coming from the row classes. */
 [data-project-accent] {
-  background-color: var(
-    --project-accent-idle,
-    color-mix(in srgb, var(--project-accent-color) 4%, transparent)
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--project-accent-idle, color-mix(in srgb, var(--project-accent-color) 4%, transparent))
   );
 }
 
 [data-project-accent]:focus-visible {
-  background-color: var(
-    --project-accent-hover,
-    color-mix(in srgb, var(--project-accent-color) 9%, var(--sidebar-row-hover))
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--project-accent-hover, color-mix(in srgb, var(--project-accent-color) 9%, transparent))
   );
 }
 
 @media (hover: hover) {
   [data-project-accent]:hover {
-    background-color: var(
-      --project-accent-hover,
-      color-mix(in srgb, var(--project-accent-color) 9%, var(--sidebar-row-hover))
+    background-image: linear-gradient(
+      to right,
+      transparent,
+      var(--project-accent-hover, color-mix(in srgb, var(--project-accent-color) 9%, transparent))
     );
   }
 }
 
 [data-project-accent][data-project-accent-state="selected"] {
-  background-color: var(
-    --project-accent-selected,
-    color-mix(in srgb, var(--project-accent-color) 13%, var(--sidebar-row-selected))
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--project-accent-selected, color-mix(in srgb, var(--project-accent-color) 13%, transparent))
   );
 }
 
 [data-project-accent][data-project-accent-state="active"] {
-  background-color: var(
-    --project-accent-selected,
-    color-mix(in srgb, var(--project-accent-color) 13%, var(--sidebar-row-active))
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--project-accent-selected, color-mix(in srgb, var(--project-accent-color) 13%, transparent))
   );
 }
 
