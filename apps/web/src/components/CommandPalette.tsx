@@ -695,6 +695,12 @@ function OpenCommandPaletteDialog(props: {
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
+  // Mirrors addProjectCloneFlow so the exact-path lookup continuation can tell whether the flow
+  // moved on (a search result was selected, or the flow was cancelled) while it was in flight.
+  const addProjectCloneFlowRef = useRef<AddProjectCloneFlow | null>(null);
+  useEffect(() => {
+    addProjectCloneFlowRef.current = addProjectCloneFlow;
+  }, [addProjectCloneFlow]);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
   const projectGroupingSettings = useMemo(
@@ -2000,6 +2006,13 @@ function OpenCommandPaletteDialog(props: {
         },
       });
       setIsRemoteProjectLookingUp(false);
+      // Every flow transition replaces the flow object, so a mismatch means a search result was
+      // selected or the flow was cancelled while the lookup was pending. Drop the stale response
+      // instead of clobbering the newer state (same commit-only-if-current shape as
+      // createBrowseNavigationCoordinator).
+      if (addProjectCloneFlowRef.current !== addProjectCloneFlow) {
+        return;
+      }
       if (lookupResult._tag === "Failure") {
         if (!isAtomCommandInterrupted(lookupResult)) {
           toastManager.add(

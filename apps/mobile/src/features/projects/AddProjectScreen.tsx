@@ -791,6 +791,12 @@ export function AddProjectRepositoryScreen(props: {
         repository: repositoryInput.trim(),
       },
     });
+    // Tapping a search result while the lookup is pending pushes the destination screen for that
+    // result; a stale lookup response must not push a second one on top of it.
+    if (!navigation.isFocused()) {
+      setIsSubmitting(false);
+      return;
+    }
     if (AsyncResult.isFailure(result)) {
       setError(errorMessage(Cause.squash(result.cause)));
     } else {
