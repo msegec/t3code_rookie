@@ -67,13 +67,13 @@ it.layer(TestLayer)("ProjectFaviconResolverLive", (it) => {
         yield* writeTextFile(
           cwd,
           "t3.json",
-          '{ "accentColor": { "idle": "#071525", "hover": "#102b46", "selected": "#173b60" } }',
+          '{ "accentColor": { "idle": "#071525", "active": "#245181", "selected": "#173b60" } }',
         );
 
         const accentColor = yield* resolver.resolveAccent(cwd);
         expect(accentColor).toEqual({
           idle: "#071525",
-          hover: "#102b46",
+          active: "#245181",
           selected: "#173b60",
         });
       }),
