@@ -1543,13 +1543,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 /* No [data-app-sidebar] ancestor scope: the mobile sheet sidebar renders
    without that attribute. Keep the state rules after the hover rule so
-   active and selected surfaces stay stable under the pointer. An accented
-   row replaces its flat surface fill entirely: the hover, selected, and
-   active rules zero the row-class background-color and paint one gradient
-   that holds full strength across the right quarter and fades to the
-   sidebar background on the left, so the state surface itself fades along
-   with the accent. The mix percentages run stronger than a full-card wash
-   would need because the fade halves the perceived tint. */
+   active and selected surfaces stay stable under the pointer. Selected and
+   active rows replace their flat surface fill entirely: those rules zero
+   the row-class background-color and paint one gradient that holds full
+   strength across the right quarter and fades to the sidebar background on
+   the left. Hover keeps the flat row wash under the accent gradient so the
+   hover text brightening on receded rows still reads as part of a full-row
+   highlight instead of a bare font flash. The mix percentages run stronger
+   than a full-card wash would need because the fade halves the perceived
+   tint. */
 [data-project-accent] {
   background-image: linear-gradient(
     to right,
@@ -1559,28 +1561,22 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 [data-project-accent]:focus-visible {
-  background-color: transparent;
+  background-color: var(--sidebar-row-hover);
   background-image: linear-gradient(
     to right,
     transparent,
-    var(
-        --project-accent-hover,
-        color-mix(in srgb, var(--project-accent-color) 15%, var(--sidebar-row-hover))
-      )
+    var(--project-accent-hover, color-mix(in srgb, var(--project-accent-color) 15%, transparent))
       75%
   );
 }
 
 @media (hover: hover) {
   [data-project-accent]:hover {
-    background-color: transparent;
+    background-color: var(--sidebar-row-hover);
     background-image: linear-gradient(
       to right,
       transparent,
-      var(
-          --project-accent-hover,
-          color-mix(in srgb, var(--project-accent-color) 15%, var(--sidebar-row-hover))
-        )
+      var(--project-accent-hover, color-mix(in srgb, var(--project-accent-color) 15%, transparent))
         75%
     );
   }
