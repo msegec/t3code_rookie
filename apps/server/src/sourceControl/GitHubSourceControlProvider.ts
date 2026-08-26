@@ -6,6 +6,7 @@ import {
   SourceControlProviderError,
   type ChangeRequest,
   type ChangeRequestState,
+  type SourceControlRepositorySearchResult,
 } from "@t3tools/contracts";
 
 import * as GitHubCli from "./GitHubCli.ts";
@@ -40,6 +41,69 @@ function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeReq
       ? { headRepositoryOwnerLogin: summary.headRepositoryOwnerLogin }
       : {}),
   };
+}
+
+/** One dropdown's worth of rows. Ranking already puts the useful ones first. */
+const MAX_SEARCH_RESULTS = 20;
+
+/**
+ * GitHub descriptions run to 350 characters and this payload is rebuilt on every
+ * keystroke, so descriptions are trimmed to about one list row before they cross
+ * the socket. Clients that want the full text read the repository itself.
+ */
+const MAX_SEARCH_RESULT_DESCRIPTION_LENGTH = 160;
+
+/** True when the query starts the repository name, or the whole `owner/name`. */
+function matchesSearchPrefix(result: SourceControlRepositorySearchResult, query: string): boolean {
+  if (query.length === 0) {
+    return false;
+  }
+  const nameWithOwner = result.nameWithOwner.toLowerCase();
+  const name = nameWithOwner.slice(nameWithOwner.lastIndexOf("/") + 1);
+  return nameWithOwner.startsWith(query) || name.startsWith(query);
+}
+
+/** Own repositories first, then prefix matches over substring matches, then most stars. */
+function compareSearchResults(query: string) {
+  return (
+    left: SourceControlRepositorySearchResult,
+    right: SourceControlRepositorySearchResult,
+  ) => {
+    if (left.ownedByViewer !== right.ownedByViewer) {
+      return left.ownedByViewer ? -1 : 1;
+    }
+    const leftPrefix = matchesSearchPrefix(left, query);
+    const rightPrefix = matchesSearchPrefix(right, query);
+    if (leftPrefix !== rightPrefix) {
+      return leftPrefix ? -1 : 1;
+    }
+    return (right.starCount ?? 0) - (left.starCount ?? 0);
+  };
+}
+
+function trimSearchResultDescription(
+  result: SourceControlRepositorySearchResult,
+): SourceControlRepositorySearchResult {
+  if (
+    result.description === undefined ||
+    result.description.length <= MAX_SEARCH_RESULT_DESCRIPTION_LENGTH
+  ) {
+    return result;
+  }
+  return {
+    ...result,
+    description: result.description.slice(0, MAX_SEARCH_RESULT_DESCRIPTION_LENGTH).trimEnd(),
+  };
+}
+
+function rankSearchResults(
+  results: ReadonlyArray<SourceControlRepositorySearchResult>,
+  query: string,
+): ReadonlyArray<SourceControlRepositorySearchResult> {
+  return [...results]
+    .sort(compareSearchResults(query.trim().toLowerCase()))
+    .slice(0, MAX_SEARCH_RESULTS)
+    .map(trimSearchResultDescription);
 }
 
 function parseGitHubAuth(input: SourceControlAuthProbeInput) {
@@ -257,9 +321,25 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
-    // Placeholder until the `gh search repos` call lands; GitHub search is not wired up yet.
-    // TODO: replace with the real GitHub CLI repository search.
-    searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
+    searchRepositories: (input) =>
+      github.searchRepositories({ cwd: input.cwd, query: input.query }).pipe(
+        Effect.map((results) => ({
+          supported: true,
+          results: rankSearchResults(results, input.query),
+        })),
+        Effect.mapError(
+          (error) =>
+            new SourceControlProviderError({
+              provider: "github",
+              operation: "searchRepositories",
+              command: error.command,
+              cwd: input.cwd,
+              repository: SourceControlProvider.transportSafeSourceControlErrorValue(input.query),
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      ),
     createRepository: (input) =>
       github.createRepository(input).pipe(
         Effect.mapError(

@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ChildProcessSpawner } from "effect/unstable/process";
+import type { SourceControlRepositorySearchResult } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitHubCli from "./GitHubCli.ts";
@@ -204,6 +205,122 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
       title: "Provider PR",
       bodyFile: "/tmp/body.md",
     });
+  }),
+);
+
+const SEARCH_DESCRIPTION_CAP = 160;
+
+function searchResult(
+  overrides: Partial<SourceControlRepositorySearchResult> & { readonly nameWithOwner: string },
+): SourceControlRepositorySearchResult {
+  return {
+    url: `https://github.com/${overrides.nameWithOwner}`,
+    sshUrl: `git@github.com:${overrides.nameWithOwner}.git`,
+    ownedByViewer: false,
+    starCount: 0,
+    ...overrides,
+  };
+}
+
+it.effect("ranks, caps, and trims the repository search results it returns", () =>
+  Effect.gen(function* () {
+    // Every adjacent pair below is decided by a different rule, so dropping or
+    // reordering any one of them changes this expectation.
+    const owned = searchResult({
+      nameWithOwner: "mark/t3code-tools",
+      ownedByViewer: true,
+      starCount: 1,
+      description: "a".repeat(400),
+    });
+    const ownedSubstring = searchResult({
+      nameWithOwner: "mark/awesome-t3code",
+      ownedByViewer: true,
+      starCount: 9000,
+    });
+    const prefixPopular = searchResult({
+      nameWithOwner: "pingdotgg/t3code",
+      starCount: 5000,
+      description: "Short and untouched.",
+    });
+    const prefixQuiet = searchResult({ nameWithOwner: "forks/t3code-mirror", starCount: 100 });
+    const substringPopular = searchResult({ nameWithOwner: "legacy/old-t3code", starCount: 4000 });
+    const filler = Array.from({ length: 20 }, (_unused, index) =>
+      searchResult({ nameWithOwner: `filler/pack-t3code-${index}` }),
+    );
+
+    let searchInput: { readonly cwd: string; readonly query: string } | null = null;
+    const provider = yield* makeProvider({
+      searchRepositories: (input) => {
+        searchInput = input;
+        return Effect.succeed([
+          ...filler,
+          substringPopular,
+          prefixPopular,
+          ownedSubstring,
+          prefixQuiet,
+          owned,
+        ]);
+      },
+    });
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3code" });
+
+    assert.deepStrictEqual(searchInput, { cwd: "/repo", query: "t3code" });
+    assert.strictEqual(output.supported, true);
+    assert.strictEqual(output.results.length, 20);
+    assert.deepStrictEqual(
+      output.results.slice(0, 5).map((result) => result.nameWithOwner),
+      [
+        "mark/t3code-tools",
+        "mark/awesome-t3code",
+        "pingdotgg/t3code",
+        "forks/t3code-mirror",
+        "legacy/old-t3code",
+      ],
+    );
+    assert.strictEqual(output.results[0]?.description, "a".repeat(SEARCH_DESCRIPTION_CAP));
+    assert.strictEqual(output.results[2]?.description, "Short and untouched.");
+  }),
+);
+
+it.effect("redacts search queries in provider errors while keeping the CLI cause", () =>
+  Effect.gen(function* () {
+    const cause = new GitHubCli.GitHubRepositorySearchDecodeError({
+      command: "gh",
+      cwd: "/repo",
+      cause: new Error("raw upstream detail that should remain in the cause"),
+    });
+    const provider = yield* makeProvider({
+      searchRepositories: () => Effect.fail(cause),
+    });
+
+    const error = yield* provider
+      .searchRepositories({
+        cwd: "/repo",
+        query: "https://user:secret@github.com/pingdotgg/t3code?token=secret",
+      })
+      .pipe(Effect.flip);
+
+    assert.deepStrictEqual(
+      {
+        provider: error.provider,
+        operation: error.operation,
+        command: error.command,
+        cwd: error.cwd,
+        repository: error.repository,
+        detail: error.detail,
+      },
+      {
+        provider: "github",
+        operation: "searchRepositories",
+        command: "gh",
+        cwd: "/repo",
+        repository: "https://github.com/pingdotgg/t3code",
+        detail: "GitHub CLI returned invalid repository search JSON.",
+      },
+    );
+    assert.strictEqual(error.cause, cause);
+    assert.equal(error.message.includes("raw upstream detail"), false);
   }),
 );
 
