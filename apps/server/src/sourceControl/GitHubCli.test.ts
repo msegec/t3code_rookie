@@ -1,5 +1,7 @@
 import { assert, it, afterEach, describe, expect, vi } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -602,18 +604,16 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("fails with a decode error when gh returns unusable search JSON", () =>
+  it.effect("degrades to local matches when gh returns unusable search JSON", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(Effect.succeed(processOutput("[]")));
       mockRun.mockReturnValueOnce(Effect.succeed(processOutput("not json")));
 
       const gh = yield* GitHubCli.GitHubCli;
-      const error = yield* gh
-        .searchRepositories({ cwd: "/repo", query: "codething" })
-        .pipe(Effect.flip);
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
 
-      assert.strictEqual(error._tag, "GitHubRepositorySearchDecodeError");
-      assert.strictEqual(error.cwd, "/repo");
+      expect(mockRun).toHaveBeenCalledTimes(2);
+      assert.deepStrictEqual(results, []);
     }).pipe(Effect.provide(layer)),
   );
   it.effect("reuses the owned repository listing for a minute of typing", () =>
@@ -658,6 +658,54 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(searchLayer)),
   );
 
+  it.effect("shares one gh request between concurrent identical searches", () =>
+    Effect.gen(function* () {
+      const release = yield* Deferred.make<void>();
+      mockRun.mockImplementation(() =>
+        Deferred.await(release).pipe(Effect.as(processOutput("[]"))),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const search = gh.searchRepositories({ cwd: "/repo", query: "codething" });
+      const first = yield* Effect.forkChild(search, { startImmediately: true });
+      const second = yield* Effect.forkChild(search, { startImmediately: true });
+
+      // Both callers are in flight, yet only one repo listing has spawned.
+      expect(mockRun).toHaveBeenCalledTimes(1);
+
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(first);
+      yield* Fiber.join(second);
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos"]);
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("ages a cached listing from fetch completion, not fetch start", () =>
+    Effect.gen(function* () {
+      mockRun.mockImplementation((input) =>
+        input.args[0] === "repo"
+          ? Effect.sleep("30 seconds").pipe(Effect.as(processOutput("[]")))
+          : Effect.succeed(processOutput("[]")),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const first = yield* Effect.forkChild(
+        gh.searchRepositories({ cwd: "/repo", query: "codething" }),
+        { startImmediately: true },
+      );
+      yield* TestClock.adjust("30 seconds");
+      yield* Fiber.join(first);
+
+      // 45 seconds after the listing landed, 75 after it was asked for. A
+      // listing stamped at fetch start would wrongly count as expired here.
+      yield* TestClock.adjust("45 seconds");
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codethings" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos", "search repos"]);
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
   it.effect("never spends a search request on a two-character query", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
@@ -697,6 +745,38 @@ describe("GitHubCli.layer", () => {
       yield* gh.searchRepositories({ cwd: "/four", query: "codething" });
 
       assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "repo list", "search repos"]);
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("keeps local matches when the global search fails", () =>
+    Effect.gen(function* () {
+      mockRun.mockImplementation((input) =>
+        input.args[0] === "repo"
+          ? Effect.succeed(
+              processOutput(JSON.stringify([ownedRepository("octocat/codething-mvp")])),
+            )
+          : Effect.fail(
+              new VcsProcessExitError({
+                operation: "GitHubCli.execute",
+                command: "gh",
+                cwd: "/repo",
+                exitCode: 1,
+                failureKind: "rate-limited",
+                detail: "API rate limit exceeded.",
+                stderrLength: 82,
+                stderrTruncated: false,
+              }),
+            ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos"]);
+      assert.deepStrictEqual(
+        results.map((result) => result.nameWithOwner),
+        ["octocat/codething-mvp"],
+      );
     }).pipe(Effect.provide(searchLayer)),
   );
 

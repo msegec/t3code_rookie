@@ -100,8 +100,9 @@ function rankSearchResults(
   results: ReadonlyArray<SourceControlRepositorySearchResult>,
   query: string,
 ): ReadonlyArray<SourceControlRepositorySearchResult> {
+  // Rank against the query as it actually searched: "t3 code" matched as "t3code".
   return [...results]
-    .sort(compareSearchResults(query.trim().toLowerCase()))
+    .sort(compareSearchResults(GitHubCli.sanitizeSearchQuery(query).toLowerCase()))
     .slice(0, MAX_SEARCH_RESULTS)
     .map(trimSearchResultDescription);
 }

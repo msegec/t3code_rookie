@@ -284,6 +284,29 @@ it.effect("ranks, caps, and trims the repository search results it returns", () 
   }),
 );
 
+it.effect("ranks a spaced query the way the search actually ran it", () =>
+  Effect.gen(function* () {
+    // "t3 code" reaches gh as "t3code" after sanitizing, so ranking must use
+    // the sanitized form too: the exact-name match beats the popular substring.
+    const exact = searchResult({ nameWithOwner: "pingdotgg/t3code", starCount: 10 });
+    const popularSubstring = searchResult({
+      nameWithOwner: "acme/uses-t3code-inside",
+      starCount: 5000,
+    });
+    const provider = yield* makeProvider({
+      searchRepositories: () => Effect.succeed([popularSubstring, exact]),
+    });
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3 code" });
+
+    assert.strictEqual(output.supported, true);
+    assert.deepStrictEqual(
+      output.results.map((result) => result.nameWithOwner),
+      ["pingdotgg/t3code", "acme/uses-t3code-inside"],
+    );
+  }),
+);
+
 it.effect("redacts search queries in provider errors while keeping the CLI cause", () =>
   Effect.gen(function* () {
     const cause = new GitHubCli.GitHubRepositorySearchDecodeError({

@@ -1,5 +1,7 @@
+import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
@@ -387,6 +389,9 @@ const SUFFICIENT_LOCAL_MATCHES = 5;
 /** A fast typist produces one cache entry per keystroke; bound both caches. */
 const SEARCH_CACHE_CAPACITY = 64;
 
+/** Joins cwd and query into one cache key. NUL cannot appear in either part. */
+const SEARCH_KEY_SEPARATOR = String.fromCharCode(0);
+
 /** `gh` talks to github.com, and the circuit is keyed by provider and host. */
 const GITHUB_RATE_LIMIT_KEY = { provider: "github", host: "github.com" } as const;
 
@@ -416,9 +421,10 @@ function storeCacheEntry<A>(
  * this file that reaches `gh` argv. Keep it to characters that can appear in an
  * owner or repository name, drop leading dashes so it can never be read as a
  * flag, and cap the length. Applied inside the service so callers cannot skip
- * it.
+ * it. Exported so result ranking can normalize with the same rule the search
+ * actually ran under.
  */
-function sanitizeSearchQuery(query: string): string {
+export function sanitizeSearchQuery(query: string): string {
   return query
     .replace(/[^A-Za-z0-9._/-]/g, "")
     .replace(/^-+/, "")
@@ -543,18 +549,19 @@ export const make = Effect.gen(function* () {
           ),
         ),
       ),
-      Effect.catchTag("SourceControlRateLimitPausedError", () => Effect.succeed(null)),
+      Effect.catchTags({ SourceControlRateLimitPausedError: () => Effect.succeed(null) }),
     );
 
-  const searchDecodeError = (cwd: string) => (cause: unknown) =>
-    new GitHubRepositorySearchDecodeError({ command: "gh", cwd, cause });
+  /** Fresh means fetched within the TTL. A clock that stepped backward reads as stale. */
+  const isFreshAt = (fetchedAt: number, now: number, ttlMs: number) =>
+    now >= fetchedAt && now - fetchedAt < ttlMs;
 
   /** The viewer's repositories, at most one `gh repo list` per minute per cwd. */
-  const ownedRepositories = (cwd: string) =>
+  const fetchOwnedRepositories = (cwd: string) =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const cached = (yield* Ref.get(ownedRepositoriesCache)).get(cwd);
-      if (cached !== undefined && now - cached.fetchedAt < OWNED_REPOSITORIES_TTL_MS) {
+      if (cached !== undefined && isFreshAt(cached.fetchedAt, now, OWNED_REPOSITORIES_TTL_MS)) {
         return cached.value;
       }
 
@@ -572,7 +579,9 @@ export const make = Effect.gen(function* () {
         }).pipe(
           Effect.flatMap((output) =>
             decodeRawGitHubOwnedRepositories(output.stdout.trim()).pipe(
-              Effect.mapError(searchDecodeError(cwd)),
+              Effect.mapError(
+                (cause) => new GitHubRepositorySearchDecodeError({ command: "gh", cwd, cause }),
+              ),
             ),
           ),
         ),
@@ -581,19 +590,23 @@ export const make = Effect.gen(function* () {
         return cached?.value ?? [];
       }
 
+      // Stamp completion, not start: a slow fetch must not age its own entry.
+      const fetchedAt = yield* Clock.currentTimeMillis;
       yield* Ref.update(ownedRepositoriesCache, (current) =>
-        storeCacheEntry(current, cwd, { fetchedAt: now, value: fetched }),
+        storeCacheEntry(current, cwd, { fetchedAt, value: fetched }),
       );
       return fetched;
     });
 
   /** Public repositories for one sanitized query, cached for a few keystrokes. */
-  const searchedRepositories = (cwd: string, query: string) =>
+  const fetchSearchedRepositories = (key: string) =>
     Effect.gen(function* () {
-      const key = `${cwd}\u0000${query}`;
+      const separator = key.indexOf(SEARCH_KEY_SEPARATOR);
+      const cwd = key.slice(0, separator);
+      const query = key.slice(separator + 1);
       const now = yield* Clock.currentTimeMillis;
       const cached = (yield* Ref.get(searchedRepositoriesCache)).get(key);
-      if (cached !== undefined && now - cached.fetchedAt < SEARCHED_REPOSITORIES_TTL_MS) {
+      if (cached !== undefined && isFreshAt(cached.fetchedAt, now, SEARCHED_REPOSITORIES_TTL_MS)) {
         return cached.value;
       }
 
@@ -614,7 +627,9 @@ export const make = Effect.gen(function* () {
         }).pipe(
           Effect.flatMap((output) =>
             decodeRawGitHubSearchedRepositories(output.stdout.trim()).pipe(
-              Effect.mapError(searchDecodeError(cwd)),
+              Effect.mapError(
+                (cause) => new GitHubRepositorySearchDecodeError({ command: "gh", cwd, cause }),
+              ),
             ),
           ),
         ),
@@ -623,11 +638,32 @@ export const make = Effect.gen(function* () {
         return cached?.value ?? [];
       }
 
+      // Stamp completion, not start: a slow fetch must not age its own entry.
+      const fetchedAt = yield* Clock.currentTimeMillis;
       yield* Ref.update(searchedRepositoriesCache, (current) =>
-        storeCacheEntry(current, key, { fetchedAt: now, value: fetched }),
+        storeCacheEntry(current, key, { fetchedAt, value: fetched }),
       );
       return fetched;
     });
+
+  /**
+   * Zero time-to-live makes these caches pure in-flight shares: concurrent
+   * callers for one key await the same lookup, and the entry is dropped the
+   * moment it settles. Values live in the Ref caches above, which also answer
+   * with stale rows while the circuit is paused.
+   */
+  const ownedRepositoriesInFlight = yield* Cache.makeWith(fetchOwnedRepositories, {
+    capacity: SEARCH_CACHE_CAPACITY,
+    timeToLive: () => Duration.zero,
+  });
+  const ownedRepositories = (cwd: string) => Cache.get(ownedRepositoriesInFlight, cwd);
+
+  const searchedRepositoriesInFlight = yield* Cache.makeWith(fetchSearchedRepositories, {
+    capacity: SEARCH_CACHE_CAPACITY,
+    timeToLive: () => Duration.zero,
+  });
+  const searchedRepositories = (cwd: string, query: string) =>
+    Cache.get(searchedRepositoriesInFlight, cwd + SEARCH_KEY_SEPARATOR + query);
 
   return GitHubCli.of({
     execute,
@@ -736,10 +772,18 @@ export const make = Effect.gen(function* () {
           raw.nameWithOwner.toLowerCase().includes(needle),
         );
 
+        // A failed global search degrades to the local rows instead of failing
+        // the whole RPC, the same answer the paused circuit already gives.
         const searched =
           query.length >= MIN_GLOBAL_SEARCH_QUERY_LENGTH &&
           localMatches.length < SUFFICIENT_LOCAL_MATCHES
-            ? yield* searchedRepositories(input.cwd, query)
+            ? yield* searchedRepositories(input.cwd, query).pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning("GitHub repository search failed; keeping local matches", {
+                    error,
+                  }).pipe(Effect.as([] as ReadonlyArray<RawSearchedRepository>)),
+                ),
+              )
             : [];
 
         // Owned repositories come first, and one the viewer owns is never
