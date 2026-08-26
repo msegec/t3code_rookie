@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import * as NodeFS from "node:fs";
 
-import appStyles from "./index.css?raw";
 import { projectAccentRowState, projectAccentRowStyle } from "./projectAccent";
+
+const appStyles = NodeFS.readFileSync(new URL("./index.css", import.meta.url), "utf8");
 
 describe("projectAccentRowState", () => {
   it("keeps the routed thread and multi-selection as distinct states", () => {
@@ -26,10 +28,12 @@ describe("projectAccentRowStyle", () => {
     expect(
       projectAccentRowStyle({
         idle: "#071525",
+        active: "#245181",
         selected: "#173b60",
       }),
     ).toEqual({
       "--project-accent-idle": "#071525",
+      "--project-accent-active": "#245181",
       "--project-accent-selected": "#173b60",
     });
   });
@@ -40,6 +44,15 @@ describe("projectAccentRowStyle", () => {
 });
 
 describe("project accent row interaction", () => {
+  it("uses distinct exact colors for active and selected rows", () => {
+    expect(appStyles).toMatch(
+      /data-project-accent-state="active"[\s\S]*?var\(\s*--project-accent-active/,
+    );
+    expect(appStyles).toMatch(
+      /data-project-accent-state="selected"[\s\S]*?var\(\s*--project-accent-selected/,
+    );
+  });
+
   it("keeps the accent gradient stable while a row is hovered", () => {
     expect(appStyles).not.toMatch(/\[data-project-accent\][^,{]*:hover/);
   });

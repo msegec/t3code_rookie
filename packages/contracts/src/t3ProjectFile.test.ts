@@ -52,15 +52,16 @@ describe("T3ProjectFile", () => {
     expect(() => decode({ accentColor: "#1688f0cc" })).toThrow();
   });
 
-  it("accepts exact idle and selected accent colors", () => {
+  it("accepts exact colors for every accent state", () => {
     expect(
       decode({
         accentColor: {
           idle: "#071525",
+          active: "#245181",
           selected: "#173b60",
         },
       }).accentColor,
-    ).toEqual({ idle: "#071525", selected: "#173b60" });
+    ).toEqual({ idle: "#071525", active: "#245181", selected: "#173b60" });
   });
 
   it("requires every exact accent state", () => {

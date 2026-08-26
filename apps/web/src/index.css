@@ -1578,7 +1578,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     to right,
     transparent,
     var(
-        --project-accent-selected,
+        --project-accent-active,
         color-mix(in srgb, var(--project-accent-color) 22%, var(--sidebar-row-active))
       )
       75%

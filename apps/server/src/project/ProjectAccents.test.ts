@@ -40,7 +40,7 @@ describe("ProjectAccents", () => {
           ProjectFaviconResolver.ProjectFaviconResolver,
           resolverReturning({
             "/repos/one": "#1688f0",
-            "/repos/two": { idle: "#071525", selected: "#173b60" },
+            "/repos/two": { idle: "#071525", active: "#245181", selected: "#173b60" },
           }),
         ),
       );
@@ -50,7 +50,7 @@ describe("ProjectAccents", () => {
         {
           id: "b",
           workspaceRoot: "/repos/two",
-          accent: { idle: "#071525", selected: "#173b60" },
+          accent: { idle: "#071525", active: "#245181", selected: "#173b60" },
         },
         // Written as an explicit null, never omitted: clearing accentColor in
         // t3.json has to clear the row rather than leave the old value.

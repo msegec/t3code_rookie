@@ -21,7 +21,7 @@ To use automatic detection again, select **Automatic**.
 
 Add `accentColor` to `t3.json` to tint every sidebar thread row for the project. The tint is
 strongest at the right edge of the row and fades out toward the left. A single color generates
-restrained idle and selected tints:
+restrained idle, active, and selected tints:
 
 ```json
 {
@@ -29,12 +29,13 @@ restrained idle and selected tints:
 }
 ```
 
-For exact control, set both row colors:
+For exact control, set all three row colors:
 
 ```json
 {
   "accentColor": {
     "idle": "#071525",
+    "active": "#245181",
     "selected": "#173b60"
   }
 }

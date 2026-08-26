@@ -264,13 +264,14 @@ export type ProjectAccentColor = typeof ProjectAccentColor.Type;
 // change, so sweeping the pointer down the list cannot pulse row tints.
 export const ProjectAccentPalette = Schema.Struct({
   idle: ProjectAccentColor,
+  active: ProjectAccentColor,
   selected: ProjectAccentColor,
 });
 export type ProjectAccentPalette = typeof ProjectAccentPalette.Type;
 
 export const ProjectAccent = Schema.Union([ProjectAccentColor, ProjectAccentPalette]).annotate({
   description:
-    "Project sidebar thread-row accent. Set one hex color for generated state tints, or set idle and selected colors for exact control.",
+    "Project sidebar thread-row accent. Set one hex color for generated state tints, or set idle, active, and selected colors for exact control.",
 });
 export type ProjectAccent = typeof ProjectAccent.Type;
 
