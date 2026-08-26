@@ -136,7 +136,7 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
     position: absolute;
     z-index: 1;
     inset-block-start: 50%;
-    inset-inline-start: 100%;
+    inset-inline-end: 0;
     width: 0;
     height: 0;
     border: 0 solid color-mix(in srgb, var(--code-foreground) 35%, transparent);
@@ -148,13 +148,13 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
     transition:
       border-width 0s,
       height 0s,
-      inset-inline-start 0s,
+      inset-inline-end 0s,
       visibility 0s,
       width 0s;
   }
 
   [data-code-color-preview]:hover::after {
-    inset-inline-start: calc(100% + 0.32em);
+    inset-inline-end: 0.32em;
     width: 0.72em;
     height: 0.72em;
     border-width: 1px;
