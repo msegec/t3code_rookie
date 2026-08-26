@@ -1697,9 +1697,11 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               onClick={props.onSelect}
               className={cn(
                 "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm outline-none",
-                props.isHighlighted || props.isRouteActive
+                props.isRouteActive
                   ? "bg-sidebar-row-active text-sidebar-foreground"
-                  : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                  : props.isHighlighted
+                    ? "bg-sidebar-row-selected text-sidebar-foreground"
+                    : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
               )}
             />
           }
