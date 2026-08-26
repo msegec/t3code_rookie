@@ -3602,10 +3602,10 @@ export default function Sidebar() {
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
-                key="sidebar-thread-search-tooltips-150"
-                delay={150}
+                key="sidebar-thread-search-tooltips-600"
+                delay={600}
                 closeDelay={0}
-                timeout={400}
+                timeout={0}
               >
                 <ul
                   id="sidebar-thread-search-results"
@@ -3660,10 +3660,10 @@ export default function Sidebar() {
           ) : null}
           {!isSearchingThreads ? (
             <TooltipProvider
-              key="sidebar-thread-tooltips-150"
-              delay={150}
+              key="sidebar-thread-tooltips-600"
+              delay={600}
               closeDelay={0}
-              timeout={400}
+              timeout={0}
             >
               <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
                 {(() => {
