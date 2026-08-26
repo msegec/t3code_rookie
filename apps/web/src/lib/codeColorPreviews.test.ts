@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { codeColorPreviewParts, codeColorPreviewTransformers } from "./codeColorPreviews";
+import {
+  codeColorPreviewColor,
+  codeColorPreviewParts,
+  codeColorPreviewTransformers,
+} from "./codeColorPreviews";
 import { resolveDiffThemeName } from "./diffRendering";
 import { getSyntaxHighlighterPromise } from "./syntaxHighlighting";
 
@@ -54,7 +58,14 @@ describe("codeColorPreviewParts", () => {
     expect(codeColorPreviewTransformers("markdown")).toEqual([]);
   });
 
-  it("adds a decorative swatch to highlighted code", async () => {
+  it("finds one preview colour in a highlighted file token", () => {
+    expect(codeColorPreviewColor('"#701525"', "json")).toBe("#701525");
+    expect(codeColorPreviewColor("// fixes #1904", "typescript")).toBeNull();
+    expect(codeColorPreviewColor("#abc", "text")).toBeNull();
+    expect(codeColorPreviewColor("#abc #def", "css")).toBeNull();
+  });
+
+  it("marks highlighted colours for the hover preview", async () => {
     const highlighter = await getSyntaxHighlighterPromise("json");
     const html = highlighter.codeToHtml('{"idle":"#701525"}', {
       lang: "json",
@@ -63,8 +74,8 @@ describe("codeColorPreviewParts", () => {
     });
 
     expect(html).toContain('class="chat-markdown-color-literal"');
-    expect(html).toContain('class="chat-markdown-color-swatch"');
-    expect(html).toContain('aria-hidden="true"');
-    expect(html).toContain("--chat-markdown-color: #701525");
+    expect(html).toContain("data-code-color-preview");
+    expect(html).toContain("--code-color-preview: #701525");
+    expect(html).not.toContain("chat-markdown-color-swatch");
   });
 });

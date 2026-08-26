@@ -45,6 +45,12 @@ interface CodeColorPreviewPart {
   readonly color?: string;
 }
 
+function allowShortColorForms(language: string): boolean | null {
+  if (STYLE_LANGUAGES.has(language)) return true;
+  if (LONG_HEX_LANGUAGES.has(language)) return false;
+  return null;
+}
+
 export function codeColorPreviewParts(
   text: string,
   allowShortForms = true,
@@ -71,6 +77,40 @@ export function codeColorPreviewParts(
   return parts;
 }
 
+export function codeColorPreviewColor(text: string, language: string): string | null {
+  const allowShortForms = allowShortColorForms(language);
+  if (allowShortForms === null) return null;
+
+  return previewColor(text, allowShortForms);
+}
+
+function previewColor(text: string, allowShortForms: boolean): string | null {
+  const regex = allowShortForms ? CSS_HEX_COLOR_REGEX : CSS_LONG_HEX_COLOR_REGEX;
+  regex.lastIndex = 0;
+  const match = regex.exec(text);
+  if (!match?.[2]) return null;
+  const hasAnotherMatch = regex.exec(text) !== null;
+  regex.lastIndex = 0;
+  return hasAnotherMatch ? null : match[2];
+}
+
+export function applyCodeColorPreviews(root: ParentNode, language: string): void {
+  const allowShortForms = allowShortColorForms(language);
+  if (allowShortForms === null) return;
+
+  for (const token of root.querySelectorAll<HTMLElement>("[data-line] span")) {
+    if (token.childElementCount > 0) continue;
+
+    const color = previewColor(token.textContent ?? "", allowShortForms);
+    token.toggleAttribute("data-code-color-preview", color !== null);
+    if (color) {
+      token.style.setProperty("--code-color-preview", color);
+    } else {
+      token.style.removeProperty("--code-color-preview");
+    }
+  }
+}
+
 function createCodeColorPreviewTransformer(
   name: string,
   allowShortForms: boolean,
@@ -91,20 +131,12 @@ function createCodeColorPreviewTransformer(
         return {
           type: "element",
           tagName: "span",
-          properties: { className: ["chat-markdown-color-literal"] },
-          children: [
-            { type: "text", value: part.text },
-            {
-              type: "element",
-              tagName: "span",
-              properties: {
-                className: ["chat-markdown-color-swatch"],
-                ariaHidden: "true",
-                style: `--chat-markdown-color: ${part.color}`,
-              },
-              children: [],
-            },
-          ],
+          properties: {
+            className: ["chat-markdown-color-literal"],
+            "data-code-color-preview": "",
+            style: `--code-color-preview: ${part.color}`,
+          },
+          children: [{ type: "text", value: part.text }],
         };
       });
     },
@@ -118,7 +150,7 @@ const longHexTransformer = createCodeColorPreviewTransformer(
 );
 
 export function codeColorPreviewTransformers(language: string): ShikiTransformer[] {
-  if (STYLE_LANGUAGES.has(language)) return [styleTransformer];
-  if (LONG_HEX_LANGUAGES.has(language)) return [longHexTransformer];
-  return [];
+  const allowShortForms = allowShortColorForms(language);
+  if (allowShortForms === null) return [];
+  return [allowShortForms ? styleTransformer : longHexTransformer];
 }

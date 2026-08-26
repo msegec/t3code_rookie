@@ -1835,7 +1835,7 @@ html[data-theme-id] .chat-markdown .chat-markdown-chrome-action[aria-pressed="tr
 
 /* Themed palettes repaint the code surface with --code-foreground, so the
    swatch border follows it instead of the app-chrome contrast colour. */
-html[data-theme-id] .chat-markdown .chat-markdown-color-swatch {
+html[data-theme-id] .chat-markdown [data-code-color-preview]::after {
   border-color: color-mix(in srgb, var(--code-foreground) 35%, transparent);
 }
 
@@ -2344,26 +2344,29 @@ code {
   background: transparent !important;
 }
 
-.chat-markdown .chat-markdown-color-literal {
+.chat-markdown [data-code-color-preview] {
+  position: relative;
   white-space: nowrap;
 }
 
-.chat-markdown .chat-markdown-color-swatch {
-  display: inline-block;
+.chat-markdown [data-code-color-preview]::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 50%;
+  inset-inline-start: calc(100% + 0.32em);
+  display: none;
   width: 0.72em;
   height: 0.72em;
-  margin-inline-start: 0.32em;
   border: 1px solid color-mix(in srgb, var(--contrast-foreground) 35%, transparent);
   border-radius: 2px;
-  background: var(--chat-markdown-color);
-  vertical-align: -0.04em;
-  transform-origin: center;
+  background: var(--code-color-preview);
+  pointer-events: none;
+  transform: translateY(-50%) scale(1.6);
 }
 
-.chat-markdown .chat-markdown-color-literal:hover .chat-markdown-color-swatch {
-  position: relative;
-  z-index: 1;
-  transform: scale(1.6);
+.chat-markdown [data-code-color-preview]:hover::after {
+  display: block;
 }
 
 /* Diagnostics-style tables: row separators only, uppercase headers, and a

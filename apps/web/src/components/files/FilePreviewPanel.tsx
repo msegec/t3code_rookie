@@ -5,7 +5,7 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import { VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
+import { getFiletypeFromFileName, VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
 import { Editor } from "@pierre/diffs/editor";
 import { EditProvider, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
 import {
@@ -25,6 +25,7 @@ import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
+import { applyCodeColorPreviews } from "~/lib/codeColorPreviews";
 import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { resolvePathLinkTarget } from "~/terminal-links";
@@ -124,6 +125,31 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
       )
     ) !important;
     color: var(--diffs-selection-number-fg) !important;
+  }
+
+  [data-code-color-preview] {
+    position: relative;
+    white-space: nowrap;
+  }
+
+  [data-code-color-preview]::after {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset-block-start: 50%;
+    inset-inline-start: calc(100% + 0.32em);
+    display: none;
+    width: 0.72em;
+    height: 0.72em;
+    border: 1px solid color-mix(in srgb, var(--code-foreground) 35%, transparent);
+    border-radius: 2px;
+    background: var(--code-color-preview);
+    pointer-events: none;
+    transform: translateY(-50%) scale(1.6);
+  }
+
+  [data-code-color-preview]:hover::after {
+    display: block;
   }
 `;
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
@@ -811,7 +837,18 @@ export default function FilePreviewPanel({
     () => (relativePath ? fileBreadcrumbs(projectName, relativePath) : []),
     [projectName, relativePath],
   );
-  const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
+  const onFileLinePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
+  const onFilePostRender = useCallback<FilePostRender>(
+    (fileContainer, instance, phase) => {
+      onFileLinePostRender(fileContainer, instance, phase);
+      if (phase === "unmount" || relativePath === null) return;
+      applyCodeColorPreviews(
+        fileContainer.shadowRoot ?? fileContainer,
+        getFiletypeFromFileName(relativePath),
+      );
+    },
+    [onFileLinePostRender, relativePath],
+  );
 
   useEffect(() => {
     const currentCrumb = breadcrumbRef.current?.querySelector<HTMLElement>(
