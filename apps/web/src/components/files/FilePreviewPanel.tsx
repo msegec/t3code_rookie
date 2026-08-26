@@ -129,7 +129,6 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
 
   [data-code-color-preview] {
     position: relative;
-    white-space: nowrap;
   }
 
   [data-code-color-preview]::after {
@@ -138,7 +137,6 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
     z-index: 1;
     inset-block-start: 50%;
     inset-inline-start: calc(100% + 0.32em);
-    display: none;
     width: 0.72em;
     height: 0.72em;
     border: 1px solid color-mix(in srgb, var(--code-foreground) 35%, transparent);
@@ -146,10 +144,13 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
     background: var(--code-color-preview);
     pointer-events: none;
     transform: translateY(-50%) scale(1.6);
+    visibility: hidden;
+    transition: visibility 0s;
   }
 
   [data-code-color-preview]:hover::after {
-    display: block;
+    visibility: visible;
+    transition-delay: 150ms;
   }
 `;
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;

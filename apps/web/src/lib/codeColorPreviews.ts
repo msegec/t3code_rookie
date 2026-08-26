@@ -102,11 +102,20 @@ export function applyCodeColorPreviews(root: ParentNode, language: string): void
     if (token.childElementCount > 0) continue;
 
     const color = previewColor(token.textContent ?? "", allowShortForms);
-    token.toggleAttribute("data-code-color-preview", color !== null);
     if (color) {
-      token.style.setProperty("--code-color-preview", color);
+      if (!token.hasAttribute("data-code-color-preview")) {
+        token.toggleAttribute("data-code-color-preview", true);
+      }
+      if (token.style.getPropertyValue("--code-color-preview") !== color) {
+        token.style.setProperty("--code-color-preview", color);
+      }
     } else {
-      token.style.removeProperty("--code-color-preview");
+      if (token.hasAttribute("data-code-color-preview")) {
+        token.toggleAttribute("data-code-color-preview", false);
+      }
+      if (token.style.getPropertyValue("--code-color-preview")) {
+        token.style.removeProperty("--code-color-preview");
+      }
     }
   }
 }

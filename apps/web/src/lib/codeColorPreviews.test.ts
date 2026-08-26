@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applyCodeColorPreviews,
   codeColorPreviewColor,
   codeColorPreviewParts,
   codeColorPreviewTransformers,
@@ -63,6 +64,42 @@ describe("codeColorPreviewParts", () => {
     expect(codeColorPreviewColor("// fixes #1904", "typescript")).toBeNull();
     expect(codeColorPreviewColor("#abc", "text")).toBeNull();
     expect(codeColorPreviewColor("#abc #def", "css")).toBeNull();
+  });
+
+  it("does not mutate an unchanged highlighted file twice", () => {
+    const attributes = new Set<string>();
+    const styles = new Map<string, string>();
+    let mutationCount = 0;
+    const token = {
+      childElementCount: 0,
+      textContent: '"#701525"',
+      hasAttribute: (name: string) => attributes.has(name),
+      toggleAttribute: (name: string, force: boolean) => {
+        mutationCount += 1;
+        if (force) attributes.add(name);
+        else attributes.delete(name);
+      },
+      style: {
+        getPropertyValue: (name: string) => styles.get(name) ?? "",
+        setProperty: (name: string, value: string) => {
+          mutationCount += 1;
+          styles.set(name, value);
+        },
+        removeProperty: (name: string) => {
+          mutationCount += 1;
+          styles.delete(name);
+        },
+      },
+    } as unknown as HTMLElement;
+    const root = {
+      querySelectorAll: () => [token],
+    } as unknown as ParentNode;
+
+    applyCodeColorPreviews(root, "json");
+    mutationCount = 0;
+    applyCodeColorPreviews(root, "json");
+
+    expect(mutationCount).toBe(0);
   });
 
   it("marks highlighted colours for the hover preview", async () => {
