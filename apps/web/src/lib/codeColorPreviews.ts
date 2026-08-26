@@ -85,6 +85,13 @@ export function applyCodeColorPreviews(root: ParentNode, language: string): void
     if (token.childElementCount > 0 || token.classList.contains("chat-markdown-color-literal")) {
       continue;
     }
+    const selection = token.ownerDocument.getSelection();
+    if (
+      (selection?.anchorNode && token.contains(selection.anchorNode)) ||
+      (selection?.focusNode && token.contains(selection.focusNode))
+    ) {
+      continue;
+    }
 
     const parts = codeColorPreviewParts(token.textContent ?? "", allowShortForms);
     if (parts.some((part) => part.color != null)) {

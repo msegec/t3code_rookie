@@ -84,6 +84,7 @@ describe("codeColorPreviewParts", () => {
         },
       },
       ownerDocument: {
+        getSelection: () => null,
         createTextNode: (textContent: string) => ({ textContent }),
         createElement: () => ({
           className: "",
@@ -122,6 +123,7 @@ describe("codeColorPreviewParts", () => {
         removeProperty: () => undefined,
       },
       ownerDocument: {
+        getSelection: () => null,
         createTextNode: (textContent: string) => ({ textContent }),
         createElement: () => ({
           className: "",
@@ -145,6 +147,43 @@ describe("codeColorPreviewParts", () => {
       { className: "chat-markdown-color-literal", textContent: "#ff00aa" },
       { textContent: " used for the header" },
     ]);
+  });
+
+  it("does not replace a highlighted token under the caret", () => {
+    const caret = { nodeType: 3 };
+    let replaced = false;
+    const token = {
+      childElementCount: 0,
+      classList: { contains: () => false },
+      textContent: '"#701525"',
+      contains: (node: Node | null) => node === caret,
+      hasAttribute: () => false,
+      toggleAttribute: () => undefined,
+      style: {
+        getPropertyValue: () => "",
+        removeProperty: () => undefined,
+      },
+      ownerDocument: {
+        getSelection: () => ({ anchorNode: caret, focusNode: caret }),
+        createTextNode: (textContent: string) => ({ textContent }),
+        createElement: () => ({
+          className: "",
+          textContent: "",
+          toggleAttribute: () => undefined,
+          style: { setProperty: () => undefined },
+        }),
+      },
+      replaceChildren: () => {
+        replaced = true;
+      },
+    } as unknown as HTMLElement;
+    const root = {
+      querySelectorAll: () => [token],
+    } as unknown as ParentNode;
+
+    applyCodeColorPreviews(root, "json");
+
+    expect(replaced).toBe(false);
   });
 
   it("marks highlighted colours for the hover preview", async () => {
