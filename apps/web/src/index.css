@@ -1543,49 +1543,72 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 /* No [data-app-sidebar] ancestor scope: the mobile sheet sidebar renders
    without that attribute. Keep the state rules after the hover rule so
-   active and selected surfaces stay stable under the pointer. The accent
-   paints as a background-image gradient over the row's own surface color,
-   strongest at the right edge and fading out to the left, so hover and
-   selected base surfaces keep coming from the row classes. */
+   active and selected surfaces stay stable under the pointer. An accented
+   row replaces its flat surface fill entirely: the hover, selected, and
+   active rules zero the row-class background-color and paint one gradient
+   that holds full strength across the right quarter and fades to the
+   sidebar background on the left, so the state surface itself fades along
+   with the accent. The mix percentages run stronger than a full-card wash
+   would need because the fade halves the perceived tint. */
 [data-project-accent] {
   background-image: linear-gradient(
     to right,
     transparent,
-    var(--project-accent-idle, color-mix(in srgb, var(--project-accent-color) 4%, transparent))
+    var(--project-accent-idle, color-mix(in srgb, var(--project-accent-color) 9%, transparent)) 75%
   );
 }
 
 [data-project-accent]:focus-visible {
+  background-color: transparent;
   background-image: linear-gradient(
     to right,
     transparent,
-    var(--project-accent-hover, color-mix(in srgb, var(--project-accent-color) 9%, transparent))
+    var(
+        --project-accent-hover,
+        color-mix(in srgb, var(--project-accent-color) 15%, var(--sidebar-row-hover))
+      )
+      75%
   );
 }
 
 @media (hover: hover) {
   [data-project-accent]:hover {
+    background-color: transparent;
     background-image: linear-gradient(
       to right,
       transparent,
-      var(--project-accent-hover, color-mix(in srgb, var(--project-accent-color) 9%, transparent))
+      var(
+          --project-accent-hover,
+          color-mix(in srgb, var(--project-accent-color) 15%, var(--sidebar-row-hover))
+        )
+        75%
     );
   }
 }
 
 [data-project-accent][data-project-accent-state="selected"] {
+  background-color: transparent;
   background-image: linear-gradient(
     to right,
     transparent,
-    var(--project-accent-selected, color-mix(in srgb, var(--project-accent-color) 13%, transparent))
+    var(
+        --project-accent-selected,
+        color-mix(in srgb, var(--project-accent-color) 22%, var(--sidebar-row-selected))
+      )
+      75%
   );
 }
 
 [data-project-accent][data-project-accent-state="active"] {
+  background-color: transparent;
   background-image: linear-gradient(
     to right,
     transparent,
-    var(--project-accent-selected, color-mix(in srgb, var(--project-accent-color) 13%, transparent))
+    var(
+        --project-accent-selected,
+        color-mix(in srgb, var(--project-accent-color) 22%, var(--sidebar-row-active))
+      )
+      75%
   );
 }
 
