@@ -65,6 +65,19 @@ it.layer(NodeServices.layer)("project accent row interaction", (it) => {
     }),
   );
 
+  it.effect("preserves the active and selected row surface fills", () =>
+    Effect.gen(function* () {
+      const appStyles = yield* readAppStyles;
+      const stateRules = appStyles.matchAll(
+        /\[data-project-accent\]\[data-project-accent-state="(?:active|selected)"\]\s*\{([^}]+)\}/g,
+      );
+
+      expect([...stateRules].map((match) => match[1])).not.toContainEqual(
+        expect.stringContaining("background-color: transparent"),
+      );
+    }),
+  );
+
   it.effect("keeps the accent gradient stable while a row is hovered", () =>
     Effect.gen(function* () {
       const appStyles = yield* readAppStyles;

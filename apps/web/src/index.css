@@ -1545,12 +1545,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    without that attribute. The gradient never reacts to hover: sweeping the
    pointer down the list must not pulse each row's tint, so hover feedback
    stays the flat row wash the Tailwind row classes already apply and the
-   gradient only changes with route state. Selected and active rows replace
-   their flat surface fill entirely: those rules zero the row-class
-   background-color and paint one gradient that holds full strength across
-   the right quarter and fades to the sidebar background on the left. The
-   mix percentages run stronger than a full-card wash would need because
-   the fade halves the perceived tint. */
+   gradient only changes with route state. Selected and active rows retain
+   their flat surface fill beneath a gradient that holds full strength across
+   the right quarter and fades toward that fill on the left. The mix
+   percentages run stronger than a full-card wash would need because the fade
+   halves the perceived tint. */
 [data-project-accent] {
   background-image: linear-gradient(
     to right,
@@ -1560,7 +1559,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 [data-project-accent][data-project-accent-state="selected"] {
-  background-color: transparent;
   background-image: linear-gradient(
     to right,
     transparent,
@@ -1573,7 +1571,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 [data-project-accent][data-project-accent-state="active"] {
-  background-color: transparent;
   background-image: linear-gradient(
     to right,
     transparent,
