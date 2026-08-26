@@ -1226,6 +1226,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       >
         <Tooltip>
           <TooltipTrigger
+            delay={600}
             render={
               <div
                 role="button"
@@ -1394,6 +1395,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     >
       <Tooltip>
         <TooltipTrigger
+          delay={600}
           render={
             <div
               role="button"
@@ -1621,6 +1623,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   thread: SidebarThreadSummary;
   projectCwd: string | null;
   projectFaviconPath: string | null;
+  projectAccent: ProjectAccent | null;
   projectTitle: string | null;
   environmentLabel: string | null;
   providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
@@ -1631,6 +1634,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   onSelect: () => void;
 }) {
   const { thread } = props;
+  const projectAccent = props.projectAccent;
   // Same details tooltip as the regular rows: a search hit is still a thread,
   // and the hover card is how you disambiguate identically-titled results.
   const gitCwd = thread.worktreePath ?? props.projectCwd;
@@ -1668,6 +1672,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     <li role="presentation" className="list-none">
       <Tooltip>
         <TooltipTrigger
+          delay={600}
           render={
             <button
               id={props.resultId}
@@ -1678,6 +1683,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               tabIndex={-1}
               aria-selected={props.isHighlighted}
               aria-current={props.isRouteActive ? "page" : undefined}
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isRouteActive,
+                props.isHighlighted,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               aria-label={
                 props.projectTitle ? `${thread.title}, ${props.projectTitle}` : thread.title
               }
@@ -3604,10 +3616,10 @@ export default function Sidebar() {
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
-                key="sidebar-thread-search-tooltips-600"
-                delay={600}
+                key="sidebar-thread-search-tooltips-150"
+                delay={150}
                 closeDelay={0}
-                timeout={0}
+                timeout={400}
               >
                 <ul
                   id="sidebar-thread-search-results"
@@ -3630,6 +3642,10 @@ export default function Sidebar() {
                           projectFaviconPathByKey.get(
                             `${thread.environmentId}:${thread.projectId}`,
                           ) ?? null
+                        }
+                        projectAccent={
+                          projectAccentByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
+                          null
                         }
                         projectTitle={
                           projectDisplayNameByKey.get(
@@ -3662,10 +3678,10 @@ export default function Sidebar() {
           ) : null}
           {!isSearchingThreads ? (
             <TooltipProvider
-              key="sidebar-thread-tooltips-600"
-              delay={600}
+              key="sidebar-thread-tooltips-150"
+              delay={150}
               closeDelay={0}
-              timeout={0}
+              timeout={400}
             >
               <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
                 {(() => {
