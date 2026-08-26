@@ -64,6 +64,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
@@ -463,6 +464,37 @@ function SortablePinnedThreadRow(props: {
   return props.children({ listeners, setNodeRef, transform, transition, isDragging });
 }
 
+// Sweeping the pointer down the list must not flicker every row's corner:
+// the resting metadata yields to the hover actions only once the pointer has
+// parked on the row for a beat. The swap includes discrete position changes
+// that a CSS transition-delay cannot hold back, so a timer stamps
+// data-hover-intent on the row and the reveal classes key off that attribute
+// instead of raw hover. DOM-only on purpose: hovering must not re-render
+// rows. Keyboard focus-visible reveals stay immediate and ungated.
+function useRowHoverIntent() {
+  const timer = useRef<number | null>(null);
+  const onPointerEnter = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const row = event.currentTarget;
+    timer.current = window.setTimeout(() => {
+      row.setAttribute("data-hover-intent", "");
+    }, 150);
+  }, []);
+  const onPointerLeave = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    event.currentTarget.removeAttribute("data-hover-intent");
+  }, []);
+  useEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+  return { onPointerEnter, onPointerLeave };
+}
+
 // One unsent draft session the user has invested content in. Two lines,
 // nothing else: project name, then the typed prompt. All the draft's
 // settings (model, env mode, branch, worktree) still travel with it —
@@ -517,6 +549,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     },
     [draftId, onDiscard],
   );
+  const hoverIntent = useRowHoverIntent();
   return (
     <li className="list-none py-0.5">
       <div
@@ -531,6 +564,8 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         )}
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
+        onPointerEnter={hoverIntent.onPointerEnter}
+        onPointerLeave={hoverIntent.onPointerLeave}
       >
         <div className="relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
           <div className="flex h-5 min-w-0 items-center gap-1.5">
@@ -555,7 +590,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
                       type="button"
                       aria-label="Discard draft"
                       onClick={handleDiscard}
-                      className="pointer-events-none inline-flex cursor-pointer items-center rounded-md bg-transparent px-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100"
+                      className="pointer-events-none inline-flex cursor-pointer items-center rounded-md bg-transparent px-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-data-[hover-intent]/sidebar-row:pointer-events-auto group-data-[hover-intent]/sidebar-row:opacity-100"
                     >
                       <XIcon className="size-3" />
                     </button>
@@ -1088,6 +1123,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   useEffect(() => {
     if (!showSnoozeButton) setSnoozeMenuOpen(false);
   }, [showSnoozeButton]);
+  const hoverIntent = useRowHoverIntent();
   const handlePrClick = useCallback(
     (event: ReactMouseEvent<HTMLAnchorElement>) => {
       if (!pr?.url) return;
@@ -1114,12 +1150,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       : isSelected
         ? "bg-sidebar-row-selected text-sidebar-foreground"
         : shouldRecede
-          ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+          ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover data-[hover-intent]:text-sidebar-foreground"
           : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
     isInFlight &&
       !props.isActive &&
       !isSelected &&
-      "opacity-70 transition-opacity hover:opacity-100",
+      "opacity-70 transition-opacity data-[hover-intent]:opacity-100",
   );
 
   const title = isRenaming ? (
@@ -1138,7 +1174,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   ) : (
     <span
       className={cn(
-        "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
+        "min-w-0 flex-1 text-sm transition-[color,opacity] motion-reduce:transition-none",
         shouldRecede ? "font-normal" : "font-medium",
         variant === "card"
           ? cn(
@@ -1152,7 +1188,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     : "text-foreground/90",
             )
           : cn(
-              "truncate group-hover/sidebar-row:text-foreground",
+              "truncate group-data-[hover-intent]/sidebar-row:text-foreground",
               props.isActive || isWoke
                 ? "text-foreground"
                 : isUnread
@@ -1253,6 +1289,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDown}
                 onContextMenu={handleContextMenu}
+                onPointerEnter={hoverIntent.onPointerEnter}
+                onPointerLeave={hoverIntent.onPointerLeave}
               />
             }
           >
@@ -1260,9 +1298,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               hover so the tail stays scannable when you're hunting. */}
             <span
               className={cn(
-                "shrink-0 transition-opacity",
+                "shrink-0 transition-[opacity,filter]",
                 !props.isActive &&
-                  "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+                  "opacity-40 grayscale group-data-[hover-intent]/sidebar-row:opacity-100 group-data-[hover-intent]/sidebar-row:grayscale-0",
               )}
             >
               <ProjectFaviconFromAsset
@@ -1290,7 +1328,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               <span
                 className={cn(
                   "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
-                  !isWoke && "group-hover/sidebar-row:opacity-0",
+                  !isWoke && "group-data-[hover-intent]/sidebar-row:opacity-0",
                 )}
               >
                 {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
@@ -1333,8 +1371,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     aria-label="Wake thread now"
                     onClick={handleUnsnoozeClick}
                     className={cn(
-                      "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                      isWoke && "group-hover/sidebar-row:static",
+                      "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-data-[hover-intent]/sidebar-row:pointer-events-auto group-data-[hover-intent]/sidebar-row:opacity-100",
+                      isWoke && "group-data-[hover-intent]/sidebar-row:static",
                     )}
                   >
                     <AlarmClockOffIcon className="mb-px size-3" />
@@ -1349,8 +1387,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         aria-label="Un-settle thread"
                         onClick={handleUnsettleClick}
                         className={cn(
-                          "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                          isWoke && "group-hover/sidebar-row:static",
+                          "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-data-[hover-intent]/sidebar-row:pointer-events-auto group-data-[hover-intent]/sidebar-row:opacity-100",
+                          isWoke && "group-data-[hover-intent]/sidebar-row:static",
                         )}
                       />
                     }
@@ -1365,8 +1403,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   aria-label="Settle thread"
                   onClick={handleSettleClick}
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                    isWoke && "group-hover/sidebar-row:static",
+                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-data-[hover-intent]/sidebar-row:pointer-events-auto group-data-[hover-intent]/sidebar-row:opacity-100",
+                    isWoke && "group-data-[hover-intent]/sidebar-row:static",
                   )}
                 >
                   <CheckIcon className="size-3" />
@@ -1422,6 +1460,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               onDoubleClick={handleDoubleClick}
               onKeyDown={handleKeyDown}
               onContextMenu={handleContextMenu}
+              onPointerEnter={hoverIntent.onPointerEnter}
+              onPointerLeave={hoverIntent.onPointerLeave}
             />
           }
         >
@@ -1459,7 +1499,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   className={cn(
                     isWokeStatus
                       ? "pointer-events-auto"
-                      : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-hover/sidebar-row:absolute group-hover/sidebar-row:right-0 group-hover/sidebar-row:opacity-0",
+                      : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-data-[hover-intent]/sidebar-row:absolute group-data-[hover-intent]/sidebar-row:right-0 group-data-[hover-intent]/sidebar-row:opacity-0",
                     "flex items-center self-center justify-self-end tabular-nums text-secondary-label transition-opacity",
                     snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
                   )}
@@ -1520,7 +1560,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       // would keep the controls pinned over the status label
                       // once the pointer moves away (e.g. after a failed
                       // settle) instead of cross-fading back.
-                      "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:static group-hover/sidebar-row:opacity-100",
+                      "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-data-[hover-intent]/sidebar-row:pointer-events-auto group-data-[hover-intent]/sidebar-row:static group-data-[hover-intent]/sidebar-row:opacity-100",
                       snoozeMenuOpen && "pointer-events-auto static opacity-100",
                     )}
                   >
