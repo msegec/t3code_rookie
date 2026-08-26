@@ -129,6 +129,7 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
 
   [data-code-color-preview] {
     position: relative;
+    white-space: nowrap;
   }
 
   [data-code-color-preview]::after {
