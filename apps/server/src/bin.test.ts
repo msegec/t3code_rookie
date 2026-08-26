@@ -118,9 +118,9 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
   Effect.gen(function* () {
     const config = yield* makeCliTestServerConfig(baseDir);
     const routesLayer = HttpApiBuilder.layer(ProjectCliHttpApi).pipe(
-      Layer.provide(orchestrationHttpApiLayer),
-      // The shell snapshot handler resolves each project's t3.json accent.
-      Layer.provide(ProjectFaviconResolver.layerLive),
+      Layer.provide(
+        orchestrationHttpApiLayer.pipe(Layer.provide(ProjectFaviconResolver.layerLive)),
+      ),
       Layer.provide(environmentAuthenticatedAuthLayer),
     );
     const appLayer = HttpRouter.serve(routesLayer, {
@@ -141,6 +141,7 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
         }),
       ),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(ProjectFaviconResolver.layerLive.pipe(Layer.provide(NodeServices.layer))),
       Layer.provide(ServerConfig.layer(config)),
     );
 

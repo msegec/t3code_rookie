@@ -19,14 +19,12 @@ import {
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import * as ProjectAccents from "../project/ProjectAccents.ts";
-import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 
 export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "orchestration",
   Effect.fnUntraced(function* (handlers) {
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
-    const projectFaviconResolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
     const orchestrationEngine = yield* OrchestrationEngineService;
 
     return handlers
@@ -63,10 +61,7 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
             );
           // Clients prefer this snapshot over the WS one, so it has to carry
           // accents too or the sidebar repaints a round trip after it loads.
-          const projects = yield* ProjectAccents.withProjectAccents(
-            projectFaviconResolver,
-            snapshot.projects,
-          );
+          const projects = yield* ProjectAccents.withProjectAccents(snapshot.projects);
           return { ...snapshot, projects };
         }),
       )

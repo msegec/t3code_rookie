@@ -9,17 +9,12 @@
  * that creates them. Fetching it separately repaints the whole list a round
  * trip later, which reads as a flash.
  *
- * Callers pass the resolver rather than pulling it from context so decorating
- * a payload never widens a handler's requirements.
- *
  * @module ProjectAccents
  */
 import type { ProjectAccent } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import type * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
-
-type Resolver = ProjectFaviconResolver.ProjectFaviconResolver["Service"];
+import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 
 interface AccentTarget {
   readonly workspaceRoot: string;
@@ -33,28 +28,23 @@ type WithAccent<T> = T & { readonly accent: ProjectAccent | null };
  * snapshot. The accent is always written, never omitted: clearing `accentColor`
  * in `t3.json` has to clear the row, not leave the previous value in place.
  */
-const resolveAccent = (
-  resolver: Resolver,
-  workspaceRoot: string,
-): Effect.Effect<ProjectAccent | null> =>
-  resolver.resolveAccent(workspaceRoot).pipe(Effect.orElseSucceed(() => null));
+const resolveAccent = Effect.fn("ProjectAccents.resolveAccent")(function* (workspaceRoot: string) {
+  const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+  return yield* resolver.resolveAccent(workspaceRoot).pipe(Effect.orElseSucceed(() => null));
+});
 
 /** Attach `accent` to one project record. */
-export const withProjectAccent = <T extends AccentTarget>(
-  resolver: Resolver,
-  project: T,
-): Effect.Effect<WithAccent<T>> =>
-  resolveAccent(resolver, project.workspaceRoot).pipe(
-    Effect.map((accent) => ({ ...project, accent })),
-  );
+export const withProjectAccent = Effect.fn("ProjectAccents.withProjectAccent")(function* <
+  T extends AccentTarget,
+>(project: T) {
+  const accent = yield* resolveAccent(project.workspaceRoot);
+  return { ...project, accent } as WithAccent<T>;
+});
 
 /**
  * Attach `accent` to every project in a shell snapshot.
  */
-export const withProjectAccents = <T extends AccentTarget>(
-  resolver: Resolver,
-  projects: ReadonlyArray<T>,
-): Effect.Effect<ReadonlyArray<WithAccent<T>>> =>
-  Effect.forEach(projects, (project) => withProjectAccent(resolver, project), {
+export const withProjectAccents = <T extends AccentTarget>(projects: ReadonlyArray<T>) =>
+  Effect.forEach(projects, withProjectAccent, {
     concurrency: 16,
   });

@@ -106,7 +106,6 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectAccents from "./project/ProjectAccents.ts";
-import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
@@ -398,7 +397,6 @@ const makeWsRpcLayer = (
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-      const projectFaviconResolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const analytics = yield* AnalyticsService.AnalyticsService;
       // Every command dispatched on this connection carries the connecting
@@ -614,9 +612,7 @@ const makeWsRpcLayer = (
             });
       };
 
-      const toShellStreamEvent = (
-        event: OrchestrationEvent,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
+      const toShellStreamEvent = (event: OrchestrationEvent) => {
         switch (event.type) {
           case "project.created":
           case "project.meta-updated":
@@ -671,10 +667,7 @@ const makeWsRpcLayer = (
           Effect.orElseSucceed(() => Option.none()),
         );
 
-      const projectUpsertOrRemove = (
-        projectId: ProjectId,
-        sequence: number,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> =>
+      const projectUpsertOrRemove = (projectId: ProjectId, sequence: number) =>
         retryShellProjectionRead(
           "project",
           projectId,
@@ -694,7 +687,7 @@ const makeWsRpcLayer = (
                 // snapshot does: a project that changes must not hand the
                 // client a record the rows then have to repaint.
                 onSome: (nextProject) =>
-                  ProjectAccents.withProjectAccent(projectFaviconResolver, nextProject).pipe(
+                  ProjectAccents.withProjectAccent(nextProject).pipe(
                     Effect.map((project) =>
                       Option.some<OrchestrationShellStreamEvent>({
                         kind: "project-upserted" as const,
@@ -760,9 +753,7 @@ const makeWsRpcLayer = (
       // and drops any `sequence <= snapshotSequence` — never skips a coalesced
       // item. The refetch runs with bounded concurrency (order-preserving).
       const SHELL_REFETCH_CONCURRENCY = 8;
-      const coalesceShellEvents = (
-        events: ReadonlyArray<OrchestrationEvent>,
-      ): Effect.Effect<ReadonlyArray<OrchestrationShellStreamEvent>, never, never> =>
+      const coalesceShellEvents = (events: ReadonlyArray<OrchestrationEvent>) =>
         Effect.gen(function* () {
           if (events.length === 0) {
             return [];
@@ -786,9 +777,7 @@ const makeWsRpcLayer = (
       // traffic so it can't serialize the shell stream behind per-event DB reads.
       const SHELL_COALESCE_WINDOW = Duration.millis(50);
       const SHELL_COALESCE_MAX_CHUNK = 512;
-      const coalesceShellStream = <E, R>(
-        stream: Stream.Stream<OrchestrationEvent, E, R>,
-      ): Stream.Stream<OrchestrationShellStreamEvent, E, R> =>
+      const coalesceShellStream = <E, R>(stream: Stream.Stream<OrchestrationEvent, E, R>) =>
         stream.pipe(
           Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
           Stream.mapEffect(coalesceShellEvents),
@@ -802,9 +791,7 @@ const makeWsRpcLayer = (
       // A completion marker is queued alongside raw live events so it cannot
       // overtake an event still waiting in the coalescing window. Split each
       // batch at markers and coalesce only the event segments on either side.
-      const coalesceShellLiveInputs = (
-        inputs: ReadonlyArray<ShellLiveInput>,
-      ): Effect.Effect<ReadonlyArray<OrchestrationShellStreamItem>, never, never> =>
+      const coalesceShellLiveInputs = (inputs: ReadonlyArray<ShellLiveInput>) =>
         Effect.gen(function* () {
           const output: Array<OrchestrationShellStreamItem> = [];
           let pendingEvents: Array<OrchestrationEvent> = [];
@@ -824,9 +811,7 @@ const makeWsRpcLayer = (
           return output;
         });
 
-      const coalesceShellLiveStream = <E, R>(
-        stream: Stream.Stream<ShellLiveInput, E, R>,
-      ): Stream.Stream<OrchestrationShellStreamItem, E, R> =>
+      const coalesceShellLiveStream = <E, R>(stream: Stream.Stream<ShellLiveInput, E, R>) =>
         stream.pipe(
           Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
           Stream.mapEffect(coalesceShellLiveInputs),
@@ -1314,7 +1299,7 @@ const makeWsRpcLayer = (
                 // Accents ride on the snapshot so sidebar rows never paint once
                 // without them and once with them. See ProjectAccents.
                 Effect.flatMap((snapshot) =>
-                  ProjectAccents.withProjectAccents(projectFaviconResolver, snapshot.projects).pipe(
+                  ProjectAccents.withProjectAccents(snapshot.projects).pipe(
                     Effect.map((projects) => ({ ...snapshot, projects })),
                   ),
                 ),

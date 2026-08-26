@@ -35,12 +35,14 @@ describe("ProjectAccents", () => {
         { id: "c", workspaceRoot: "/repos/three" },
       ];
 
-      const decorated = yield* ProjectAccents.withProjectAccents(
-        resolverReturning({
-          "/repos/one": "#1688f0",
-          "/repos/two": { idle: "#071525", selected: "#173b60" },
-        }),
-        projects,
+      const decorated = yield* ProjectAccents.withProjectAccents(projects).pipe(
+        Effect.provideService(
+          ProjectFaviconResolver.ProjectFaviconResolver,
+          resolverReturning({
+            "/repos/one": "#1688f0",
+            "/repos/two": { idle: "#071525", selected: "#173b60" },
+          }),
+        ),
       );
 
       expect(decorated).toEqual([
@@ -59,9 +61,11 @@ describe("ProjectAccents", () => {
 
   it.effect("keeps an unreadable checkout in the snapshot without an accent", () =>
     Effect.gen(function* () {
-      const decorated = yield* ProjectAccents.withProjectAccents(failingResolver, [
+      const decorated = yield* ProjectAccents.withProjectAccents([
         { id: "a", workspaceRoot: "/repos/gone" },
-      ]);
+      ]).pipe(
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, failingResolver),
+      );
 
       expect(decorated).toEqual([{ id: "a", workspaceRoot: "/repos/gone", accent: null }]);
     }),
@@ -69,9 +73,14 @@ describe("ProjectAccents", () => {
 
   it.effect("decorates a single project the same way", () =>
     Effect.gen(function* () {
-      const decorated = yield* ProjectAccents.withProjectAccent(
-        resolverReturning({ "/repos/one": "#1688f0" }),
-        { id: "a", workspaceRoot: "/repos/one" },
+      const decorated = yield* ProjectAccents.withProjectAccent({
+        id: "a",
+        workspaceRoot: "/repos/one",
+      }).pipe(
+        Effect.provideService(
+          ProjectFaviconResolver.ProjectFaviconResolver,
+          resolverReturning({ "/repos/one": "#1688f0" }),
+        ),
       );
 
       expect(decorated).toEqual({ id: "a", workspaceRoot: "/repos/one", accent: "#1688f0" });
