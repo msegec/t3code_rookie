@@ -14,6 +14,8 @@ import type {
   OrchestrationThread,
   ProjectContentMatch,
   ProjectEntryKind,
+  SourceControlProviderKind,
+  SourceControlRepositorySearchResult,
   ThreadId,
   VcsListRefsResult,
   VcsRef,
@@ -28,6 +30,7 @@ import { orchestrationEnvironment } from "./orchestration";
 import { isPaginatedBranchesNextPagePending } from "./paginatedBranches";
 import { projectContentSearch, projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
+import { sourceControlEnvironment } from "./sourceControl";
 import { useEnvironmentThread } from "./threads";
 import { vcsEnvironment } from "./vcs";
 
@@ -36,11 +39,15 @@ const COMPOSER_PATH_SEARCH_LIMIT = 80;
 const PROJECT_CONTENT_SEARCH_DEBOUNCE_MS = 120;
 const PROJECT_CONTENT_SEARCH_LIMIT = 500;
 const THREAD_SEARCH_DEBOUNCE_MS = 200;
+const REPOSITORY_SEARCH_DEBOUNCE_MS = 200;
+const REPOSITORY_SEARCH_MIN_QUERY_LENGTH = 2;
 const VCS_REF_LIST_LIMIT = 100;
 const EMPTY_REFS: ReadonlyArray<VcsRef> = [];
 const EMPTY_CONTENT_MATCHES: ReadonlyArray<ProjectContentMatch> = [];
 const INITIAL_BRANCH_CURSORS = [undefined] as const;
 const EMPTY_THREAD_SEARCH_MATCHES: ReadonlyArray<EnvironmentThreadSearchMatch> = Object.freeze([]);
+const EMPTY_REPOSITORY_SEARCH_RESULTS: ReadonlyArray<SourceControlRepositorySearchResult> =
+  Object.freeze([]);
 const EMPTY_THREAD_SEARCH_ATOM = Atom.make({
   matches: EMPTY_THREAD_SEARCH_MATCHES,
   isLoading: false,
@@ -100,6 +107,58 @@ export function useThreadSearch(
   return {
     matches: isDebouncing ? EMPTY_THREAD_SEARCH_MATCHES : result.matches,
     isPending: canSearch && (isDebouncing || result.isLoading),
+  };
+}
+
+export interface RepositorySearchTarget {
+  readonly environmentId: EnvironmentId | null;
+  readonly provider: SourceControlProviderKind | null;
+  readonly query: string;
+}
+
+export interface RepositorySearchView {
+  readonly results: ReadonlyArray<SourceControlRepositorySearchResult>;
+  /** False only once a provider answers that it cannot search, so callers show an affordance instead of an error. */
+  readonly supported: boolean;
+  readonly error: string | null;
+  readonly isPending: boolean;
+  /** True while the query is long enough to search, whether or not results have arrived. */
+  readonly canSearch: boolean;
+}
+
+/**
+ * Debounced repository search for the add-project flow. Results blank while the query settles,
+ * because a previous owner prefix's matches actively mislead, and each settled query subscribes to
+ * its own atom so a late response cannot overwrite a newer one.
+ */
+export function useRepositorySearch(target: RepositorySearchTarget): RepositorySearchView {
+  const normalizedQuery = target.query.trim();
+  const debouncedQuery = useDebouncedValue(normalizedQuery, REPOSITORY_SEARCH_DEBOUNCE_MS);
+  const environmentId = target.environmentId;
+  const provider = target.provider;
+  const canSearch =
+    environmentId !== null &&
+    provider !== null &&
+    normalizedQuery.length >= REPOSITORY_SEARCH_MIN_QUERY_LENGTH;
+  const isDebouncing = canSearch && normalizedQuery !== debouncedQuery;
+  const settledQuery = canSearch && !isDebouncing ? debouncedQuery : null;
+  const result = useEnvironmentQuery(
+    settledQuery === null || environmentId === null || provider === null
+      ? null
+      : sourceControlEnvironment.repositorySearch({
+          environmentId,
+          input: { provider, query: settledQuery },
+        }),
+  );
+
+  return {
+    results: isDebouncing
+      ? EMPTY_REPOSITORY_SEARCH_RESULTS
+      : (result.data?.results ?? EMPTY_REPOSITORY_SEARCH_RESULTS),
+    supported: result.data?.supported ?? true,
+    error: result.error,
+    isPending: canSearch && (isDebouncing || result.isPending),
+    canSearch,
   };
 }
 
