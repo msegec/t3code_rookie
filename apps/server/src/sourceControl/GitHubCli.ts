@@ -6,7 +6,9 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
+  NonNegativeInt,
   TrimmedNonEmptyString,
+  type SourceControlRepositorySearchResult,
   type SourceControlRepositoryVisibility,
   type VcsError,
 } from "@t3tools/contracts";
@@ -148,6 +150,19 @@ export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubR
   }
 }
 
+export class GitHubRepositorySearchDecodeError extends Schema.TaggedErrorClass<GitHubRepositorySearchDecodeError>()(
+  "GitHubRepositorySearchDecodeError",
+  gitHubCliDecodeFields,
+) {
+  get detail(): string {
+    return "GitHub CLI returned invalid repository search JSON.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in searchRepositories: ${this.detail}`;
+  }
+}
+
 export const GitHubCliError = Schema.Union([
   GitHubCliUnavailableError,
   GitHubCliAuthenticationError,
@@ -158,6 +173,7 @@ export const GitHubCliError = Schema.Union([
   GitHubChangeRequestListDecodeError,
   GitHubPullRequestDecodeError,
   GitHubRepositoryDecodeError,
+  GitHubRepositorySearchDecodeError,
 ]);
 export type GitHubCliError = typeof GitHubCliError.Type;
 
@@ -241,6 +257,16 @@ export class GitHubCli extends Context.Service<
       readonly repository: string;
     }) => Effect.Effect<GitHubRepositoryCloneUrls, GitHubCliError>;
 
+    /**
+     * Repositories matching a free-text query: the viewer's own repositories
+     * that contain the query, then public repositories GitHub search returns.
+     * The query is sanitized here, so no caller can widen what reaches argv.
+     */
+    readonly searchRepositories: (input: {
+      readonly cwd: string;
+      readonly query: string;
+    }) => Effect.Effect<ReadonlyArray<SourceControlRepositorySearchResult>, GitHubCliError>;
+
     readonly createRepository: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -320,6 +346,100 @@ function deriveRepositoryCloneUrlsFromCreateOutput(
     nameWithOwner: repository,
     url: `https://${fallbackHost}/${repository}`,
     sshUrl: `git@${fallbackHost}:${repository}.git`,
+  };
+}
+
+/** Longest query we hand to `gh`. Repository names are far shorter than this. */
+const SEARCH_QUERY_MAX_LENGTH = 128;
+
+/**
+ * The search query is free user text, and the only client-supplied value in
+ * this file that reaches `gh` argv. Keep it to characters that can appear in an
+ * owner or repository name, drop leading dashes so it can never be read as a
+ * flag, and cap the length. Applied inside the service so callers cannot skip
+ * it.
+ */
+function sanitizeSearchQuery(query: string): string {
+  return query
+    .replace(/[^A-Za-z0-9._/-]/g, "")
+    .replace(/^-+/, "")
+    .slice(0, SEARCH_QUERY_MAX_LENGTH);
+}
+
+/** `gh repo list` reports stars as `stargazerCount` and ships an ssh URL. */
+const RawGitHubOwnedRepositoriesSchema = Schema.Array(
+  Schema.Struct({
+    nameWithOwner: TrimmedNonEmptyString,
+    url: TrimmedNonEmptyString,
+    sshUrl: TrimmedNonEmptyString,
+    stargazerCount: Schema.optional(NonNegativeInt),
+    isFork: Schema.optional(Schema.Boolean),
+    isPrivate: Schema.optional(Schema.Boolean),
+    description: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+);
+const decodeRawGitHubOwnedRepositories = Schema.decodeEffect(
+  Schema.fromJsonString(RawGitHubOwnedRepositoriesSchema),
+);
+
+/**
+ * `gh search repos` uses a different vocabulary from `gh repo list`: the name
+ * is `fullName`, stars are `stargazersCount`, and there is no ssh URL, so we
+ * derive one. `forksCount` is requested for parity with the search UI but
+ * counts a repository's forks, which is not the `isFork` flag, so search
+ * results carry no fork flag.
+ */
+const RawGitHubSearchedRepositoriesSchema = Schema.Array(
+  Schema.Struct({
+    fullName: TrimmedNonEmptyString,
+    url: TrimmedNonEmptyString,
+    stargazersCount: Schema.optional(NonNegativeInt),
+    isPrivate: Schema.optional(Schema.Boolean),
+    description: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+);
+const decodeRawGitHubSearchedRepositories = Schema.decodeEffect(
+  Schema.fromJsonString(RawGitHubSearchedRepositoriesSchema),
+);
+
+function deriveSshUrl(nameWithOwner: string, url: string): string {
+  try {
+    return `git@${new URL(url).host}:${nameWithOwner}.git`;
+  } catch {
+    return `git@github.com:${nameWithOwner}.git`;
+  }
+}
+
+function optionalDescription(value: string | null | undefined) {
+  return value !== undefined && value !== null ? { description: value } : {};
+}
+
+function normalizeOwnedRepository(
+  raw: Schema.Schema.Type<typeof RawGitHubOwnedRepositoriesSchema>[number],
+): SourceControlRepositorySearchResult {
+  return {
+    nameWithOwner: raw.nameWithOwner,
+    url: raw.url,
+    sshUrl: raw.sshUrl,
+    ownedByViewer: true,
+    ...optionalDescription(raw.description),
+    ...(raw.stargazerCount !== undefined ? { starCount: raw.stargazerCount } : {}),
+    ...(raw.isFork !== undefined ? { isFork: raw.isFork } : {}),
+    ...(raw.isPrivate !== undefined ? { isPrivate: raw.isPrivate } : {}),
+  };
+}
+
+function normalizeSearchedRepository(
+  raw: Schema.Schema.Type<typeof RawGitHubSearchedRepositoriesSchema>[number],
+): SourceControlRepositorySearchResult {
+  return {
+    nameWithOwner: raw.fullName,
+    url: raw.url,
+    sshUrl: deriveSshUrl(raw.fullName, raw.url),
+    ownedByViewer: false,
+    ...optionalDescription(raw.description),
+    ...(raw.stargazersCount !== undefined ? { starCount: raw.stargazersCount } : {}),
+    ...(raw.isPrivate !== undefined ? { isPrivate: raw.isPrivate } : {}),
   };
 }
 
@@ -432,6 +552,73 @@ export const make = Effect.gen(function* () {
         ),
         Effect.map(normalizeRepositoryCloneUrls),
       ),
+    searchRepositories: (input) =>
+      Effect.gen(function* () {
+        const query = sanitizeSearchQuery(input.query);
+        if (query.length === 0) {
+          return [];
+        }
+
+        const ownedOutput = yield* execute({
+          cwd: input.cwd,
+          args: [
+            "repo",
+            "list",
+            "--json",
+            "nameWithOwner,url,sshUrl,stargazerCount,isFork,isPrivate,description",
+            "--limit",
+            "100",
+          ],
+        });
+        const owned = yield* decodeRawGitHubOwnedRepositories(ownedOutput.stdout.trim()).pipe(
+          Effect.mapError(
+            (cause) =>
+              new GitHubRepositorySearchDecodeError({ command: "gh", cwd: input.cwd, cause }),
+          ),
+        );
+
+        const searchOutput = yield* execute({
+          cwd: input.cwd,
+          args: [
+            "search",
+            "repos",
+            query,
+            "--json",
+            "fullName,url,stargazersCount,forksCount,description,isPrivate",
+            "--limit",
+            "20",
+            "--sort",
+            "stars",
+          ],
+        });
+        const searched = yield* decodeRawGitHubSearchedRepositories(
+          searchOutput.stdout.trim(),
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new GitHubRepositorySearchDecodeError({ command: "gh", cwd: input.cwd, cause }),
+          ),
+        );
+
+        // `gh repo list` takes no query, so the viewer's repositories are
+        // matched here. They come first, and a repository the viewer owns is
+        // never repeated by the public search below it.
+        const needle = query.toLowerCase();
+        const results = owned
+          .filter((raw) => raw.nameWithOwner.toLowerCase().includes(needle))
+          .map(normalizeOwnedRepository);
+        const seen = new Set(results.map((result) => result.nameWithOwner));
+
+        for (const raw of searched) {
+          if (seen.has(raw.fullName)) {
+            continue;
+          }
+          seen.add(raw.fullName);
+          results.push(normalizeSearchedRepository(raw));
+        }
+
+        return results;
+      }),
     createRepository: (input) =>
       execute({
         cwd: input.cwd,

@@ -403,4 +403,193 @@ describe("GitHubCli.layer", () => {
       assert.notInclude(error.message, "user ID");
     }).pipe(Effect.provide(layer)),
   );
+
+  it.effect("searches owned repositories and public repositories with the documented argv", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                description: "Minimal GUI for coding agents",
+                isFork: false,
+                isPrivate: false,
+                nameWithOwner: "octocat/codething-mvp",
+                sshUrl: "git@github.com:octocat/codething-mvp.git",
+                stargazerCount: 42,
+                url: "https://github.com/octocat/codething-mvp",
+              },
+              {
+                description: "",
+                isFork: true,
+                isPrivate: true,
+                nameWithOwner: "octocat/dotfiles",
+                sshUrl: "git@github.com:octocat/dotfiles.git",
+                stargazerCount: 0,
+                url: "https://github.com/octocat/dotfiles",
+              },
+            ]),
+          ),
+        ),
+      );
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                description: "Another take on codething",
+                forksCount: 7,
+                fullName: "acme/codething-tools",
+                isPrivate: false,
+                stargazersCount: 900,
+                url: "https://github.com/acme/codething-tools",
+              },
+              {
+                description: "",
+                forksCount: 0,
+                fullName: "octocat/codething-mvp",
+                isPrivate: false,
+                stargazersCount: 42,
+                url: "https://github.com/octocat/codething-mvp",
+              },
+            ]),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      expect(mockRun).toHaveBeenCalledTimes(2);
+      expect(mockRun).toHaveBeenNthCalledWith(1, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "repo",
+          "list",
+          "--json",
+          "nameWithOwner,url,sshUrl,stargazerCount,isFork,isPrivate,description",
+          "--limit",
+          "100",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+      expect(mockRun).toHaveBeenNthCalledWith(2, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "search",
+          "repos",
+          "codething",
+          "--json",
+          "fullName,url,stargazersCount,forksCount,description,isPrivate",
+          "--limit",
+          "20",
+          "--sort",
+          "stars",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+
+      // Owned repositories keep gh's `stargazerCount`/`sshUrl`; search results
+      // report `stargazersCount` and carry no ssh URL at all.
+      assert.deepStrictEqual(results, [
+        {
+          nameWithOwner: "octocat/codething-mvp",
+          url: "https://github.com/octocat/codething-mvp",
+          sshUrl: "git@github.com:octocat/codething-mvp.git",
+          ownedByViewer: true,
+          description: "Minimal GUI for coding agents",
+          starCount: 42,
+          isFork: false,
+          isPrivate: false,
+        },
+        {
+          nameWithOwner: "acme/codething-tools",
+          url: "https://github.com/acme/codething-tools",
+          sshUrl: "git@github.com:acme/codething-tools.git",
+          ownedByViewer: false,
+          description: "Another take on codething",
+          starCount: 900,
+          isPrivate: false,
+        },
+      ]);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("strips shell metacharacters and spaces from the query before it reaches argv", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({
+        cwd: "/repo",
+        query: "foo; rm -rf ~ && echo `id`",
+      });
+
+      const searchArgs = mockRun.mock.calls[1]?.[0]?.args;
+      assert.deepStrictEqual(searchArgs, [
+        "search",
+        "repos",
+        "foorm-rfechoid",
+        "--json",
+        "fullName,url,stargazersCount,forksCount,description,isPrivate",
+        "--limit",
+        "20",
+        "--sort",
+        "stars",
+      ]);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("never lets a query become a gh flag", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({ cwd: "/repo", query: "--limit 9999" });
+
+      assert.strictEqual(mockRun.mock.calls[1]?.[0]?.args?.[2], "limit9999");
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("caps the query length", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({ cwd: "/repo", query: "a".repeat(500) });
+
+      assert.strictEqual(mockRun.mock.calls[1]?.[0]?.args?.[2], "a".repeat(128));
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("runs no gh command when the query sanitizes to nothing", () =>
+    Effect.gen(function* () {
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "!!! ???" });
+
+      assert.deepStrictEqual(results, []);
+      expect(mockRun).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("fails with a decode error when gh returns unusable search JSON", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("[]")));
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("not json")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* gh
+        .searchRepositories({ cwd: "/repo", query: "codething" })
+        .pipe(Effect.flip);
+
+      assert.strictEqual(error._tag, "GitHubRepositorySearchDecodeError");
+      assert.strictEqual(error.cwd, "/repo");
+    }).pipe(Effect.provide(layer)),
+  );
 });
