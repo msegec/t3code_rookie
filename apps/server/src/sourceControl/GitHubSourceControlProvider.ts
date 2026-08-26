@@ -257,6 +257,9 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
+    // Placeholder until the `gh search repos` call lands; GitHub search is not wired up yet.
+    // TODO: replace with the real GitHub CLI repository search.
+    searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
     createRepository: (input) =>
       github.createRepository(input).pipe(
         Effect.mapError(

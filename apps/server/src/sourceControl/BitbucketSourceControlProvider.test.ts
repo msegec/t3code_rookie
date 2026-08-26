@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -164,5 +164,17 @@ it.effect("uses Bitbucket API repository detection for default branch lookup", (
 
     assert.strictEqual(defaultBranch, "main");
     assert.strictEqual(cwdInput, "/repo");
+  }),
+);
+
+it.effect("reports repository search as unsupported without calling the Bitbucket API", () =>
+  Effect.gen(function* () {
+    const request = vi.fn<BitbucketApi.BitbucketApi["Service"]["request"]>();
+    const provider = yield* makeProvider({ request });
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3code" });
+
+    assert.deepStrictEqual(output, { supported: false, results: [] });
+    expect(request).not.toHaveBeenCalled();
   }),
 );

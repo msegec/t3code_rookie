@@ -1,8 +1,9 @@
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
 import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
 
@@ -130,5 +131,21 @@ it.effect("uses Azure CLI repository detection for default branch lookup", () =>
 
     assert.strictEqual(defaultBranch, "main");
     assert.strictEqual(cwdInput, "/repo");
+  }),
+);
+
+it.effect("reports repository search as unsupported without running an Azure CLI command", () =>
+  Effect.gen(function* () {
+    const run = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
+    const provider = yield* AzureDevOpsSourceControlProvider.make.pipe(
+      Effect.provide(
+        AzureDevOpsCli.layer.pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run }))),
+      ),
+    );
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3code" });
+
+    assert.deepStrictEqual(output, { supported: false, results: [] });
+    expect(run).not.toHaveBeenCalled();
   }),
 );

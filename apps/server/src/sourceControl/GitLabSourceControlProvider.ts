@@ -197,6 +197,9 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
+    // Repository search is GitHub only for now. GitLab answers as data rather than
+    // failing, so a search-as-you-type caller renders "not supported" instead of an error.
+    searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
     createRepository: (input) =>
       gitlab.createRepository(input).pipe(
         Effect.mapError(
