@@ -136,28 +136,26 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
     position: absolute;
     z-index: 1;
     inset-block-start: 50%;
-    inset-inline-end: 0;
+    inset-inline-start: 100%;
     width: 0;
     height: 0;
-    border: 0 solid color-mix(in srgb, var(--code-foreground) 35%, transparent);
-    border-radius: 2px;
-    background: var(--code-color-preview);
+    --code-color-preview-border: color-mix(
+      in srgb,
+      var(--code-foreground) 35%,
+      transparent
+    );
     pointer-events: none;
-    transform: translateY(-50%) scale(1.6);
+    transform: translateY(-50%);
     visibility: hidden;
     transition:
-      border-width 0s,
-      height 0s,
-      inset-inline-end 0s,
-      visibility 0s,
-      width 0s;
+      box-shadow 0s,
+      visibility 0s;
   }
 
   [data-code-color-preview]:hover::after {
-    inset-inline-end: 0.32em;
-    width: 0.72em;
-    height: 0.72em;
-    border-width: 1px;
+    box-shadow:
+      0.68em 0 0 0.36em var(--code-color-preview),
+      0.68em 0 0 calc(0.36em + 1px) var(--code-color-preview-border);
     visibility: visible;
     transition-delay: 150ms;
   }

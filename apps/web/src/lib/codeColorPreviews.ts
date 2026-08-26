@@ -77,38 +77,30 @@ export function codeColorPreviewParts(
   return parts;
 }
 
-export function codeColorPreviewColor(text: string, language: string): string | null {
-  const allowShortForms = allowShortColorForms(language);
-  if (allowShortForms === null) return null;
-
-  return previewColor(text, allowShortForms);
-}
-
-function previewColor(text: string, allowShortForms: boolean): string | null {
-  const regex = allowShortForms ? CSS_HEX_COLOR_REGEX : CSS_LONG_HEX_COLOR_REGEX;
-  regex.lastIndex = 0;
-  const match = regex.exec(text);
-  if (!match?.[2]) return null;
-  const hasAnotherMatch = regex.exec(text) !== null;
-  regex.lastIndex = 0;
-  return hasAnotherMatch ? null : match[2];
-}
-
 export function applyCodeColorPreviews(root: ParentNode, language: string): void {
   const allowShortForms = allowShortColorForms(language);
   if (allowShortForms === null) return;
 
   for (const token of root.querySelectorAll<HTMLElement>("[data-line] span")) {
-    if (token.childElementCount > 0) continue;
+    if (token.childElementCount > 0 || token.classList.contains("chat-markdown-color-literal")) {
+      continue;
+    }
 
-    const color = previewColor(token.textContent ?? "", allowShortForms);
-    if (color) {
-      if (!token.hasAttribute("data-code-color-preview")) {
-        token.toggleAttribute("data-code-color-preview", true);
-      }
-      if (token.style.getPropertyValue("--code-color-preview") !== color) {
-        token.style.setProperty("--code-color-preview", color);
-      }
+    const parts = codeColorPreviewParts(token.textContent ?? "", allowShortForms);
+    if (parts.some((part) => part.color != null)) {
+      const children = parts.map((part) => {
+        if (!part.color) return token.ownerDocument.createTextNode(part.text);
+
+        const literal = token.ownerDocument.createElement("span");
+        literal.className = "chat-markdown-color-literal";
+        literal.toggleAttribute("data-code-color-preview", true);
+        literal.style.setProperty("--code-color-preview", part.color);
+        literal.textContent = part.text;
+        return literal;
+      });
+      token.toggleAttribute("data-code-color-preview", false);
+      token.style.removeProperty("--code-color-preview");
+      token.replaceChildren(...children);
     } else {
       if (token.hasAttribute("data-code-color-preview")) {
         token.toggleAttribute("data-code-color-preview", false);

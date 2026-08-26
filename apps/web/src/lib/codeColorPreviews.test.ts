@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyCodeColorPreviews,
-  codeColorPreviewColor,
   codeColorPreviewParts,
   codeColorPreviewTransformers,
 } from "./codeColorPreviews";
@@ -59,19 +58,13 @@ describe("codeColorPreviewParts", () => {
     expect(codeColorPreviewTransformers("markdown")).toEqual([]);
   });
 
-  it("finds one preview colour in a highlighted file token", () => {
-    expect(codeColorPreviewColor('"#701525"', "json")).toBe("#701525");
-    expect(codeColorPreviewColor("// fixes #1904", "typescript")).toBeNull();
-    expect(codeColorPreviewColor("#abc", "text")).toBeNull();
-    expect(codeColorPreviewColor("#abc #def", "css")).toBeNull();
-  });
-
   it("does not mutate an unchanged highlighted file twice", () => {
     const attributes = new Set<string>();
     const styles = new Map<string, string>();
     let mutationCount = 0;
     const token = {
       childElementCount: 0,
+      classList: { contains: () => false },
       textContent: '"#701525"',
       hasAttribute: (name: string) => attributes.has(name),
       toggleAttribute: (name: string, force: boolean) => {
@@ -90,6 +83,19 @@ describe("codeColorPreviewParts", () => {
           styles.delete(name);
         },
       },
+      ownerDocument: {
+        createTextNode: (textContent: string) => ({ textContent }),
+        createElement: () => ({
+          className: "",
+          textContent: "",
+          toggleAttribute: () => undefined,
+          style: { setProperty: () => undefined },
+        }),
+      },
+      replaceChildren: () => {
+        mutationCount += 1;
+        Object.defineProperty(token, "childElementCount", { value: 1 });
+      },
     } as unknown as HTMLElement;
     const root = {
       querySelectorAll: () => [token],
@@ -100,6 +106,45 @@ describe("codeColorPreviewParts", () => {
     applyCodeColorPreviews(root, "json");
 
     expect(mutationCount).toBe(0);
+  });
+
+  it("marks only the colour literal in highlighted file tokens", () => {
+    const children: Array<{ className?: string; textContent: string }> = [];
+    const token = {
+      childElementCount: 0,
+      classList: { contains: () => false },
+      textContent: "// brand colour #ff00aa used for the header",
+      hasAttribute: () => false,
+      toggleAttribute: () => undefined,
+      style: {
+        getPropertyValue: () => "",
+        setProperty: () => undefined,
+        removeProperty: () => undefined,
+      },
+      ownerDocument: {
+        createTextNode: (textContent: string) => ({ textContent }),
+        createElement: () => ({
+          className: "",
+          textContent: "",
+          toggleAttribute: () => undefined,
+          style: { setProperty: () => undefined },
+        }),
+      },
+      replaceChildren: (...nextChildren: Array<{ className?: string; textContent: string }>) => {
+        children.push(...nextChildren);
+      },
+    } as unknown as HTMLElement;
+    const root = {
+      querySelectorAll: () => [token],
+    } as unknown as ParentNode;
+
+    applyCodeColorPreviews(root, "css");
+
+    expect(children).toMatchObject([
+      { textContent: "// brand colour " },
+      { className: "chat-markdown-color-literal", textContent: "#ff00aa" },
+      { textContent: " used for the header" },
+    ]);
   });
 
   it("marks highlighted colours for the hover preview", async () => {
