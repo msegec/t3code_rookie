@@ -1,7 +1,9 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
@@ -18,6 +20,7 @@ import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
 } from "./gitHubPullRequests.ts";
+import * as SourceControlRateLimit from "./SourceControlRateLimit.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -261,6 +264,11 @@ export class GitHubCli extends Context.Service<
      * Repositories matching a free-text query: the viewer's own repositories
      * that contain the query, then public repositories GitHub search returns.
      * The query is sanitized here, so no caller can widen what reaches argv.
+     *
+     * Built for a search-as-you-type field: the owned listing is cached per
+     * working directory, the global search runs only when it can earn its
+     * request, and both go through the GitHub circuit breaker. A paused circuit
+     * yields whatever is cached, or nothing, rather than an error.
      */
     readonly searchRepositories: (input: {
       readonly cwd: string;
@@ -353,6 +361,57 @@ function deriveRepositoryCloneUrlsFromCreateOutput(
 const SEARCH_QUERY_MAX_LENGTH = 128;
 
 /**
+ * The viewer's own repositories change on the scale of days and are matched
+ * locally, so one listing covers a whole typing session.
+ */
+const OWNED_REPOSITORIES_TTL_MS = 60_000;
+
+/**
+ * Search rows are cached per sanitized query: long enough to absorb backspacing
+ * and retyping, short enough that a repository created mid-session turns up.
+ */
+const SEARCHED_REPOSITORIES_TTL_MS = 30_000;
+
+/**
+ * GitHub allows 30 search requests a minute, far tighter than the 5000 an hour
+ * the core API allows, so a query has to say something before it costs one.
+ */
+const MIN_GLOBAL_SEARCH_QUERY_LENGTH = 3;
+
+/**
+ * Local matches from this count up already fill the visible part of the
+ * dropdown, so a global search would only add rows below the fold.
+ */
+const SUFFICIENT_LOCAL_MATCHES = 5;
+
+/** A fast typist produces one cache entry per keystroke; bound both caches. */
+const SEARCH_CACHE_CAPACITY = 64;
+
+/** `gh` talks to github.com, and the circuit is keyed by provider and host. */
+const GITHUB_RATE_LIMIT_KEY = { provider: "github", host: "github.com" } as const;
+
+interface SearchCacheEntry<A> {
+  readonly fetchedAt: number;
+  readonly value: A;
+}
+
+/** Bounded insert-ordered map. The oldest fetch is evicted first. */
+function storeCacheEntry<A>(
+  current: ReadonlyMap<string, SearchCacheEntry<A>>,
+  key: string,
+  entry: SearchCacheEntry<A>,
+): ReadonlyMap<string, SearchCacheEntry<A>> {
+  const next = new Map(current);
+  next.delete(key);
+  next.set(key, entry);
+  for (const oldest of next.keys()) {
+    if (next.size <= SEARCH_CACHE_CAPACITY) break;
+    next.delete(oldest);
+  }
+  return next;
+}
+
+/**
  * The search query is free user text, and the only client-supplied value in
  * this file that reaches `gh` argv. Keep it to characters that can appear in an
  * owner or repository name, drop leading dashes so it can never be read as a
@@ -381,19 +440,19 @@ const RawGitHubOwnedRepositoriesSchema = Schema.Array(
 const decodeRawGitHubOwnedRepositories = Schema.decodeEffect(
   Schema.fromJsonString(RawGitHubOwnedRepositoriesSchema),
 );
+type RawOwnedRepository = Schema.Schema.Type<typeof RawGitHubOwnedRepositoriesSchema>[number];
 
 /**
  * `gh search repos` uses a different vocabulary from `gh repo list`: the name
  * is `fullName`, stars are `stargazersCount`, and there is no ssh URL, so we
- * derive one. `forksCount` is requested for parity with the search UI but
- * counts a repository's forks, which is not the `isFork` flag, so search
- * results carry no fork flag.
+ * derive one. `isFork` means the same thing in both.
  */
 const RawGitHubSearchedRepositoriesSchema = Schema.Array(
   Schema.Struct({
     fullName: TrimmedNonEmptyString,
     url: TrimmedNonEmptyString,
     stargazersCount: Schema.optional(NonNegativeInt),
+    isFork: Schema.optional(Schema.Boolean),
     isPrivate: Schema.optional(Schema.Boolean),
     description: Schema.optional(Schema.NullOr(Schema.String)),
   }),
@@ -401,6 +460,7 @@ const RawGitHubSearchedRepositoriesSchema = Schema.Array(
 const decodeRawGitHubSearchedRepositories = Schema.decodeEffect(
   Schema.fromJsonString(RawGitHubSearchedRepositoriesSchema),
 );
+type RawSearchedRepository = Schema.Schema.Type<typeof RawGitHubSearchedRepositoriesSchema>[number];
 
 function deriveSshUrl(nameWithOwner: string, url: string): string {
   try {
@@ -414,9 +474,7 @@ function optionalDescription(value: string | null | undefined) {
   return value !== undefined && value !== null ? { description: value } : {};
 }
 
-function normalizeOwnedRepository(
-  raw: Schema.Schema.Type<typeof RawGitHubOwnedRepositoriesSchema>[number],
-): SourceControlRepositorySearchResult {
+function normalizeOwnedRepository(raw: RawOwnedRepository): SourceControlRepositorySearchResult {
   return {
     nameWithOwner: raw.nameWithOwner,
     url: raw.url,
@@ -430,7 +488,7 @@ function normalizeOwnedRepository(
 }
 
 function normalizeSearchedRepository(
-  raw: Schema.Schema.Type<typeof RawGitHubSearchedRepositoriesSchema>[number],
+  raw: RawSearchedRepository,
 ): SourceControlRepositorySearchResult {
   return {
     nameWithOwner: raw.fullName,
@@ -439,12 +497,14 @@ function normalizeSearchedRepository(
     ownedByViewer: false,
     ...optionalDescription(raw.description),
     ...(raw.stargazersCount !== undefined ? { starCount: raw.stargazersCount } : {}),
+    ...(raw.isFork !== undefined ? { isFork: raw.isFork } : {}),
     ...(raw.isPrivate !== undefined ? { isPrivate: raw.isPrivate } : {}),
   };
 }
 
 export const make = Effect.gen(function* () {
   const process = yield* VcsProcess.VcsProcess;
+  const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
 
   const execute: GitHubCli["Service"]["execute"] = (input) =>
     process
@@ -458,6 +518,116 @@ export const make = Effect.gen(function* () {
         ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
       })
       .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
+
+  const ownedRepositoriesCache = yield* Ref.make<
+    ReadonlyMap<string, SearchCacheEntry<ReadonlyArray<RawOwnedRepository>>>
+  >(new Map());
+  const searchedRepositoriesCache = yield* Ref.make<
+    ReadonlyMap<string, SearchCacheEntry<ReadonlyArray<RawSearchedRepository>>>
+  >(new Map());
+
+  /**
+   * One gh request under the GitHub circuit breaker. `null` means the circuit is
+   * open and nothing ran, which is the caller's cue to serve whatever it already
+   * has. `request` is a thunk so an open circuit builds no command at all.
+   */
+  const guarded = <A>(request: () => Effect.Effect<A, GitHubCliError>) =>
+    limits.check(GITHUB_RATE_LIMIT_KEY).pipe(
+      Effect.flatMap((lease) =>
+        request().pipe(
+          Effect.tap(() => limits.recordSuccess({ ...GITHUB_RATE_LIMIT_KEY, lease })),
+          Effect.tapError((error) =>
+            error._tag === "GitHubCliRateLimitError"
+              ? limits.recordRateLimit({ ...GITHUB_RATE_LIMIT_KEY, lease })
+              : Effect.void,
+          ),
+        ),
+      ),
+      Effect.catchTag("SourceControlRateLimitPausedError", () => Effect.succeed(null)),
+    );
+
+  const searchDecodeError = (cwd: string) => (cause: unknown) =>
+    new GitHubRepositorySearchDecodeError({ command: "gh", cwd, cause });
+
+  /** The viewer's repositories, at most one `gh repo list` per minute per cwd. */
+  const ownedRepositories = (cwd: string) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const cached = (yield* Ref.get(ownedRepositoriesCache)).get(cwd);
+      if (cached !== undefined && now - cached.fetchedAt < OWNED_REPOSITORIES_TTL_MS) {
+        return cached.value;
+      }
+
+      const fetched = yield* guarded(() =>
+        execute({
+          cwd,
+          args: [
+            "repo",
+            "list",
+            "--json",
+            "nameWithOwner,url,sshUrl,stargazerCount,isFork,isPrivate,description",
+            "--limit",
+            "100",
+          ],
+        }).pipe(
+          Effect.flatMap((output) =>
+            decodeRawGitHubOwnedRepositories(output.stdout.trim()).pipe(
+              Effect.mapError(searchDecodeError(cwd)),
+            ),
+          ),
+        ),
+      );
+      if (fetched === null) {
+        return cached?.value ?? [];
+      }
+
+      yield* Ref.update(ownedRepositoriesCache, (current) =>
+        storeCacheEntry(current, cwd, { fetchedAt: now, value: fetched }),
+      );
+      return fetched;
+    });
+
+  /** Public repositories for one sanitized query, cached for a few keystrokes. */
+  const searchedRepositories = (cwd: string, query: string) =>
+    Effect.gen(function* () {
+      const key = `${cwd}\u0000${query}`;
+      const now = yield* Clock.currentTimeMillis;
+      const cached = (yield* Ref.get(searchedRepositoriesCache)).get(key);
+      if (cached !== undefined && now - cached.fetchedAt < SEARCHED_REPOSITORIES_TTL_MS) {
+        return cached.value;
+      }
+
+      const fetched = yield* guarded(() =>
+        execute({
+          cwd,
+          args: [
+            "search",
+            "repos",
+            query,
+            "--json",
+            "fullName,url,stargazersCount,isFork,description,isPrivate",
+            "--limit",
+            "20",
+            "--sort",
+            "stars",
+          ],
+        }).pipe(
+          Effect.flatMap((output) =>
+            decodeRawGitHubSearchedRepositories(output.stdout.trim()).pipe(
+              Effect.mapError(searchDecodeError(cwd)),
+            ),
+          ),
+        ),
+      );
+      if (fetched === null) {
+        return cached?.value ?? [];
+      }
+
+      yield* Ref.update(searchedRepositoriesCache, (current) =>
+        storeCacheEntry(current, key, { fetchedAt: now, value: fetched }),
+      );
+      return fetched;
+    });
 
   return GitHubCli.of({
     execute,
@@ -559,54 +729,22 @@ export const make = Effect.gen(function* () {
           return [];
         }
 
-        const ownedOutput = yield* execute({
-          cwd: input.cwd,
-          args: [
-            "repo",
-            "list",
-            "--json",
-            "nameWithOwner,url,sshUrl,stargazerCount,isFork,isPrivate,description",
-            "--limit",
-            "100",
-          ],
-        });
-        const owned = yield* decodeRawGitHubOwnedRepositories(ownedOutput.stdout.trim()).pipe(
-          Effect.mapError(
-            (cause) =>
-              new GitHubRepositorySearchDecodeError({ command: "gh", cwd: input.cwd, cause }),
-          ),
-        );
-
-        const searchOutput = yield* execute({
-          cwd: input.cwd,
-          args: [
-            "search",
-            "repos",
-            query,
-            "--json",
-            "fullName,url,stargazersCount,forksCount,description,isPrivate",
-            "--limit",
-            "20",
-            "--sort",
-            "stars",
-          ],
-        });
-        const searched = yield* decodeRawGitHubSearchedRepositories(
-          searchOutput.stdout.trim(),
-        ).pipe(
-          Effect.mapError(
-            (cause) =>
-              new GitHubRepositorySearchDecodeError({ command: "gh", cwd: input.cwd, cause }),
-          ),
-        );
-
-        // `gh repo list` takes no query, so the viewer's repositories are
-        // matched here. They come first, and a repository the viewer owns is
-        // never repeated by the public search below it.
+        // `gh repo list` takes no query, so the viewer's repositories are matched
+        // here against the cached listing. That is the common keystroke: no spawn.
         const needle = query.toLowerCase();
-        const results = owned
-          .filter((raw) => raw.nameWithOwner.toLowerCase().includes(needle))
-          .map(normalizeOwnedRepository);
+        const localMatches = (yield* ownedRepositories(input.cwd)).filter((raw) =>
+          raw.nameWithOwner.toLowerCase().includes(needle),
+        );
+
+        const searched =
+          query.length >= MIN_GLOBAL_SEARCH_QUERY_LENGTH &&
+          localMatches.length < SUFFICIENT_LOCAL_MATCHES
+            ? yield* searchedRepositories(input.cwd, query)
+            : [];
+
+        // Owned repositories come first, and one the viewer owns is never
+        // repeated by the public search below it.
+        const results = localMatches.map(normalizeOwnedRepository);
         const seen = new Set(results.map((result) => result.nameWithOwner));
 
         for (const raw of searched) {
@@ -662,4 +800,12 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(GitHubCli, make);
+/**
+ * The circuit breaker is private to this layer. GitHub bills the search endpoint
+ * (30 requests a minute) separately from the core quota the pull-request
+ * subsystem tracks with its own `SourceControlRateLimit`, so the two circuits are
+ * deliberately independent rather than one pausing the other.
+ */
+export const layer = Layer.effect(GitHubCli, make).pipe(
+  Layer.provide(SourceControlRateLimit.layer),
+);

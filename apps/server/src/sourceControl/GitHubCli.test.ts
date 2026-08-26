@@ -5,8 +5,11 @@ import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { VcsProcessExitError, VcsProcessSpawnError } from "@t3tools/contracts";
 
+import * as TestClock from "effect/testing/TestClock";
+
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitHubCli from "./GitHubCli.ts";
+import * as SourceControlRateLimit from "./SourceControlRateLimit.ts";
 
 const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
   exitCode: ChildProcessSpawner.ExitCode(0),
@@ -25,6 +28,26 @@ const layer = GitHubCli.layer.pipe(
     }),
   ),
 );
+
+/**
+ * Repository search reads the clock and the GitHub circuit, so its tests build the
+ * CLI over a rate limiter they can pause rather than over `GitHubCli.layer`, which
+ * provides one of its own.
+ */
+const searchLayer = Layer.effect(GitHubCli.GitHubCli, GitHubCli.make).pipe(
+  Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockRun })),
+  Layer.provideMerge(SourceControlRateLimit.layer),
+);
+
+/** The gh subcommand of every spawn so far, in order. */
+const spawnedSubcommands = () =>
+  mockRun.mock.calls.map((call) => call[0].args.slice(0, 2).join(" "));
+
+const ownedRepository = (nameWithOwner: string) => ({
+  nameWithOwner,
+  url: `https://github.com/${nameWithOwner}`,
+  sshUrl: `git@github.com:${nameWithOwner}.git`,
+});
 
 afterEach(() => {
   mockRun.mockReset();
@@ -440,7 +463,7 @@ describe("GitHubCli.layer", () => {
             JSON.stringify([
               {
                 description: "Another take on codething",
-                forksCount: 7,
+                isFork: true,
                 fullName: "acme/codething-tools",
                 isPrivate: false,
                 stargazersCount: 900,
@@ -448,7 +471,7 @@ describe("GitHubCli.layer", () => {
               },
               {
                 description: "",
-                forksCount: 0,
+                isFork: false,
                 fullName: "octocat/codething-mvp",
                 isPrivate: false,
                 stargazersCount: 42,
@@ -485,7 +508,7 @@ describe("GitHubCli.layer", () => {
           "repos",
           "codething",
           "--json",
-          "fullName,url,stargazersCount,forksCount,description,isPrivate",
+          "fullName,url,stargazersCount,isFork,description,isPrivate",
           "--limit",
           "20",
           "--sort",
@@ -515,6 +538,7 @@ describe("GitHubCli.layer", () => {
           ownedByViewer: false,
           description: "Another take on codething",
           starCount: 900,
+          isFork: true,
           isPrivate: false,
         },
       ]);
@@ -537,7 +561,7 @@ describe("GitHubCli.layer", () => {
         "repos",
         "foorm-rfechoid",
         "--json",
-        "fullName,url,stargazersCount,forksCount,description,isPrivate",
+        "fullName,url,stargazersCount,isFork,description,isPrivate",
         "--limit",
         "20",
         "--sort",
@@ -591,5 +615,133 @@ describe("GitHubCli.layer", () => {
       assert.strictEqual(error._tag, "GitHubRepositorySearchDecodeError");
       assert.strictEqual(error.cwd, "/repo");
     }).pipe(Effect.provide(layer)),
+  );
+  it.effect("reuses the owned repository listing for a minute of typing", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+      yield* TestClock.adjust("59 seconds");
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codethings" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos", "search repos"]);
+
+      yield* TestClock.adjust("2 seconds");
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codethingy" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), [
+        "repo list",
+        "search repos",
+        "search repos",
+        "repo list",
+        "search repos",
+      ]);
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("serves a repeated query from the search cache", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+      yield* TestClock.adjust("29 seconds");
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos"]);
+
+      yield* TestClock.adjust("2 seconds");
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos", "search repos"]);
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("never spends a search request on a two-character query", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({ cwd: "/repo", query: "co" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list"]);
+
+      yield* gh.searchRepositories({ cwd: "/repo", query: "cod" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos"]);
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("asks GitHub only when the viewer's own repositories do not fill the list", () =>
+    Effect.gen(function* () {
+      const ownedFor = (count: number) =>
+        JSON.stringify(
+          Array.from({ length: count }, (_, index) =>
+            ownedRepository(`octocat/codething-${index}`),
+          ),
+        );
+      mockRun.mockImplementation((input) =>
+        Effect.succeed(
+          processOutput(
+            input.args[0] === "search" ? "[]" : ownedFor(input.cwd === "/five" ? 5 : 4),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({ cwd: "/five", query: "codething" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list"]);
+
+      yield* gh.searchRepositories({ cwd: "/four", query: "codething" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "repo list", "search repos"]);
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("runs no gh command while the GitHub circuit is open", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+      const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
+      const key = { provider: "github" as const, host: "github.com" };
+      const lease = yield* limits.check(key);
+      yield* limits.recordRateLimit({ ...key, lease });
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(results, []);
+      expect(mockRun).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("opens the circuit when gh reports a GitHub rate limit", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(
+        Effect.fail(
+          new VcsProcessExitError({
+            operation: "GitHubCli.execute",
+            command: "gh",
+            cwd: "/repo",
+            exitCode: 1,
+            failureKind: "rate-limited",
+            detail: "API rate limit exceeded.",
+            stderrLength: 82,
+            stderrTruncated: false,
+          }),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* gh
+        .searchRepositories({ cwd: "/repo", query: "codething" })
+        .pipe(Effect.flip);
+      assert.strictEqual(error._tag, "GitHubCliRateLimitError");
+
+      const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
+      const paused = yield* Effect.flip(limits.check({ provider: "github", host: "github.com" }));
+      assert.strictEqual(paused._tag, "SourceControlRateLimitPausedError");
+    }).pipe(Effect.provide(searchLayer)),
   );
 });

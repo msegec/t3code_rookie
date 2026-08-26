@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it, vi } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,6 +10,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitHubCli from "./GitHubCli.ts";
 import { parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
+import * as SourceControlRateLimit from "./SourceControlRateLimit.ts";
 
 const processResult = (
   stdout: string,
@@ -322,6 +323,32 @@ it.effect("redacts search queries in provider errors while keeping the CLI cause
     assert.strictEqual(error.cause, cause);
     assert.equal(error.message.includes("raw upstream detail"), false);
   }),
+);
+
+// Search-as-you-type would raise one toast per keystroke if a paused circuit failed,
+// so the whole path down to the process boundary has to answer with data instead.
+it.effect("answers with empty results instead of an error while the GitHub circuit is open", () =>
+  Effect.gen(function* () {
+    const run = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
+    const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
+    const key = { provider: "github" as const, host: "github.com" };
+    const lease = yield* limits.check(key);
+    yield* limits.recordRateLimit({ ...key, lease });
+
+    const provider = yield* GitHubSourceControlProvider.make.pipe(
+      Effect.provide(
+        Layer.effect(GitHubCli.GitHubCli, GitHubCli.make).pipe(
+          Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run })),
+          Layer.provide(Layer.succeed(SourceControlRateLimit.SourceControlRateLimit, limits)),
+        ),
+      ),
+    );
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "codething" });
+
+    assert.deepStrictEqual(output, { supported: true, results: [] });
+    expect(run).not.toHaveBeenCalled();
+  }).pipe(Effect.provide(SourceControlRateLimit.layer)),
 );
 
 it("accepts active authenticated GitHub accounts when another account fails", () => {
