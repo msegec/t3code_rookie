@@ -829,15 +829,18 @@ export const make = Effect.gen(function* () {
             : [];
 
         // Owned repositories come first, and one the viewer owns is never
-        // repeated by the public search below it.
+        // repeated by the public search below it. GitHub compares repository
+        // names case-insensitively, and the two commands can disagree on
+        // casing, so the dedup key is lowercased.
         const results = localMatches.map(normalizeOwnedRepository);
-        const seen = new Set(results.map((result) => result.nameWithOwner));
+        const seen = new Set(results.map((result) => result.nameWithOwner.toLowerCase()));
 
         for (const raw of searched) {
-          if (seen.has(raw.fullName)) {
+          const dedupKey = raw.fullName.toLowerCase();
+          if (seen.has(dedupKey)) {
             continue;
           }
-          seen.add(raw.fullName);
+          seen.add(dedupKey);
           results.push(normalizeSearchedRepository(raw, viewerLogin));
         }
 

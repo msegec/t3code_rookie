@@ -651,6 +651,54 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("dedups an owned repository against a search row that disagrees on casing", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                description: "Minimal GUI for coding agents",
+                isFork: false,
+                isPrivate: false,
+                nameWithOwner: "Octocat/CodeThing-MVP",
+                sshUrl: "git@github.com:Octocat/CodeThing-MVP.git",
+                stargazerCount: 42,
+                url: "https://github.com/Octocat/CodeThing-MVP",
+              },
+            ]),
+          ),
+        ),
+      );
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                description: "Minimal GUI for coding agents",
+                isFork: false,
+                fullName: "octocat/codething-mvp",
+                isPrivate: false,
+                stargazersCount: 42,
+                url: "https://github.com/octocat/codething-mvp",
+              },
+            ]),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(
+        results.map((result) => result.nameWithOwner),
+        ["Octocat/CodeThing-MVP"],
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("degrades to local matches when gh returns unusable search JSON", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(Effect.succeed(processOutput("[]")));
