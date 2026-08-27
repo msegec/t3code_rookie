@@ -84,6 +84,12 @@ export interface UsageView {
    * not improve by waiting on them, so they must not read as "still reporting".
    */
   readonly isPartial: boolean;
+  /**
+   * True when environments exist but none answered: every one is offline or
+   * failed. The merged zeros are not data, so pages must not show them as
+   * totals.
+   */
+  readonly isUnreachable: boolean;
   readonly refresh: () => void;
 }
 
@@ -115,6 +121,13 @@ export function useUsage(input: UsageSummaryInput): UsageView {
   // invalidates it on the same render instead of one effect tick later.
   const scanKey = `${scanNonce}:${windowKey}`;
   const [passedScanKey, setPassedScanKey] = useState<string | null>(null);
+  // Returning to a previously viewed window would match the flag that window
+  // left behind and skip the grace period, so drop it when the scan changes.
+  const [lastScanKey, setLastScanKey] = useState(scanKey);
+  if (lastScanKey !== scanKey) {
+    setLastScanKey(scanKey);
+    setPassedScanKey(null);
+  }
   useEffect(() => {
     const timer = setTimeout(() => setPassedScanKey(scanKey), OFFLINE_DEADLINE_MS);
     return () => clearTimeout(timer);
@@ -172,6 +185,7 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     environments,
     isPending: answeredCount === 0 && stillReporting > 0,
     isPartial: answeredCount > 0 && stillReporting > 0,
+    isUnreachable: environments.length > 0 && answeredCount === 0 && stillReporting === 0,
     refresh,
   };
 }

@@ -130,6 +130,7 @@ beforeEach(() => {
     environments: [],
     isPending: false,
     isPartial: false,
+    isUnreachable: false,
     refresh: vi.fn(),
   });
 });
@@ -152,6 +153,35 @@ describe("UsagePage hourly breakdown", () => {
     const body = markup.match(/<tbody>(.*?)<\/tbody>/)?.[1] ?? "";
 
     expect(body).toMatch(/\$11\.00.*\$13\.00/);
+  });
+});
+
+describe("UsagePage unreachable devices", () => {
+  it("shows the no-report notice instead of zero totals when nothing answered", () => {
+    testState.useUsage.mockReturnValue({
+      merged: mergeUsage([], USAGE_CONTRACT_VERSION),
+      environments: [
+        {
+          environmentId: "env-away",
+          label: "Away Laptop",
+          isPending: true,
+          error: null,
+          summary: null,
+          connected: false,
+          offline: true,
+        },
+      ],
+      isPending: false,
+      isPartial: false,
+      isUnreachable: true,
+      refresh: vi.fn(),
+    });
+
+    const markup = renderToStaticMarkup(<UsagePage />);
+
+    expect(markup).toContain("No device reported usage.");
+    expect(markup).toContain("Away Laptop is offline and excluded from totals.");
+    expect(markup).not.toContain("$0.00");
   });
 });
 
