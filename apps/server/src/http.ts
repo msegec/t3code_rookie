@@ -320,7 +320,10 @@ export const workspaceUploadRouteLayer = HttpRouter.add(
     // The body streams into the staging file instead of buffering in memory;
     // storeWorkspaceUpload enforces the claimed size while the bytes land, so
     // several concurrent 100 MiB uploads cost the server chunks, not bodies.
-    const body = Stream.mapError(request.stream, () => new WorkspaceUploadBodyError());
+    const body = Stream.mapError(
+      request.stream,
+      (cause) => new WorkspaceUploadBodyError({ cause }),
+    );
     const stored = yield* storeWorkspaceUpload(claims, body);
     return stored.ok
       ? HttpServerResponse.empty({ status: 204 })
