@@ -66,6 +66,14 @@ interface UploadJob {
 const jobsById = new Map<string, UploadJob>();
 const queue: UploadJob[] = [];
 const activeUploadsByEnvironment = new Map<EnvironmentId, number>();
+// Two in-flight jobs for the same target would prompt for overwrite twice,
+// mint rival tokens, and race the server's atomic rename; jobs sharing a
+// target run one at a time instead.
+const activeTargets = new Set<string>();
+
+function targetKey(job: UploadJob): string {
+  return `${job.environmentId}\n${job.cwd}\n${job.relativePath}`;
+}
 
 function setUploadState(uploadId: string, upload: WorkspaceUploadState): void {
   useWorkspaceUploadStore.setState((state) => ({
@@ -214,11 +222,10 @@ async function runUpload(job: UploadJob): Promise<void> {
     job.abort = upload.abort;
 
     try {
+      // A cancel can race the server's completion: the response already
+      // landed, so the file was committed even though the row is gone. The
+      // refresh below still runs so the tree reflects the file that exists.
       await upload.done;
-      if (job.cancelled) {
-        jobsById.delete(job.id);
-        return;
-      }
       jobsById.delete(job.id);
       clearUploadState(job.id);
       try {
@@ -260,7 +267,8 @@ function pumpUploads(): void {
   for (let index = 0; index < queue.length; ) {
     const job = queue[index]!;
     const active = activeUploadsByEnvironment.get(job.environmentId) ?? 0;
-    if (active >= MAX_UPLOADS_PER_ENVIRONMENT) {
+    const key = targetKey(job);
+    if (active >= MAX_UPLOADS_PER_ENVIRONMENT || activeTargets.has(key)) {
       index += 1;
       continue;
     }
@@ -270,6 +278,7 @@ function pumpUploads(): void {
       continue;
     }
     activeUploadsByEnvironment.set(job.environmentId, active + 1);
+    activeTargets.add(key);
     void runUpload(job)
       .catch(() => {
         if (!job.cancelled) {
@@ -277,6 +286,7 @@ function pumpUploads(): void {
         }
       })
       .finally(() => {
+        activeTargets.delete(key);
         // Settle pairs with onOverwriteStart: only jobs that entered the
         // overwrite phase took a save hold, so only those release one.
         if (job.overwriteStarted) {

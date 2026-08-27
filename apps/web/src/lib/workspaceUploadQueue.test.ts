@@ -488,6 +488,72 @@ describe("workspaceUploadQueue", () => {
     expect(TestXmlHttpRequest.requests).toHaveLength(4);
   });
 
+  it("serializes uploads that target the same path", async () => {
+    const files = [makeFile("dup.txt"), makeFile("dup.txt")];
+    startWorkspaceUploads({ environmentId, cwd, files, onUploaded: vi.fn() });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The second job waits: running both would prompt for overwrite twice and
+    // race the server's atomic rename.
+    expect(TestXmlHttpRequest.requests).toHaveLength(1);
+
+    TestXmlHttpRequest.requests[0]!.complete();
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    expect(TestXmlHttpRequest.requests).toHaveLength(2);
+
+    TestXmlHttpRequest.requests[1]!.complete();
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    expect(findUpload("dup.txt")).toBeUndefined();
+  });
+
+  it("still uploads the same path concurrently into different projects", async () => {
+    startWorkspaceUploads({
+      environmentId,
+      cwd,
+      files: [makeFile("same.txt")],
+      onUploaded: vi.fn(),
+    });
+    startWorkspaceUploads({
+      environmentId,
+      cwd: "/workspace/other",
+      files: [makeFile("same.txt")],
+      onUploaded: vi.fn(),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(TestXmlHttpRequest.requests).toHaveLength(2);
+
+    // Drain both uploads so the per-environment slots free up for later tests.
+    for (const request of TestXmlHttpRequest.requests) {
+      request.complete();
+    }
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+    expect(findUpload("same.txt")).toBeUndefined();
+  });
+
+  it("refreshes entries when a cancel races an already-completed upload", async () => {
+    const onUploaded = vi.fn();
+    const file = makeFile("committed.txt");
+    startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const request = TestXmlHttpRequest.requests[0]!;
+    const [uploadId] = findUpload("committed.txt")!;
+    // The response lands before the cancel click is processed: the server has
+    // committed the file, so the refresh must still run.
+    request.complete();
+    cancelWorkspaceUpload(uploadId);
+    for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+
+    expect(uploadsById()[uploadId]).toBeUndefined();
+    expect(onUploaded).toHaveBeenCalledTimes(1);
+  });
+
   it("retryWorkspaceUpload restarts a failed entry", async () => {
     mocks.runAtomCommand.mockResolvedValueOnce(genericMintFailure());
     const file = makeFile("retry.txt");

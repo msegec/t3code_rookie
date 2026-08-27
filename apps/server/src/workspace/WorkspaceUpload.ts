@@ -262,6 +262,21 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
         ),
     }),
   );
+  // A conflict found before staging would otherwise answer while the client is
+  // still sending the body; many clients then surface a connection reset
+  // instead of the 409 detail. Draining the body first, bounded by the claimed
+  // size like staging is, lets the response reach the client reliably.
+  const drainBody = Effect.suspend(() => {
+    let receivedBytes = 0;
+    return Stream.runForEach(bodyStream, (chunk) =>
+      Effect.suspend(() => {
+        receivedBytes += chunk.byteLength;
+        return receivedBytes > claims.sizeBytes
+          ? Effect.fail(new WorkspaceUploadBodyTooLargeError())
+          : Effect.void;
+      }),
+    );
+  }).pipe(Effect.ignore);
   const escapesWorkspaceRoot = Effect.fn(function* (directory: string) {
     const [canonicalRoot, canonicalDir] = yield* Effect.all([
       fileSystem.realPath(claims.cwd),
@@ -281,6 +296,7 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       if (targetInfo.type !== "File") {
         // Overwrite renames the part file onto the target, which must never
         // replace a directory that appeared after the URL was minted.
+        yield* drainBody;
         return {
           ok: false,
           status: 409,
@@ -288,6 +304,7 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
         } satisfies StoreWorkspaceUploadResult;
       }
       if (!claims.overwrite) {
+        yield* drainBody;
         return {
           ok: false,
           status: 409,
