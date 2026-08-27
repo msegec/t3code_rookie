@@ -52,8 +52,9 @@ describe("ProjectAccents", () => {
           workspaceRoot: "/repos/two",
           accent: { idle: "#071525", active: "#245181", selected: "#173b60" },
         },
-        // Written as an explicit null, never omitted: clearing accentColor in
-        // t3.json has to clear the row rather than leave the old value.
+        // Written as an explicit null, never omitted: a cleared accentColor in
+        // t3.json must reach the client as null on the next snapshot or
+        // project event rather than leave the old value.
         { id: "c", workspaceRoot: "/repos/three", accent: null },
       ]);
     }),

@@ -34,12 +34,13 @@ For exact control, set all three row colors:
 ```json
 {
   "accentColor": {
-    "idle": "#071525",
-    "active": "#245181",
-    "selected": "#173b60"
+    "idle": "#7ea7d8",
+    "active": "#3d7ec4",
+    "selected": "#5c93cd"
   }
 }
 ```
 
-Colors must use six-digit hex notation. Exact colors replace the generated tints, so choose values
-that remain readable with your light and dark sidebar themes.
+Colors must use six-digit hex notation. Exact colors replace the generated tints and the same
+values apply to both the light and dark themes, so pick mid-strength colors that stay readable
+behind text on each.

@@ -2,12 +2,15 @@
  * ProjectAccents - decorates client-facing project payloads with the accent
  * declared in each checkout's `t3.json`.
  *
- * The accent is read live rather than projected because `t3.json` is a
- * checked-in file the user edits by hand; an event-sourced copy would go stale
- * the moment someone pulls a branch. It rides on the project record instead of
- * on the favicon asset URL so sidebar rows know their accent in the same paint
- * that creates them. Fetching it separately repaints the whole list a round
- * trip later, which reads as a flash.
+ * The accent is read from disk each time a snapshot or project-upserted
+ * payload is assembled, rather than projected: `t3.json` is a checked-in file
+ * the user edits by hand, and an event-sourced copy would go stale the moment
+ * someone pulls a branch. There is no file watcher, so an edited `accentColor`
+ * appears on the next snapshot or project event, not the moment the file is
+ * saved. The accent rides on the project record instead of on the favicon
+ * asset URL so sidebar rows know their accent in the same paint that creates
+ * them. Fetching it separately repaints the whole list a round trip later,
+ * which reads as a flash.
  *
  * @module ProjectAccents
  */
@@ -25,8 +28,9 @@ type WithAccent<T> = T & { readonly accent: ProjectAccent | null };
 /**
  * A project whose checkout cannot be read still belongs in the payload, so an
  * unreadable workspace resolves to "no accent" rather than failing the
- * snapshot. The accent is always written, never omitted: clearing `accentColor`
- * in `t3.json` has to clear the row, not leave the previous value in place.
+ * snapshot. The accent is always written, never omitted: a cleared
+ * `accentColor` in `t3.json` must reach the client as null on the next
+ * snapshot or project event, not leave the previous value in place.
  */
 const resolveAccent = Effect.fn("ProjectAccents.resolveAccent")(function* (workspaceRoot: string) {
   const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
