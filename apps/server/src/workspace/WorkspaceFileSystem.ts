@@ -136,7 +136,8 @@ export class WorkspaceFileSystem extends Context.Service<
      * Rename a file to a new name in the same directory.
      *
      * Never overwrites: an existing entry at the new name fails with
-     * `ProjectRenameEntryTargetExistsError`. Directories are rejected.
+     * `ProjectRenameEntryTargetExistsError`. Directories are rejected. A
+     * symlink renames as the link itself, matching deleteEntry.
      */
     readonly renameEntry: (
       input: ProjectRenameEntryInput,
@@ -390,10 +391,15 @@ export const make = Effect.gen(function* () {
       return yield* renameError("cross-directory");
     }
 
-    const sourceStat = yield* fileSystem
-      .stat(source.absolutePath)
-      .pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
-    if (sourceStat.type !== "File") {
+    // lstat examines the source entry itself, matching deleteEntry: a symlink
+    // renames as the link it is, dangling or not, and never as its referent.
+    // stat would follow the link and pass a symlink-to-file through as a
+    // plain file, sending it down the hard-link claim that macOS resolves
+    // against the referent.
+    const sourceStat = yield* Effect.tryPromise(() => NodeFSP.lstat(source.absolutePath)).pipe(
+      Effect.mapError((error) => renameError("resolve-path", error.cause)),
+    );
+    if (!sourceStat.isFile() && !sourceStat.isSymbolicLink()) {
       return yield* renameError("not-a-file");
     }
 
@@ -418,16 +424,24 @@ export const make = Effect.gen(function* () {
     // strand both names on disk, so the pair runs uninterruptibly.
     yield* Effect.uninterruptible(
       Effect.gen(function* () {
-        const claim = yield* fileSystem.link(source.absolutePath, target.absolutePath).pipe(
-          Effect.as("linked" as const),
-          Effect.catchIf(
-            (error) => error.reason._tag === "AlreadyExists",
-            () => Effect.succeed("conflict" as const),
-          ),
-          // FAT and exFAT volumes reject hard links; a real failure of any
-          // other kind resurfaces from the fallback rename below.
-          Effect.catch(() => Effect.succeed("unsupported" as const)),
-        );
+        // A symlink source cannot claim through a hard link: link(2) follows
+        // the symlink on macOS, so the claim would hard-link the referent
+        // under the target name while the symlink stays put, duplicating
+        // instead of renaming. The O_EXCL claim plus rename below never
+        // dereferences the source entry, so a symlink takes that path on
+        // every platform.
+        const claim = sourceStat.isSymbolicLink()
+          ? ("unsupported" as const)
+          : yield* fileSystem.link(source.absolutePath, target.absolutePath).pipe(
+              Effect.as("linked" as const),
+              Effect.catchIf(
+                (error) => error.reason._tag === "AlreadyExists",
+                () => Effect.succeed("conflict" as const),
+              ),
+              // FAT and exFAT volumes reject hard links; a real failure of
+              // any other kind resurfaces from the fallback rename below.
+              Effect.catch(() => Effect.succeed("unsupported" as const)),
+            );
         if (claim === "unsupported") {
           // Without hard links an empty O_EXCL create claims the target name,
           // so the rename below can only ever replace this rename's own claim

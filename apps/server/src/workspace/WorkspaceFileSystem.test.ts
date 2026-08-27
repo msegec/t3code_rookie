@@ -438,6 +438,63 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    // The rename moves the link entry itself, matching how deleteEntry drops
+    // only the link; the referent must keep its name and contents.
+    it.effect("renames a symlink as the link itself without touching its target", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+        yield* fileSystem.symlink(path.join(cwd, "src/notes.md"), path.join(cwd, "src/alias.md"));
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/alias.md",
+          newRelativePath: "src/renamed.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/renamed.md" });
+        const names = yield* fileSystem.readDirectory(path.join(cwd, "src"));
+        expect(names.toSorted()).toEqual(["notes.md", "renamed.md"]);
+        const renamed = path.join(cwd, "src/renamed.md");
+        expect(NodeFS.lstatSync(renamed).isSymbolicLink()).toBe(true);
+        expect(NodeFS.readlinkSync(renamed)).toBe(path.join(cwd, "src/notes.md"));
+        const contents = yield* fileSystem
+          .readFileString(path.join(cwd, "src/notes.md"))
+          .pipe(Effect.orDie);
+        expect(contents).toBe("# Notes\n");
+      }),
+    );
+
+    // lstat finds the entry a dangling symlink's missing referent would hide
+    // from stat, the same way deleteEntry still removes one.
+    it.effect("renames a dangling symlink instead of failing on its missing referent", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem.makeDirectory(path.join(cwd, "src"));
+        yield* fileSystem.symlink(
+          path.join(cwd, "src/missing.md"),
+          path.join(cwd, "src/broken.md"),
+        );
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/broken.md",
+          newRelativePath: "src/still-broken.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/still-broken.md" });
+        const names = yield* fileSystem.readDirectory(path.join(cwd, "src"));
+        expect(names).toEqual(["still-broken.md"]);
+        expect(NodeFS.lstatSync(path.join(cwd, "src/still-broken.md")).isSymbolicLink()).toBe(true);
+      }),
+    );
+
     it.effect("rejects renames that leave the source directory", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -984,6 +1041,65 @@ const LinkRivalTestLayer = Layer.empty.pipe(
   ),
   Layer.provideMerge(linkRivalFileSystemLayer),
   Layer.provideMerge(NodeServices.layer),
+);
+
+// On macOS link(2) follows a symlink source and hard-links its referent,
+// unlike Linux where it links the symlink entry itself. Resolving the source
+// before linking reproduces the macOS semantics deterministically on Linux.
+const derefLinkFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const real = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...real,
+      link: (fromPath, toPath) =>
+        real.realPath(fromPath).pipe(Effect.flatMap((resolved) => real.link(resolved, toPath))),
+    });
+  }),
+);
+
+const DerefLinkTestLayer = Layer.empty.pipe(
+  Layer.provideMerge(ProjectLayer),
+  Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
+  Layer.provide(
+    ServerConfig.ServerConfig.layerTest(process.cwd(), {
+      prefix: "t3-workspace-files-test-",
+    }),
+  ),
+  Layer.provideMerge(derefLinkFileSystemLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.layer(DerefLinkTestLayer, { excludeTestServices: true })(
+  "WorkspaceFileSystemLive when link follows symlinks like macOS",
+  (it) => {
+    // Before symlink sources bypassed the hard-link claim, this flow linked
+    // the referent under the new name, saw different inodes, and returned
+    // success with the symlink still on disk: a silent duplicate.
+    it.effect("renames a symlink instead of hard-linking its referent", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+        yield* fileSystem.symlink(path.join(cwd, "src/notes.md"), path.join(cwd, "src/alias.md"));
+
+        const result = yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "src/alias.md",
+          newRelativePath: "src/renamed.md",
+        });
+
+        expect(result).toEqual({ relativePath: "src/renamed.md" });
+        const names = yield* fileSystem.readDirectory(path.join(cwd, "src"));
+        expect(names.toSorted()).toEqual(["notes.md", "renamed.md"]);
+        expect(NodeFS.lstatSync(path.join(cwd, "src/renamed.md")).isSymbolicLink()).toBe(true);
+      }),
+    );
+  },
 );
 
 it.layer(LinkRivalTestLayer, { excludeTestServices: true })(

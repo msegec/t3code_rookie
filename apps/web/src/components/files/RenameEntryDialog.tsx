@@ -61,10 +61,17 @@ export function RenameEntryDialog({
   }, []);
 
   // Renaming onto the unchanged name fails server-side with targetExists, so
-  // submit stays disabled until the name actually changes.
+  // submit stays disabled until the name actually changes. `.` and `..` are
+  // path components, not names; the server would reject them with the generic
+  // failure message.
   const candidate = name.trim();
   const submitDisabled =
-    isRenaming || candidate.length === 0 || candidate === basename || candidate.includes("/");
+    isRenaming ||
+    candidate.length === 0 ||
+    candidate === basename ||
+    candidate === "." ||
+    candidate === ".." ||
+    candidate.includes("/");
 
   const submitRename = async () => {
     if (isRenamingRef.current || submitDisabled) {

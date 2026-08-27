@@ -30,6 +30,9 @@ tunnel.
 
 ## Renaming and deleting files
 
+Renaming and deleting are available in the web and desktop apps. The mobile files view does not
+support them.
+
 Right-click a file for **Rename** and **Delete**. Renaming and deleting work on files only;
 folders are not yet supported.
 
