@@ -276,6 +276,29 @@ describe("useUsage offline deadline", () => {
     }
   });
 
+  it("gives an environment added after the deadline a fresh grace period", async () => {
+    mocks.statuses = [
+      status("env-answered", { summary: summary(), isPending: false }),
+      status("env-away"),
+    ];
+    const { render, unmount } = await mount();
+    try {
+      await advancePastDeadline();
+      expect(byId("env-away")?.offline).toBe(true);
+
+      mocks.statuses = [...mocks.statuses, status("env-new")];
+      await render();
+
+      expect(byId("env-new")?.offline).toBe(false);
+
+      await advancePastDeadline();
+      expect(byId("env-new")?.offline).toBe(true);
+      expect(byId("env-away")?.offline).toBe(true);
+    } finally {
+      await unmount();
+    }
+  });
+
   it("gives a revisited window a fresh grace period", async () => {
     mocks.statuses = [status("env-away")];
     const { render, unmount } = await mount();

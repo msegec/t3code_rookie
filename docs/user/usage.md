@@ -8,3 +8,7 @@ cost shown here.
 Use **Past 24h** for an hourly chart covering the exact rolling 24-hour period. The **7 days**,
 **30 days**, and **90 days** ranges use daily resolution. Cost and token toggles update both the
 headline and chart, and refreshing rescans every connected environment.
+
+Devices that stay offline are left out of the totals after a short wait, and a coverage notice
+lists which ones are missing. If no device reports at all, the page shows an empty state instead
+of zero totals.

@@ -117,9 +117,20 @@ export function useUsage(input: UsageSummaryInput): UsageView {
   const reported = useAtomValue(atom);
 
   const [scanNonce, setScanNonce] = useState(0);
+  // An environment that appears mid-scan must get the full grace period, so
+  // the set of scanned environments is part of the key: a set change restarts
+  // the deadline just like a refresh or a new window.
+  const environmentSetKey = useMemo(
+    () =>
+      reported
+        .map((environment) => environment.environmentId)
+        .sort()
+        .join(","),
+    [reported],
+  );
   // The passed flag names the scan it belongs to, so a new window or refresh
   // invalidates it on the same render instead of one effect tick later.
-  const scanKey = `${scanNonce}:${windowKey}`;
+  const scanKey = `${scanNonce}:${environmentSetKey}:${windowKey}`;
   const [passedScanKey, setPassedScanKey] = useState<string | null>(null);
   // Returning to a previously viewed window would match the flag that window
   // left behind and skip the grace period, so drop it when the scan changes.
