@@ -44,11 +44,6 @@
       "kind": "pull-request",
       "number": 8329,
       "headRepository": "msegec/t3code_rookie"
-    },
-    {
-      "kind": "pull-request",
-      "number": 8371,
-      "headRepository": "msegec/t3code_rookie"
     }
   ],
   "tests": [
