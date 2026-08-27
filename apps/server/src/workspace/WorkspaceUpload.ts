@@ -8,11 +8,13 @@ import {
   type ProjectCreateUploadUrlInput,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import {
   base64UrlDecodeUtf8,
@@ -180,18 +182,17 @@ export type StoreWorkspaceUploadResult =
   | { readonly ok: true; readonly relativePath: string }
   | { readonly ok: false; readonly status: number; readonly detail: string };
 
+/** The request body failed before the full upload arrived, e.g. a dropped client. */
+export class WorkspaceUploadBodyError extends Data.TaggedError("WorkspaceUploadBodyError")<{}> {}
+
+class WorkspaceUploadBodyTooLargeError extends Data.TaggedError(
+  "WorkspaceUploadBodyTooLargeError",
+)<{}> {}
+
 export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function* (
   claims: WorkspaceUploadClaims,
-  bytes: Uint8Array,
+  body: Uint8Array | Stream.Stream<Uint8Array, WorkspaceUploadBodyError>,
 ) {
-  if (bytes.byteLength !== claims.sizeBytes) {
-    return {
-      ok: false,
-      status: 400,
-      detail: `Body was ${bytes.byteLength} bytes, expected ${claims.sizeBytes}.`,
-    } satisfies StoreWorkspaceUploadResult;
-  }
-
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const target = yield* workspacePaths
     .resolveRelativePathWithinRoot({
@@ -213,6 +214,50 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
   // target basename cannot push the temporary filename past the 255-byte
   // filesystem component limit.
   const partPath = path.join(path.dirname(target.absolutePath), `.${NodeCrypto.randomUUID()}.part`);
+  const bodyStream: Stream.Stream<Uint8Array, WorkspaceUploadBodyError> =
+    body instanceof Uint8Array ? Stream.make(body) : body;
+  // The body streams straight into the part file so an upload never buffers in
+  // server memory. The claimed size is enforced inline: a body that grows past
+  // it fails mid-stream before more bytes land on disk, and a short one is
+  // caught when the stream ends, so both reject with the same 400 the
+  // buffered path used to produce.
+  const stagePart = Effect.gen(function* () {
+    let receivedBytes = 0;
+    yield* Stream.run(
+      Stream.tap(bodyStream, (chunk) =>
+        Effect.suspend(() => {
+          receivedBytes += chunk.byteLength;
+          return receivedBytes > claims.sizeBytes
+            ? Effect.fail(new WorkspaceUploadBodyTooLargeError())
+            : Effect.void;
+        }),
+      ),
+      fileSystem.sink(partPath),
+    );
+    if (receivedBytes !== claims.sizeBytes) {
+      return {
+        ok: false,
+        status: 400,
+        detail: `Body was ${receivedBytes} bytes, expected ${claims.sizeBytes}.`,
+      } satisfies StoreWorkspaceUploadResult;
+    }
+    return null;
+  }).pipe(
+    Effect.catchTags({
+      WorkspaceUploadBodyTooLargeError: () =>
+        Effect.succeed({
+          ok: false,
+          status: 400,
+          detail: `Body was larger than the expected ${claims.sizeBytes} bytes.`,
+        } satisfies StoreWorkspaceUploadResult),
+      WorkspaceUploadBodyError: () =>
+        Effect.succeed({
+          ok: false,
+          status: 400,
+          detail: "Failed to read the upload body.",
+        } satisfies StoreWorkspaceUploadResult),
+    }),
+  );
   const escapesWorkspaceRoot = Effect.fn(function* (directory: string) {
     const [canonicalRoot, canonicalDir] = yield* Effect.all([
       fileSystem.realPath(claims.cwd),
@@ -279,8 +324,11 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
         detail: "Upload path resolves outside the project.",
       } satisfies StoreWorkspaceUploadResult;
     }
+    const staged = yield* stagePart;
+    if (staged) {
+      return staged;
+    }
     if (claims.overwrite) {
-      yield* fileSystem.writeFile(partPath, bytes);
       yield* fileSystem.rename(partPath, target.absolutePath);
     } else {
       // rename replaces a file created after the exists check above; linking
@@ -292,7 +340,6 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
       // nothing, so it can never delete a rival's file; only a failed rename
       // reclaims the name, and only while the name still holds the empty
       // claim.
-      yield* fileSystem.writeFile(partPath, bytes);
       const claim = yield* fileSystem.link(partPath, target.absolutePath).pipe(
         Effect.as("claimed" as const),
         Effect.catchIf(

@@ -11,6 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import { base64UrlEncode, signPayload } from "../auth/utils.ts";
@@ -166,6 +167,77 @@ describe("WorkspaceUpload", () => {
 
       const result = yield* storeWorkspaceUpload(claims, new Uint8Array([1, 2, 3]));
       expect(result).toMatchObject({ ok: false, status: 400 });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("stores a streamed body chunk by chunk", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const chunks = [new Uint8Array([1, 2]), new Uint8Array([3, 4, 5])];
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "streamed.bin",
+        sizeBytes: 5,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(claims, Stream.fromArray(chunks));
+      expect(result).toEqual({ ok: true, relativePath: "streamed.bin" });
+      expect(NodeFS.readFileSync(NodePath.join(cwd, "streamed.bin"))).toEqual(
+        Buffer.from([1, 2, 3, 4, 5]),
+      );
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects a streamed body that grows past the claimed size", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "oversized.bin",
+        sizeBytes: 3,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(
+        claims,
+        Stream.fromArray([new Uint8Array([1, 2]), new Uint8Array([3, 4])]),
+      );
+      expect(result).toMatchObject({ ok: false, status: 400 });
+      expect(NodeFS.existsSync(NodePath.join(cwd, "oversized.bin"))).toBe(false);
+      expect(NodeFS.readdirSync(cwd).some((entry) => entry.endsWith(".part"))).toBe(false);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects a streamed body that ends short of the claimed size", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "truncated.bin",
+        sizeBytes: 4,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const result = yield* storeWorkspaceUpload(
+        claims,
+        Stream.fromArray([new Uint8Array([1, 2, 3])]),
+      );
+      expect(result).toMatchObject({ ok: false, status: 400 });
+      expect(NodeFS.existsSync(NodePath.join(cwd, "truncated.bin"))).toBe(false);
+      expect(NodeFS.readdirSync(cwd).some((entry) => entry.endsWith(".part"))).toBe(false);
     }).pipe(Effect.provide(testLayer)),
   );
 

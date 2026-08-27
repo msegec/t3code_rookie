@@ -47,6 +47,7 @@ class TestXmlHttpRequest {
   static requests: TestXmlHttpRequest[] = [];
 
   status = 0;
+  responseText = "";
   timeout = 0;
   method: string | null = null;
   url: string | null = null;
@@ -87,8 +88,9 @@ class TestXmlHttpRequest {
     this.progressListener?.({ lengthComputable: true, loaded, total });
   }
 
-  complete(status = 204): void {
+  complete(status = 204, responseText = ""): void {
     this.status = status;
+    this.responseText = responseText;
     this.listeners.get("load")?.();
   }
 }
@@ -442,6 +444,60 @@ describe("workspaceUploadQueue", () => {
 
     expect(TestXmlHttpRequest.requests).toHaveLength(1);
     expect(uploadsById()[uploadId]).toMatchObject({ status: "uploading" });
+  });
+
+  it("surfaces the server's rejection detail in the failed entry", async () => {
+    const file = makeFile("detailed.txt");
+    startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded: vi.fn() });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    TestXmlHttpRequest.requests[0]!.complete(400, "Body was 3 bytes, expected 4.");
+    for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+
+    expect(findUpload("detailed.txt")![1]).toMatchObject({
+      status: "failed",
+      reason: "Body was 3 bytes, expected 4.",
+    });
+  });
+
+  it("falls back to the generic rejection text when the response body is empty", async () => {
+    const file = makeFile("blank.txt");
+    startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded: vi.fn() });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    TestXmlHttpRequest.requests[0]!.complete(500);
+    for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+
+    expect(findUpload("blank.txt")![1]).toMatchObject({
+      status: "failed",
+      reason: "Upload rejected (500)",
+    });
+  });
+
+  it("fails an oversized file with the limit named, before minting, and on retry", async () => {
+    const file = makeFile("huge.bin");
+    Object.defineProperty(file, "size", { value: 100 * 1024 * 1024 + 1 });
+    startWorkspaceUploads({ environmentId, cwd, files: [file], onUploaded: vi.fn() });
+    for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+
+    const [uploadId, failed] = findUpload("huge.bin")!;
+    expect(failed).toMatchObject({
+      status: "failed",
+      reason: "File is larger than the 100 MiB limit",
+    });
+    expect(mocks.runAtomCommand).not.toHaveBeenCalled();
+    expect(TestXmlHttpRequest.requests).toHaveLength(0);
+
+    retryWorkspaceUpload(uploadId);
+    for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+
+    expect(uploadsById()[uploadId]).toMatchObject({
+      status: "failed",
+      reason: "File is larger than the 100 MiB limit",
+    });
+    expect(TestXmlHttpRequest.requests).toHaveLength(0);
   });
 
   it("dismissWorkspaceUpload removes a failed entry", async () => {

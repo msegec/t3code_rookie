@@ -12,6 +12,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
 import { cast } from "effect/Function";
 import {
   HttpBody,
@@ -35,6 +36,7 @@ import {
 } from "./assets/AttachmentUpload.ts";
 import {
   WORKSPACE_UPLOAD_ROUTE_PREFIX,
+  WorkspaceUploadBodyError,
   storeWorkspaceUpload,
   validateWorkspaceUploadToken,
 } from "./workspace/WorkspaceUpload.ts";
@@ -315,19 +317,11 @@ export const workspaceUploadRouteLayer = HttpRouter.add(
       });
     }
 
-    // NodeStream.toArrayBuffer treats a falsy maxBytes as "no limit", so a
-    // 0-byte claim (empty files are a valid upload) would otherwise disable
-    // the body limit entirely. Floor it at 1 byte; an empty body still passes.
-    const maxBodySize = FileSystem.Size(Math.max(claims.sizeBytes, 1));
-    const body = yield* request.arrayBuffer.pipe(
-      Effect.provideService(HttpServerRequest.MaxBodySize, maxBodySize),
-      Effect.orElseSucceed(() => null),
-    );
-    if (body === null) {
-      return HttpServerResponse.text("Failed to read the upload body.", { status: 400 });
-    }
-
-    const stored = yield* storeWorkspaceUpload(claims, new Uint8Array(body));
+    // The body streams into the staging file instead of buffering in memory;
+    // storeWorkspaceUpload enforces the claimed size while the bytes land, so
+    // several concurrent 100 MiB uploads cost the server chunks, not bodies.
+    const body = Stream.mapError(request.stream, () => new WorkspaceUploadBodyError());
+    const stored = yield* storeWorkspaceUpload(claims, body);
     return stored.ok
       ? HttpServerResponse.empty({ status: 204 })
       : HttpServerResponse.text(stored.detail, { status: stored.status });
