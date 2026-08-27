@@ -328,6 +328,42 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("maps a repository resolution failure to GitHubRepositoryNotFoundError", () =>
+    Effect.gen(function* () {
+      const exitError = VcsProcessExitError.fromProcessExit(
+        {
+          operation: "GitHubCli.execute",
+          command: "gh",
+          cwd: "/repo",
+          argumentCount: 5,
+        },
+        {
+          exitCode: 1,
+          stderr:
+            "GraphQL: Could not resolve to a Repository with the name 'octocat/nope'. (repository)",
+          stderrTruncated: false,
+        },
+        "repository-not-found",
+      );
+      assert.strictEqual(exitError.detail, "Repository not found.");
+      mockRun.mockReturnValueOnce(Effect.fail(exitError));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* Effect.flip(
+        gh.getRepositoryCloneUrls({
+          cwd: "/repo",
+          repository: "octocat/nope",
+        }),
+      );
+
+      assert.strictEqual(error._tag, "GitHubRepositoryNotFoundError");
+      assert.strictEqual(
+        error.detail,
+        "Repository not found. Check the owner/repo path and try again.",
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("creates repositories and parses clone URLs from create output", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(

@@ -84,6 +84,19 @@ export class GitHubPullRequestNotFoundError extends Schema.TaggedErrorClass<GitH
   }
 }
 
+export class GitHubRepositoryNotFoundError extends Schema.TaggedErrorClass<GitHubRepositoryNotFoundError>()(
+  "GitHubRepositoryNotFoundError",
+  gitHubCliFailureFields,
+) {
+  get detail(): string {
+    return "Repository not found. Check the owner/repo path and try again.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in execute: ${this.detail}`;
+  }
+}
+
 export class GitHubCliCommandError extends Schema.TaggedErrorClass<GitHubCliCommandError>()(
   "GitHubCliCommandError",
   gitHubCliFailureFields,
@@ -173,6 +186,7 @@ export const GitHubCliError = Schema.Union([
   GitHubCliAuthenticationError,
   GitHubCliRateLimitError,
   GitHubPullRequestNotFoundError,
+  GitHubRepositoryNotFoundError,
   GitHubCliCommandError,
   GitHubPullRequestListDecodeError,
   GitHubChangeRequestListDecodeError,
@@ -210,6 +224,9 @@ export function fromVcsError(
     }
     if (error.failureKind === "not-found") {
       return new GitHubPullRequestNotFoundError({ ...context, cause: error });
+    }
+    if (error.failureKind === "repository-not-found") {
+      return new GitHubRepositoryNotFoundError({ ...context, cause: error });
     }
   }
 

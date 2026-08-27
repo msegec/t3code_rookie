@@ -7,6 +7,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import {
+  SourceControlProviderError,
   SourceControlRepositoryError,
   type SourceControlCloneRepositoryInput,
   type SourceControlCloneRepositoryResult,
@@ -25,6 +26,7 @@ import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
+const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
@@ -51,7 +53,12 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
       : new SourceControlRepositoryError({
           operation,
           provider,
-          detail: "The source control operation could not be completed.",
+          // Provider `detail` may quote provider output, so only the curated
+          // `userDetail` opt-in reaches the client; everything else stays
+          // behind the generic sentence.
+          detail:
+            (isSourceControlProviderError(cause) ? cause.userDetail : undefined) ??
+            "The source control operation could not be completed.",
           cause,
         }),
   );

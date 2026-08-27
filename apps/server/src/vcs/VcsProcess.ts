@@ -53,7 +53,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 
-const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
+export const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
   const normalized = stderr.toLowerCase();
 
   if (
@@ -77,6 +77,10 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
     normalized.includes("http 429")
   ) {
     return "rate-limited";
+  }
+
+  if (command === "gh" && normalized.includes("could not resolve to a repository")) {
+    return "repository-not-found";
   }
 
   if (

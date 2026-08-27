@@ -76,6 +76,7 @@ export interface VcsProcessTimeoutFailure {
 export const VcsProcessExitFailureKind = Schema.Literals([
   "authentication",
   "not-found",
+  "repository-not-found",
   "rate-limited",
   "command-failed",
 ]);
@@ -137,13 +138,15 @@ export class VcsProcessExitError extends Schema.TaggedErrorClass<VcsProcessExitE
         ? "Authentication failed."
         : failureKind === "rate-limited"
           ? "API rate limit exceeded."
-          : failureKind === "not-found"
-            ? context.command === "glab"
-              ? "Merge request not found."
-              : context.command === "gh" || context.command === "az"
-                ? "Pull request not found."
-                : "VCS resource not found."
-            : "Process exited with a non-zero status.";
+          : failureKind === "repository-not-found"
+            ? "Repository not found."
+            : failureKind === "not-found"
+              ? context.command === "glab"
+                ? "Merge request not found."
+                : context.command === "gh" || context.command === "az"
+                  ? "Pull request not found."
+                  : "VCS resource not found."
+              : "Process exited with a non-zero status.";
 
     return new VcsProcessExitError({
       ...context,
