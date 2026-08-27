@@ -150,6 +150,41 @@ it.effect("preserves provider failures without deriving the repository message f
   }).pipe(Effect.provide(makeLayer({ provider })));
 });
 
+it.effect("surfaces the provider's curated user detail when one is set", () => {
+  const providerCause = new SourceControlProviderError({
+    provider: "github",
+    operation: "getRepositoryCloneUrls",
+    cwd: "/workspace",
+    repository: "octocat/nope",
+    detail: "gh stderr that stays server-side",
+    userDetail: "Repository not found. Check the owner/repo path and try again.",
+  });
+  const provider = makeProvider({
+    getRepositoryCloneUrls: () => Effect.fail(providerCause),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.lookupRepository({
+        provider: "github",
+        repository: "octocat/nope",
+        cwd: "/workspace",
+      }),
+    );
+
+    assert.strictEqual(
+      error.detail,
+      "Repository not found. Check the owner/repo path and try again.",
+    );
+    assert.strictEqual(
+      error.message,
+      "Source control repository operation lookupRepository failed for github: Repository not found. Check the owner/repo path and try again.",
+    );
+    assert.strictEqual(error.cause, providerCause);
+  }).pipe(Effect.provide(makeLayer({ provider })));
+});
+
 it.effect("clones a looked-up repository into the requested destination", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

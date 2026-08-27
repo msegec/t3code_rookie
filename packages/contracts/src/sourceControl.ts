@@ -160,6 +160,13 @@ export class SourceControlProviderError extends Schema.TaggedErrorClass<SourceCo
     repository: Schema.optional(Schema.String),
     reference: Schema.optional(Schema.String),
     detail: Schema.String,
+    /**
+     * Set only to a compile-time constant that is safe to show the user.
+     * `detail` may quote provider output and stays out of client-facing
+     * errors; `userDetail` is the adapter's explicit opt-in to surface a
+     * curated explanation instead of the generic fallback.
+     */
+    userDetail: Schema.optional(Schema.String),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {

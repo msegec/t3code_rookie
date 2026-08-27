@@ -315,3 +315,26 @@ describe("VcsProcess.run", () => {
     }).pipe(provideLive),
   );
 });
+
+describe("classifyNonZeroExit", () => {
+  it("classifies a gh repository resolution failure as repository-not-found", () => {
+    expect(
+      VcsProcess.classifyNonZeroExit(
+        "gh",
+        "GraphQL: Could not resolve to a Repository with the name 'octocat/nope'. (repository)",
+      ),
+    ).toBe("repository-not-found");
+  });
+
+  it("keeps gh pull request resolution failures as not-found", () => {
+    expect(
+      VcsProcess.classifyNonZeroExit("gh", "GraphQL: Could not resolve to a PullRequest."),
+    ).toBe("not-found");
+  });
+
+  it("does not classify repository resolution failures for other commands", () => {
+    expect(VcsProcess.classifyNonZeroExit("git", "could not resolve to a repository")).toBe(
+      "command-failed",
+    );
+  });
+});
