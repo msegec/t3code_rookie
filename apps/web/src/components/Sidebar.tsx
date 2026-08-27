@@ -1684,10 +1684,15 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               aria-selected={props.isHighlighted}
               aria-current={props.isRouteActive ? "page" : undefined}
               data-project-accent={projectAccent === null ? undefined : "true"}
+              // Focus stays on the search input and the option is tabIndex -1,
+              // so this fill is the keyboard cursor. It must stay on the
+              // strongest row token: sidebar-row-selected paints weaker than
+              // hover in the dark palette, which would make the highlighted
+              // row read as less prominent than a merely hovered one.
               data-project-accent-state={projectAccentRowState(
                 projectAccent,
-                props.isRouteActive,
-                props.isHighlighted,
+                props.isRouteActive || props.isHighlighted,
+                false,
               )}
               style={projectAccentRowStyle(projectAccent)}
               aria-label={
@@ -1697,11 +1702,9 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               onClick={props.onSelect}
               className={cn(
                 "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm outline-none",
-                props.isRouteActive
+                props.isRouteActive || props.isHighlighted
                   ? "bg-sidebar-row-active text-sidebar-foreground"
-                  : props.isHighlighted
-                    ? "bg-sidebar-row-selected text-sidebar-foreground"
-                    : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                  : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
               )}
             />
           }
