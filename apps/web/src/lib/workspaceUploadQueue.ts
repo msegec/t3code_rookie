@@ -1,4 +1,8 @@
-import { isProjectUploadTargetExistsError, type EnvironmentId } from "@t3tools/contracts";
+import {
+  PROJECT_UPLOAD_MAX_BYTES,
+  isProjectUploadTargetExistsError,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
@@ -133,6 +137,13 @@ function startOverwritePhase(job: UploadJob): void {
 // conflict stages funnel into the same replace confirmation, and the overwrite
 // flag bounds the loop to one retry.
 async function runUpload(job: UploadJob): Promise<void> {
+  // The RPC schema bounds sizeBytes, so an oversized file would only fail
+  // there with a generic mint error; checking here names the limit instead.
+  // The check lives in the run path so a retry reports the same reason.
+  if (job.file.size > PROJECT_UPLOAD_MAX_BYTES) {
+    failJob(job, `File is larger than the ${PROJECT_UPLOAD_MAX_BYTES / (1024 * 1024)} MiB limit`);
+    return;
+  }
   for (;;) {
     let minted = await mintUploadUrl(job);
     if (job.cancelled) {
