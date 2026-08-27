@@ -661,6 +661,8 @@ function RepositorySearchResults(props: {
   readonly environment: EnvironmentOption;
   readonly source: AddProjectRemoteSource;
   readonly query: string;
+  /** Called before navigating so the parent can invalidate a pending exact-path lookup. */
+  readonly onSelectResult: () => void;
 }) {
   const navigation = useNavigation();
   const iconColor = useThemeColor("--color-icon");
@@ -730,6 +732,7 @@ function RepositorySearchResults(props: {
                 icon={<SourceControlIcon kind={provider} size={18} color={String(iconColor)} />}
                 isFirst={index === 0}
                 onPress={() => {
+                  props.onSelectResult();
                   navigation.dispatch(
                     StackActions.push(
                       "AddProjectDestination",
@@ -763,6 +766,10 @@ export function AddProjectRepositoryScreen(props: {
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped whenever a competing action supersedes a pending exact-path lookup (selecting a search
+  // result). The continuation bails when its captured value is stale. isFocused alone is not
+  // enough: popping the pushed destination re-focuses this screen while the lookup still settles.
+  const lookupGenerationRef = useRef(0);
 
   const lookupRepository = useCallback(async () => {
     if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
@@ -784,6 +791,7 @@ export function AddProjectRepositoryScreen(props: {
       return;
     }
 
+    const generation = ++lookupGenerationRef.current;
     const result = await lookupRepositoryQuery({
       environmentId: environment.environmentId,
       input: {
@@ -791,9 +799,10 @@ export function AddProjectRepositoryScreen(props: {
         repository: repositoryInput.trim(),
       },
     });
-    // Tapping a search result while the lookup is pending pushes the destination screen for that
-    // result; a stale lookup response must not push a second one on top of it.
-    if (!navigation.isFocused()) {
+    // A stale lookup must not push a destination the user did not ask for: the generation catches
+    // a search result selected while it was pending (even after popping back here), and the focus
+    // check catches this screen no longer being current (popped, or something else on top).
+    if (generation !== lookupGenerationRef.current || !navigation.isFocused()) {
       setIsSubmitting(false);
       return;
     }
@@ -843,6 +852,9 @@ export function AddProjectRepositoryScreen(props: {
             environment={environment}
             source={source}
             query={repositoryInput}
+            onSelectResult={() => {
+              lookupGenerationRef.current += 1;
+            }}
           />
         </>
       ) : (

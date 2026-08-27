@@ -694,13 +694,18 @@ function OpenCommandPaletteDialog(props: {
     null,
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
-  const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
+  const [addProjectCloneFlow, setAddProjectCloneFlowState] = useState<AddProjectCloneFlow | null>(
+    null,
+  );
   // Mirrors addProjectCloneFlow so the exact-path lookup continuation can tell whether the flow
   // moved on (a search result was selected, or the flow was cancelled) while it was in flight.
+  // Written synchronously by the wrapper setter: an effect-synced mirror leaves a window between
+  // a transition's commit and its effects where a settling lookup still compares equal.
   const addProjectCloneFlowRef = useRef<AddProjectCloneFlow | null>(null);
-  useEffect(() => {
-    addProjectCloneFlowRef.current = addProjectCloneFlow;
-  }, [addProjectCloneFlow]);
+  const setAddProjectCloneFlow = useCallback((flow: AddProjectCloneFlow | null): void => {
+    addProjectCloneFlowRef.current = flow;
+    setAddProjectCloneFlowState(flow);
+  }, []);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
   const projectGroupingSettings = useMemo(
@@ -1296,6 +1301,7 @@ function OpenCommandPaletteDialog(props: {
       getBrowseCwdForEnvironment,
       prefetchBrowsePath,
       pushPaletteView,
+      setAddProjectCloneFlow,
     ],
   );
 
@@ -1309,7 +1315,7 @@ function OpenCommandPaletteDialog(props: {
         initialQuery: "",
       });
     },
-    [pushPaletteView],
+    [pushPaletteView, setAddProjectCloneFlow],
   );
 
   const openSourceControlSettings = useCallback(() => {
@@ -1443,6 +1449,7 @@ function OpenCommandPaletteDialog(props: {
       buildAddProjectSourceGroups,
       environments,
       pushPaletteView,
+      setAddProjectCloneFlow,
       sourceControlDiscovery.data,
     ],
   );
@@ -1553,6 +1560,7 @@ function OpenCommandPaletteDialog(props: {
     openIntent,
     projectThreadItems,
     pushPaletteView,
+    setAddProjectCloneFlow,
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
