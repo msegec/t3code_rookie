@@ -289,18 +289,31 @@ function isRepositoryResultValue(value: string | null): boolean {
   return value?.startsWith(REPOSITORY_RESULT_VALUE_PREFIX) ?? false;
 }
 
+/** True when the typed text names a repository rather than a search term: any "/" covers owner/repo, nested groups, and clone URLs. */
+export function looksLikeRepositoryPath(query: string): boolean {
+  return query.includes("/");
+}
+
 /**
  * Enter in the repository step runs the highlighted search result, or looks up the typed path when
  * no result is highlighted. Mirrors how a highlighted browse row takes Enter from the path submit,
- * including the primary modifier as the escape hatch back to the exact-path lookup.
+ * including the primary modifier as the escape hatch back to the exact-path lookup. A bare search
+ * term stays with the search ("continue-search") instead of erroring through the exact-path lookup;
+ * lookup still owns Enter when the search cannot answer (unsupported, failed, or query too short).
  */
 export function repositoryStepEnterAction(input: {
   readonly highlightedItemValue: string | null;
   readonly hasPrimaryModifier: boolean;
-}): "select-highlighted-repository" | "lookup-typed-repository" {
-  return isRepositoryResultValue(input.highlightedItemValue) && !input.hasPrimaryModifier
-    ? "select-highlighted-repository"
-    : "lookup-typed-repository";
+  readonly queryIsRepositoryPath: boolean;
+  readonly searchCanAnswer: boolean;
+}): "select-highlighted-repository" | "lookup-typed-repository" | "continue-search" {
+  if (isRepositoryResultValue(input.highlightedItemValue) && !input.hasPrimaryModifier) {
+    return "select-highlighted-repository";
+  }
+  if (input.hasPrimaryModifier || input.queryIsRepositoryPath || !input.searchCanAnswer) {
+    return "lookup-typed-repository";
+  }
+  return "continue-search";
 }
 
 /**
@@ -325,7 +338,7 @@ export function repositoryStepEmptyState(input: {
   if (!input.search.canSearch) {
     return "Enter a repository path and press Enter to look it up.";
   }
-  return "No repositories match. Press Enter to look up the exact path.";
+  return `No repositories match. Enter ${remoteProjectSourcePathHint(input.source)} and press Enter to look it up.`;
 }
 
 function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: string): ReactNode {
@@ -2339,17 +2352,24 @@ function OpenCommandPaletteDialog(props: {
     }
 
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
-      if (
-        repositoryStepEnterAction({
-          highlightedItemValue,
-          hasPrimaryModifier: isPrimaryModifierPressed(event),
-        }) === "select-highlighted-repository"
-      ) {
+      const enterAction = repositoryStepEnterAction({
+        highlightedItemValue,
+        hasPrimaryModifier: isPrimaryModifierPressed(event),
+        queryIsRepositoryPath: looksLikeRepositoryPath(query.trim()),
+        searchCanAnswer:
+          repositorySearchFlow !== null &&
+          repositorySearch.supported &&
+          repositorySearch.error === null &&
+          repositorySearch.canSearch,
+      });
+      if (enterAction === "select-highlighted-repository") {
         // Leave the event alone so the highlighted row runs itself.
         return;
       }
       event.preventDefault();
-      void submitAddProjectCloneFlow();
+      if (enterAction === "lookup-typed-repository") {
+        void submitAddProjectCloneFlow();
+      }
       return;
     }
 
