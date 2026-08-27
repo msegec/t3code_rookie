@@ -476,8 +476,15 @@ function deriveSshUrl(nameWithOwner: string, url: string): string {
   }
 }
 
+/** gh reports a missing description as `null` or `""`; both mean absent. */
 function optionalDescription(value: string | null | undefined) {
-  return value !== undefined && value !== null ? { description: value } : {};
+  return value !== undefined && value !== null && value !== "" ? { description: value } : {};
+}
+
+/** The owner segment of `owner/name`, lowercased the way GitHub compares logins. */
+function repositoryOwner(nameWithOwner: string): string {
+  const separator = nameWithOwner.indexOf("/");
+  return (separator === -1 ? nameWithOwner : nameWithOwner.slice(0, separator)).toLowerCase();
 }
 
 function normalizeOwnedRepository(raw: RawOwnedRepository): SourceControlRepositorySearchResult {
@@ -495,12 +502,13 @@ function normalizeOwnedRepository(raw: RawOwnedRepository): SourceControlReposit
 
 function normalizeSearchedRepository(
   raw: RawSearchedRepository,
+  viewerLogin: string | undefined,
 ): SourceControlRepositorySearchResult {
   return {
     nameWithOwner: raw.fullName,
     url: raw.url,
     sshUrl: deriveSshUrl(raw.fullName, raw.url),
-    ownedByViewer: false,
+    ownedByViewer: viewerLogin !== undefined && repositoryOwner(raw.fullName) === viewerLogin,
     ...optionalDescription(raw.description),
     ...(raw.stargazersCount !== undefined ? { starCount: raw.stargazersCount } : {}),
     ...(raw.isFork !== undefined ? { isFork: raw.isFork } : {}),
@@ -767,10 +775,19 @@ export const make = Effect.gen(function* () {
 
         // `gh repo list` takes no query, so the viewer's repositories are matched
         // here against the cached listing. That is the common keystroke: no spawn.
+        const owned = yield* ownedRepositories(input.cwd);
         const needle = query.toLowerCase();
-        const localMatches = (yield* ownedRepositories(input.cwd)).filter((raw) =>
+        const localMatches = owned.filter((raw) =>
           raw.nameWithOwner.toLowerCase().includes(needle),
         );
+
+        // `gh repo list` lists repositories under the viewer's own login, so any
+        // row names the viewer. The listing is capped at 100 rows, which makes
+        // membership in it under-report ownership; comparing owner segments does
+        // not, so a searched repository the capped listing missed still lands
+        // under the viewer's own group.
+        const viewerLogin =
+          owned[0] !== undefined ? repositoryOwner(owned[0].nameWithOwner) : undefined;
 
         // A failed global search degrades to the local rows instead of failing
         // the whole RPC, the same answer the paused circuit already gives.
@@ -796,7 +813,7 @@ export const make = Effect.gen(function* () {
             continue;
           }
           seen.add(raw.fullName);
-          results.push(normalizeSearchedRepository(raw));
+          results.push(normalizeSearchedRepository(raw, viewerLogin));
         }
 
         return results;
@@ -848,8 +865,11 @@ export const make = Effect.gen(function* () {
  * The circuit breaker is private to this layer. GitHub bills the search endpoint
  * (30 requests a minute) separately from the core quota the pull-request
  * subsystem tracks with its own `SourceControlRateLimit`, so the two circuits are
- * deliberately independent rather than one pausing the other.
+ * deliberately independent rather than one pausing the other. `Layer.fresh` is
+ * what makes that true: the pull-request subsystem provides the same module-level
+ * `SourceControlRateLimit.layer`, and without it Effect would memoize both into
+ * one shared instance keyed identically by provider and host.
  */
 export const layer = Layer.effect(GitHubCli, make).pipe(
-  Layer.provide(SourceControlRateLimit.layer),
+  Layer.provide(Layer.fresh(SourceControlRateLimit.layer)),
 );

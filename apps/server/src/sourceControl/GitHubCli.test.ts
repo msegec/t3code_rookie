@@ -41,6 +41,17 @@ const searchLayer = Layer.effect(GitHubCli.GitHubCli, GitHubCli.make).pipe(
   Layer.provideMerge(SourceControlRateLimit.layer),
 );
 
+/**
+ * The real `GitHubCli.layer` built alongside an outer `SourceControlRateLimit`,
+ * the way `server.ts` builds it next to the pull-request subsystem's. Both sides
+ * reference the same module-level layer, so without `Layer.fresh` inside
+ * `GitHubCli.layer` Effect would memoize them into one shared circuit.
+ */
+const sharedCircuitLayer = GitHubCli.layer.pipe(
+  Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockRun })),
+  Layer.provideMerge(SourceControlRateLimit.layer),
+);
+
 /** The gh subcommand of every spawn so far, in order. */
 const spawnedSubcommands = () =>
   mockRun.mock.calls.map((call) => call[0].args.slice(0, 2).join(" "));
@@ -823,5 +834,87 @@ describe("GitHubCli.layer", () => {
       const paused = yield* Effect.flip(limits.check({ provider: "github", host: "github.com" }));
       assert.strictEqual(paused._tag, "SourceControlRateLimitPausedError");
     }).pipe(Effect.provide(searchLayer)),
+  );
+
+  it.effect("keeps searching while another subsystem's github circuit is paused", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));
+      const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
+      const key = { provider: "github" as const, host: "github.com" };
+      const lease = yield* limits.check(key);
+      yield* limits.recordRateLimit({ ...key, lease });
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(results, []);
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos"]);
+    }).pipe(Effect.provide(sharedCircuitLayer)),
+  );
+
+  it.effect("marks a searched repository the capped listing missed as the viewer's own", () =>
+    Effect.gen(function* () {
+      mockRun.mockImplementation((input) =>
+        input.args[0] === "repo"
+          ? Effect.succeed(processOutput(JSON.stringify([ownedRepository("octocat/unrelated")])))
+          : Effect.succeed(
+              processOutput(
+                JSON.stringify([
+                  {
+                    fullName: "Octocat/codething-mvp",
+                    url: "https://github.com/octocat/codething-mvp",
+                  },
+                  {
+                    fullName: "acme/codething-tools",
+                    url: "https://github.com/acme/codething-tools",
+                  },
+                ]),
+              ),
+            ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(
+        results.map((result) => [result.nameWithOwner, result.ownedByViewer]),
+        [
+          ["Octocat/codething-mvp", true],
+          ["acme/codething-tools", false],
+        ],
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("omits an empty description instead of forwarding it", () =>
+    Effect.gen(function* () {
+      mockRun.mockImplementation((input) =>
+        input.args[0] === "repo"
+          ? Effect.succeed(processOutput("[]"))
+          : Effect.succeed(
+              processOutput(
+                JSON.stringify([
+                  {
+                    fullName: "acme/codething-tools",
+                    url: "https://github.com/acme/codething-tools",
+                    description: "",
+                  },
+                ]),
+              ),
+            ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(results, [
+        {
+          nameWithOwner: "acme/codething-tools",
+          url: "https://github.com/acme/codething-tools",
+          sshUrl: "git@github.com:acme/codething-tools.git",
+          ownedByViewer: false,
+        },
+      ]);
+    }).pipe(Effect.provide(layer)),
   );
 });
