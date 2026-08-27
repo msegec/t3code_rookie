@@ -183,7 +183,9 @@ export type StoreWorkspaceUploadResult =
   | { readonly ok: false; readonly status: number; readonly detail: string };
 
 /** The request body failed before the full upload arrived, e.g. a dropped client. */
-export class WorkspaceUploadBodyError extends Data.TaggedError("WorkspaceUploadBodyError")<{}> {}
+export class WorkspaceUploadBodyError extends Data.TaggedError("WorkspaceUploadBodyError")<{
+  readonly cause: unknown;
+}> {}
 
 class WorkspaceUploadBodyTooLargeError extends Data.TaggedError(
   "WorkspaceUploadBodyTooLargeError",
@@ -250,12 +252,14 @@ export const storeWorkspaceUpload = Effect.fn("WorkspaceUpload.store")(function*
           status: 400,
           detail: `Body was larger than the expected ${claims.sizeBytes} bytes.`,
         } satisfies StoreWorkspaceUploadResult),
-      WorkspaceUploadBodyError: () =>
-        Effect.succeed({
-          ok: false,
-          status: 400,
-          detail: "Failed to read the upload body.",
-        } satisfies StoreWorkspaceUploadResult),
+      WorkspaceUploadBodyError: (error) =>
+        Effect.logWarning("Failed to read the upload body.", { cause: error.cause }).pipe(
+          Effect.as({
+            ok: false,
+            status: 400,
+            detail: "Failed to read the upload body.",
+          } satisfies StoreWorkspaceUploadResult),
+        ),
     }),
   );
   const escapesWorkspaceRoot = Effect.fn(function* (directory: string) {
