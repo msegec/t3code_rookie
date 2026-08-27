@@ -30,6 +30,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -329,8 +330,10 @@ export const make = Effect.gen(function* () {
 
   // The lexical resolve cannot see symlinked directory components, so rename
   // and delete canonically re-check the entry's parent directory before
-  // mutating, the same way storeWorkspaceUpload guards uploads.
-  const directoryEscapesWorkspaceRoot = Effect.fn(function* (
+  // mutating, the same way storeWorkspaceUpload guards uploads. Returns the
+  // canonical directory, or null when it escapes the root, so deleteEntry can
+  // pin the parent to the checked directory right before the removal.
+  const resolveDirectoryWithinWorkspaceRoot = Effect.fn(function* (
     workspaceRoot: string,
     directory: string,
   ) {
@@ -339,12 +342,20 @@ export const make = Effect.gen(function* () {
       fileSystem.realPath(directory),
     ]);
     const relativeDir = path.relative(canonicalRoot, canonicalDir);
-    return (
+    const escapes =
       relativeDir === ".." ||
       relativeDir.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relativeDir)
-    );
+      path.isAbsolute(relativeDir);
+    return escapes ? null : canonicalDir;
   });
+
+  // Concurrent mutations of one source could otherwise both claim their
+  // targets before either removed it: two renames of the same file would both
+  // hard-link and both report success, leaving the file under both new names.
+  // One lock serializes rename and delete, matching the client's single
+  // mutation lane per project, so the loser re-checks a source the winner
+  // already moved and fails instead.
+  const mutationLock = yield* Semaphore.make(1);
 
   // A link conflict can be the source itself seen under another name, either
   // a case variant on a case-insensitive filesystem or a pre-existing hard
@@ -403,11 +414,11 @@ export const make = Effect.gen(function* () {
       return yield* renameError("not-a-file");
     }
 
-    const escapes = yield* directoryEscapesWorkspaceRoot(
+    const canonicalDir = yield* resolveDirectoryWithinWorkspaceRoot(
       input.cwd,
       path.dirname(source.absolutePath),
     ).pipe(Effect.mapError((cause) => renameError("resolve-path", cause)));
-    if (escapes) {
+    if (canonicalDir === null) {
       return yield* renameError("escapes-root");
     }
 
@@ -593,7 +604,7 @@ export const make = Effect.gen(function* () {
 
     yield* workspaceEntries.refresh(input.cwd);
     return { relativePath: target.relativePath };
-  });
+  }, mutationLock.withPermits(1));
 
   const deleteEntry: WorkspaceFileSystem["Service"]["deleteEntry"] = Effect.fn(
     "WorkspaceFileSystem.deleteEntry",
@@ -615,20 +626,21 @@ export const make = Effect.gen(function* () {
 
     // A parent directory that fails to canonicalize as missing means the entry
     // is already gone, which counts as a successful delete.
-    const escapes = yield* directoryEscapesWorkspaceRoot(
+    const parentDirectory = path.dirname(target.absolutePath);
+    const canonicalParent = yield* resolveDirectoryWithinWorkspaceRoot(
       input.cwd,
-      path.dirname(target.absolutePath),
+      parentDirectory,
     ).pipe(
       Effect.catchIf(
         (error) => error.reason._tag === "NotFound",
-        () => Effect.succeed(null),
+        () => Effect.succeed("missing" as const),
       ),
       Effect.mapError((cause) => deleteError("resolve-path", cause)),
     );
-    if (escapes === null) {
+    if (canonicalParent === "missing") {
       return;
     }
-    if (escapes) {
+    if (canonicalParent === null) {
       return yield* deleteError("escapes-root");
     }
 
@@ -656,11 +668,32 @@ export const make = Effect.gen(function* () {
       return yield* deleteError("not-a-file");
     }
 
+    // The removal resolves the path again, so a parent directory swapped for
+    // a symlink after the canonical check above would redirect it outside the
+    // root. Re-resolving the parent here and requiring the directory the
+    // check saw shrinks that window to the gap between this re-check and the
+    // unlink itself; Node exposes no unlinkat-style primitive that could
+    // close it entirely. A parent now missing means the entry is gone, a
+    // successful delete like the earlier missing-parent case.
+    const parentNow = yield* fileSystem.realPath(parentDirectory).pipe(
+      Effect.catchIf(
+        (error) => error.reason._tag === "NotFound",
+        () => Effect.succeed("missing" as const),
+      ),
+      Effect.mapError((cause) => deleteError("resolve-path", cause)),
+    );
+    if (parentNow === "missing") {
+      return;
+    }
+    if (parentNow !== canonicalParent) {
+      return yield* deleteError("escapes-root");
+    }
+
     yield* fileSystem
       .remove(target.absolutePath, { force: true })
       .pipe(Effect.mapError((cause) => deleteError("remove", cause)));
     yield* workspaceEntries.refresh(input.cwd);
-  });
+  }, mutationLock.withPermits(1));
 
   return WorkspaceFileSystem.of({ readFile, writeFile, renameEntry, deleteEntry });
 });

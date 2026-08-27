@@ -539,6 +539,45 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    // Without serialization, two concurrent renames of one source could both
+    // hard-link their targets before either removed the source, both report
+    // success, and leave the file readable under both new names.
+    it.effect("fails the loser when two renames race for the same source", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+
+        const results = yield* Effect.all(
+          [
+            Effect.result(
+              workspaceFileSystem.renameEntry({
+                cwd,
+                relativePath: "src/notes.md",
+                newRelativePath: "src/first.md",
+              }),
+            ),
+            Effect.result(
+              workspaceFileSystem.renameEntry({
+                cwd,
+                relativePath: "src/notes.md",
+                newRelativePath: "src/second.md",
+              }),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const successes = results.filter((result) => result._tag === "Success");
+        expect(successes).toHaveLength(1);
+        const names = yield* fileSystem.readDirectory(path.join(cwd, "src"));
+        expect(names).toHaveLength(1);
+        expect(["first.md", "second.md"]).toContain(names[0]);
+      }),
+    );
+
     it.effect("rejects renames whose directory resolves outside the root through a symlink", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -1098,6 +1137,89 @@ it.layer(DerefLinkTestLayer, { excludeTestServices: true })(
         expect(names.toSorted()).toEqual(["notes.md", "renamed.md"]);
         expect(NodeFS.lstatSync(path.join(cwd, "src/renamed.md")).isSymbolicLink()).toBe(true);
       }),
+    );
+  },
+);
+
+// After the canonical parent check passes, a concurrent process swaps the
+// checked directory for a symlink pointing outside the root; the path-based
+// removal would resolve the swapped path and delete a file that was never
+// inside the workspace. The pre-removal re-check refuses the mismatch.
+const swapAfterRealPath: { path: string | null; swap: (() => void) | null } = {
+  path: null,
+  swap: null,
+};
+const swapRealPathFileSystemLayer = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const real = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...real,
+      realPath: (realPathInput) =>
+        real.realPath(realPathInput).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              if (swapAfterRealPath.path !== realPathInput) return;
+              const swap = swapAfterRealPath.swap;
+              swapAfterRealPath.path = null;
+              swapAfterRealPath.swap = null;
+              swap?.();
+            }),
+          ),
+        ),
+    });
+  }),
+);
+
+const SwapRealPathTestLayer = Layer.empty.pipe(
+  Layer.provideMerge(ProjectLayer),
+  Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
+  Layer.provide(
+    ServerConfig.ServerConfig.layerTest(process.cwd(), {
+      prefix: "t3-workspace-files-test-",
+    }),
+  ),
+  Layer.provideMerge(swapRealPathFileSystemLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.layer(SwapRealPathTestLayer, { excludeTestServices: true })(
+  "WorkspaceFileSystemLive when the parent directory is swapped mid-delete",
+  (it) => {
+    it.effect("refuses the removal instead of resolving the planted symlink", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outside = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/notes.md", "# Notes\n");
+        yield* writeTextFile(outside, "notes.md", "victim\n");
+        const sourceDir = path.join(cwd, "src");
+        swapAfterRealPath.path = sourceDir;
+        swapAfterRealPath.swap = () => {
+          NodeFS.renameSync(sourceDir, path.join(cwd, "src-moved"));
+          NodeFS.symlinkSync(outside, sourceDir);
+        };
+
+        const error = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/notes.md" })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(ProjectDeleteEntryError);
+        expect(error).toMatchObject({ stage: "escapes-root" });
+        // The file the planted symlink pointed at was never inside the
+        // workspace and must survive the delete.
+        expect(NodeFS.readFileSync(path.join(outside, "notes.md"), "utf8")).toBe("victim\n");
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            swapAfterRealPath.path = null;
+            swapAfterRealPath.swap = null;
+          }),
+        ),
+      ),
     );
   },
 );

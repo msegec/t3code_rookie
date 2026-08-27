@@ -1173,6 +1173,12 @@ export default function FilePreviewPanel({
               onEntryRenamed={(from, to) => {
                 if (editorShowsFile(from)) discardActiveFileSavesRef.current?.discard();
                 clearProjectFileQueryData(environmentId, cwd, from);
+                // Review comments drafted on the old path must follow the
+                // file, or the submitted draft references a path that no
+                // longer exists.
+                useComposerDraftStore
+                  .getState()
+                  .renameReviewCommentPath(composerDraftTarget, from, to);
                 const store = useRightPanelStore.getState();
                 const panel = selectThreadRightPanelState(store.byThreadKey, threadRef);
                 const fromSurface = panel.surfaces.find((surface) => surface.id === `file:${from}`);
