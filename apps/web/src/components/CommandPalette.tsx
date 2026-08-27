@@ -2285,7 +2285,25 @@ function OpenCommandPaletteDialog(props: {
       : "Lookup"
     : null;
   const isRemoteProjectPending = isRemoteProjectLookingUp || isRemoteProjectCloning;
-  const remoteProjectShortcutLabel = hasHighlightedRepositoryItem
+  const repositorySearchCanAnswer =
+    repositorySearchFlow !== null &&
+    repositorySearch.supported &&
+    repositorySearch.error === null &&
+    repositorySearch.canSearch;
+  // What plain Enter does right now, shared by the key handler and the input accessory so the
+  // advertised shortcut never names a key that would do nothing.
+  const repositoryPlainEnterAction =
+    addProjectCloneFlow?.step === "repository"
+      ? repositoryStepEnterAction({
+          highlightedItemValue,
+          hasPrimaryModifier: false,
+          queryIsRepositoryPath: looksLikeRepositoryPath(query.trim()),
+          searchCanAnswer: repositorySearchCanAnswer,
+        })
+      : null;
+  const remoteProjectShortcutIsModified =
+    repositoryPlainEnterAction !== null && repositoryPlainEnterAction !== "lookup-typed-repository";
+  const remoteProjectShortcutLabel = remoteProjectShortcutIsModified
     ? `${submitModifierLabel} Enter`
     : "Enter";
   const canSubmitRemoteProjectFlow =
@@ -2356,11 +2374,7 @@ function OpenCommandPaletteDialog(props: {
         highlightedItemValue,
         hasPrimaryModifier: isPrimaryModifierPressed(event),
         queryIsRepositoryPath: looksLikeRepositoryPath(query.trim()),
-        searchCanAnswer:
-          repositorySearchFlow !== null &&
-          repositorySearch.supported &&
-          repositorySearch.error === null &&
-          repositorySearch.canSearch,
+        searchCanAnswer: repositorySearchCanAnswer,
       });
       if (enterAction === "select-highlighted-repository") {
         // Leave the event alone so the highlighted row runs itself.
@@ -2541,7 +2555,7 @@ function OpenCommandPaletteDialog(props: {
               tabIndex={-1}
               className={cn(
                 "absolute inset-e-2.5 top-1/2 pe-1 ps-2 -translate-y-1/2",
-                hasHighlightedRepositoryItem ? "gap-1" : "gap-1.5",
+                remoteProjectShortcutIsModified ? "gap-1" : "gap-1.5",
               )}
               aria-label={`${remoteProjectButtonLabel ?? "Continue"} (${remoteProjectShortcutLabel})`}
               disabled={!canSubmitRemoteProjectFlow}
@@ -2643,7 +2657,7 @@ function OpenCommandPaletteDialog(props: {
         // inner input must reserve enough room for the full action label.
         className:
           addProjectCloneFlow?.step === "repository"
-            ? hasHighlightedRepositoryItem
+            ? remoteProjectShortcutIsModified
               ? "*:data-[slot=autocomplete-input]:pe-38!"
               : "*:data-[slot=autocomplete-input]:pe-32!"
             : isBrowsing
