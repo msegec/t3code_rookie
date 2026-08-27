@@ -17,6 +17,7 @@ const STYLE_LANGUAGES = new Set([
   "stylus",
   "postcss",
   "html",
+  "angular-html",
   "vue",
   "svelte",
   "astro",
@@ -38,6 +39,7 @@ const LONG_HEX_LANGUAGES = new Set([
   "mts",
   "cts",
   "tsx",
+  "angular-ts",
 ]);
 
 interface CodeColorPreviewPart {
@@ -77,22 +79,15 @@ export function codeColorPreviewParts(
   return parts;
 }
 
+/** Rewrites highlighted tokens in place, so only call it on read-only
+    surfaces. On a contentEditable surface it would rewrite the token under
+    the user's caret. */
 export function applyCodeColorPreviews(root: ParentNode, language: string): void {
   const allowShortForms = allowShortColorForms(language);
   if (allowShortForms === null) return;
-  const rootSelection = (
-    root as ParentNode & { getSelection?: () => Selection | null }
-  ).getSelection?.();
 
   for (const token of root.querySelectorAll<HTMLElement>("[data-line] span")) {
     if (token.childElementCount > 0 || token.classList.contains("chat-markdown-color-literal")) {
-      continue;
-    }
-    const selection = rootSelection ?? token.ownerDocument.getSelection();
-    if (
-      (selection?.anchorNode && token.contains(selection.anchorNode)) ||
-      (selection?.focusNode && token.contains(selection.focusNode))
-    ) {
       continue;
     }
 

@@ -847,6 +847,10 @@ export default function FilePreviewPanel({
     [projectName, relativePath],
   );
   const onFileLinePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
+  // Only the read-only surface gets colour swatches. On the contentEditable
+  // surface the wrapping rewrites tokens under the caret (Safari retargets
+  // in-shadow selections to the host) and a wrapped literal never re-checks
+  // its colour while edited in place.
   const onFilePostRender = useCallback<FilePostRender>(
     (fileContainer, instance, phase) => {
       onFileLinePostRender(fileContainer, instance, phase);
@@ -1103,7 +1107,7 @@ export default function FilePreviewPanel({
                 resolvedTheme={resolvedTheme}
                 revealRequestId={revealRequestId}
                 wordWrap={wordWrap}
-                onPostRender={onFilePostRender}
+                onPostRender={onFileLinePostRender}
                 onPendingChange={onPendingChange}
               />
             )
