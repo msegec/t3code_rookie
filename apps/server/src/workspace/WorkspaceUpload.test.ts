@@ -22,6 +22,7 @@ import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import {
   WORKSPACE_UPLOAD_ROUTE_PREFIX,
+  WorkspaceUploadBodyError,
   issueWorkspaceUploadUrl,
   storeWorkspaceUpload,
   validateWorkspaceUploadToken,
@@ -261,6 +262,84 @@ describe("WorkspaceUpload", () => {
 
       const result = yield* storeWorkspaceUpload(claims, bytes);
       expect(result).toMatchObject({ ok: false, status: 409 });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("drains the streamed body before answering a non-overwrite conflict", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "conflict.txt",
+        sizeBytes: 4,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      yield* fileSystem.writeFileString(NodePath.join(cwd, "conflict.txt"), "kept");
+
+      // An unconsumed body makes many clients report a connection reset
+      // instead of the 409 detail, so the conflict must pull the body through.
+      let pulledBytes = 0;
+      const body = Stream.fromArray([new Uint8Array([1, 2]), new Uint8Array([3, 4])]).pipe(
+        Stream.tap((chunk) =>
+          Effect.sync(() => {
+            pulledBytes += chunk.byteLength;
+          }),
+        ),
+      );
+
+      const result = yield* storeWorkspaceUpload(claims, body);
+      expect(result).toMatchObject({ ok: false, status: 409 });
+      expect(pulledBytes).toBe(4);
+      expect(NodeFS.readFileSync(NodePath.join(cwd, "conflict.txt"), "utf8")).toBe("kept");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("stops the conflict drain once the body exceeds the claimed size", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempWorkspaceRoot();
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const issued = yield* issueWorkspaceUploadUrl({
+        cwd,
+        relativePath: "conflict.txt",
+        sizeBytes: 3,
+      });
+      const claims = yield* validateWorkspaceUploadToken(tokenFromRelativeUrl(issued.relativeUrl));
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      yield* fileSystem.writeFileString(NodePath.join(cwd, "conflict.txt"), "kept");
+
+      // An async generator is pulled one chunk per demand, so the count below
+      // proves the drain stopped pulling, not just that a failure surfaced.
+      let pulledBytes = 0;
+      async function* chunks() {
+        for (const chunk of [
+          new Uint8Array([1, 2]),
+          new Uint8Array([3, 4]),
+          new Uint8Array([5, 6]),
+        ]) {
+          pulledBytes += chunk.byteLength;
+          yield chunk;
+        }
+      }
+      const body = Stream.fromAsyncIterable(
+        chunks(),
+        (cause) => new WorkspaceUploadBodyError({ cause }),
+      );
+
+      const result = yield* storeWorkspaceUpload(claims, body);
+      expect(result).toMatchObject({ ok: false, status: 409 });
+      // The drain is bounded by the claimed size: it stops on the chunk that
+      // crosses the cap instead of consuming a lying body forever.
+      expect(pulledBytes).toBe(4);
     }).pipe(Effect.provide(testLayer)),
   );
 

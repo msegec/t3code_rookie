@@ -217,6 +217,14 @@ export default function FileBrowserPanel({
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Uploads finish long after they start, so the completion callback reads the
+  // preview state through refs instead of capturing it at queue time.
+  const selectedPathRef = useRef(selectedPath);
+  const onRefreshSelectedFileRef = useRef(onRefreshSelectedFile);
+  useEffect(() => {
+    selectedPathRef.current = selectedPath;
+    onRefreshSelectedFileRef.current = onRefreshSelectedFile;
+  });
   const handleAddFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
@@ -224,7 +232,15 @@ export default function FileBrowserPanel({
         environmentId,
         cwd,
         files,
-        onUploaded: () => entriesQuery.refresh(),
+        onUploaded: (relativePath) => {
+          entriesQuery.refresh();
+          // An upload that replaced the file open in the preview must reload
+          // its contents, or the stale preview shows old bytes and a later
+          // editor save clobbers the uploaded content.
+          if (relativePath === selectedPathRef.current) {
+            onRefreshSelectedFileRef.current?.();
+          }
+        },
       });
     },
     [cwd, entriesQuery, environmentId],
