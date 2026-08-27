@@ -2626,9 +2626,12 @@ function OpenCommandPaletteDialog(props: {
 
   const footerActionLabel =
     addProjectCloneFlow?.step === "repository"
-      ? hasHighlightedRepositoryItem
+      ? repositoryPlainEnterAction === "select-highlighted-repository"
         ? "Select"
-        : (remoteProjectButtonLabel ?? "Continue")
+        : repositoryPlainEnterAction === "lookup-typed-repository"
+          ? (remoteProjectButtonLabel ?? "Continue")
+          : // Plain Enter stays with the search, so there is no action to hint.
+            undefined
       : !canSubmitBrowsePath || hasHighlightedBrowseItem
         ? "Select"
         : undefined;
