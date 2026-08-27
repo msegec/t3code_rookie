@@ -791,6 +791,39 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(searchLayer)),
   );
 
+  it.effect("serves the stale cached search when a refresh fails", () =>
+    Effect.gen(function* () {
+      let searchCalls = 0;
+      mockRun.mockImplementation((input) => {
+        if (input.args[0] === "repo") {
+          return Effect.succeed(processOutput("[]"));
+        }
+        searchCalls += 1;
+        return Effect.succeed(
+          processOutput(
+            searchCalls === 1
+              ? `[{ "fullName": "acme/codething-tools", "url": "https://github.com/acme/codething-tools" }]`
+              : "not json",
+          ),
+        );
+      });
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      // The cached search rows are 31 seconds old, past their 30 second TTL,
+      // and the refresh comes back unusable. The stale rows still answer.
+      yield* TestClock.adjust("31 seconds");
+      const results = yield* gh.searchRepositories({ cwd: "/repo", query: "codething" });
+
+      assert.deepStrictEqual(spawnedSubcommands(), ["repo list", "search repos", "search repos"]);
+      assert.deepStrictEqual(
+        results.map((result) => result.nameWithOwner),
+        ["acme/codething-tools"],
+      );
+    }).pipe(Effect.provide(searchLayer)),
+  );
+
   it.effect("runs no gh command while the GitHub circuit is open", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValue(Effect.succeed(processOutput("[]")));

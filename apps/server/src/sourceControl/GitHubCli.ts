@@ -789,16 +789,24 @@ export const make = Effect.gen(function* () {
         const viewerLogin =
           owned[0] !== undefined ? repositoryOwner(owned[0].nameWithOwner) : undefined;
 
-        // A failed global search degrades to the local rows instead of failing
-        // the whole RPC, the same answer the paused circuit already gives.
+        // A failed global search degrades to the stale cached rows for this
+        // query, the same answer the paused circuit already gives, and to the
+        // local rows alone when nothing is cached.
         const searched =
           query.length >= MIN_GLOBAL_SEARCH_QUERY_LENGTH &&
           localMatches.length < SUFFICIENT_LOCAL_MATCHES
             ? yield* searchedRepositories(input.cwd, query).pipe(
                 Effect.catch((error) =>
-                  Effect.logWarning("GitHub repository search failed; keeping local matches", {
+                  Effect.logWarning("GitHub repository search failed; serving cached matches", {
                     error,
-                  }).pipe(Effect.as([] as ReadonlyArray<RawSearchedRepository>)),
+                  }).pipe(
+                    Effect.flatMap(() => Ref.get(searchedRepositoriesCache)),
+                    Effect.map(
+                      (cache) =>
+                        cache.get(input.cwd + SEARCH_KEY_SEPARATOR + query)?.value ??
+                        ([] as ReadonlyArray<RawSearchedRepository>),
+                    ),
+                  ),
                 ),
               )
             : [];
