@@ -39,6 +39,16 @@
       "kind": "pull-request",
       "number": 8196,
       "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 8329,
+      "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 8371,
+      "headRepository": "msegec/t3code_rookie"
     }
   ],
   "tests": [
@@ -56,6 +66,19 @@
     "apps/web/src/lib/workspaceUploadQueue.test.ts",
     "apps/web/src/lib/attachmentUploadQueue.test.ts",
     "apps/server/src/workspace/WorkspaceFileSystem.test.ts",
-    "apps/web/src/components/usage/UsagePage.test.tsx"
+    "apps/web/src/components/usage/UsagePage.test.tsx",
+    "apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts",
+    "apps/server/src/git/GitManager.test.ts",
+    "apps/server/src/sourceControl/AzureDevOpsSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/BitbucketSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/GitHubCli.test.ts",
+    "apps/server/src/sourceControl/GitHubSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/GitLabCli.test.ts",
+    "apps/server/src/sourceControl/GitLabSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/SourceControlRepositoryService.test.ts",
+    "apps/web/src/components/CommandPalette.test.ts",
+    "packages/client-runtime/src/state/sourceControl.test.ts",
+    "packages/contracts/src/sourceControl.test.ts",
+    "apps/server/src/vcs/VcsProcess.test.ts"
   ]
 }
