@@ -290,6 +290,16 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // Concurrent mutations of one source could otherwise both claim their
+  // targets before either removed it: two renames of the same file would both
+  // hard-link and both report success, leaving the file under both new names.
+  // One lock serializes write, rename, and delete, matching the client's
+  // single mutation lane per project, so a racing mutation re-checks state the
+  // winner already changed. Writes are under it too: the FAT fallback's rename
+  // may only ever replace its own claim, which a concurrent write to the same
+  // target would otherwise break.
+  const mutationLock = yield* Semaphore.make(1);
+
   const writeFile: WorkspaceFileSystem["Service"]["writeFile"] = Effect.fn(
     "WorkspaceFileSystem.writeFile",
   )(function* (input) {
@@ -326,7 +336,7 @@ export const make = Effect.gen(function* () {
     );
     yield* workspaceEntries.refresh(input.cwd);
     return { relativePath: target.relativePath };
-  });
+  }, mutationLock.withPermits(1));
 
   // The lexical resolve cannot see symlinked directory components, so rename
   // and delete canonically re-check the entry's parent directory before
@@ -348,14 +358,6 @@ export const make = Effect.gen(function* () {
       path.isAbsolute(relativeDir);
     return escapes ? null : canonicalDir;
   });
-
-  // Concurrent mutations of one source could otherwise both claim their
-  // targets before either removed it: two renames of the same file would both
-  // hard-link and both report success, leaving the file under both new names.
-  // One lock serializes rename and delete, matching the client's single
-  // mutation lane per project, so the loser re-checks a source the winner
-  // already moved and fails instead.
-  const mutationLock = yield* Semaphore.make(1);
 
   // A link conflict can be the source itself seen under another name, either
   // a case variant on a case-insensitive filesystem or a pre-existing hard
