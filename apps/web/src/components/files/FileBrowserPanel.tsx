@@ -7,7 +7,7 @@ import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { RotateCcw, RotateCw, Upload, XIcon } from "lucide-react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "~/components/ui/button";
@@ -218,10 +218,12 @@ export default function FileBrowserPanel({
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Uploads finish long after they start, so the completion callback reads the
-  // preview state through refs instead of capturing it at queue time.
+  // preview state through refs instead of capturing it at queue time. Layout
+  // effect, not passive: an upload completing between a selection commit and a
+  // passive flush would read the previous selection and skip the reload.
   const selectedPathRef = useRef(selectedPath);
   const onRefreshSelectedFileRef = useRef(onRefreshSelectedFile);
-  useEffect(() => {
+  useLayoutEffect(() => {
     selectedPathRef.current = selectedPath;
     onRefreshSelectedFileRef.current = onRefreshSelectedFile;
   });
