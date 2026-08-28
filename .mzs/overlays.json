@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "overlays": [
+    {
+      "kind": "commit",
+      "name": "MZS fleet runtime source",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-runtime-overlay",
+      "sha": "1918e12feb95080ece601a6a70a30c15529b8b55"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS fleet runtime native verification",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-runtime-overlay",
+      "sha": "83591c7d7820cffebd0097410727db7b94ba76ed"
+    },
+    {
+      "kind": "pull-request",
+      "number": 7972,
+      "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 7979,
+      "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 8151,
+      "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 8162,
+      "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 8196,
+      "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "pull-request",
+      "number": 8329,
+      "headRepository": "msegec/t3code_rookie"
+    }
+  ],
+  "tests": [
+    "apps/server/src/cloud/pinnedRuntime.test.ts",
+    "apps/server/src/assets/AssetAccess.test.ts",
+    "apps/server/src/project/ProjectFaviconResolver.test.ts",
+    "apps/web/src/components/ProjectFavicon.test.tsx",
+    "apps/desktop/src/updates/updateChannels.test.ts",
+    "apps/web/src/branding.test.ts",
+    "apps/web/src/projectAccent.test.ts",
+    "packages/contracts/src/t3ProjectFile.test.ts",
+    "apps/web/src/lib/codeColorPreviews.test.ts",
+    "scripts/build-desktop-artifact.fleet.test.ts",
+    "apps/server/src/workspace/WorkspaceUpload.test.ts",
+    "apps/web/src/lib/workspaceUploadQueue.test.ts",
+    "apps/web/src/lib/attachmentUploadQueue.test.ts",
+    "apps/server/src/workspace/WorkspaceFileSystem.test.ts",
+    "apps/web/src/components/usage/UsagePage.test.tsx",
+    "apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts",
+    "apps/server/src/git/GitManager.test.ts",
+    "apps/server/src/sourceControl/AzureDevOpsSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/BitbucketSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/GitHubCli.test.ts",
+    "apps/server/src/sourceControl/GitHubSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/GitLabCli.test.ts",
+    "apps/server/src/sourceControl/GitLabSourceControlProvider.test.ts",
+    "apps/server/src/sourceControl/SourceControlRepositoryService.test.ts",
+    "apps/web/src/components/CommandPalette.test.ts",
+    "packages/client-runtime/src/state/sourceControl.test.ts",
+    "packages/contracts/src/sourceControl.test.ts",
+    "apps/server/src/vcs/VcsProcess.test.ts"
+  ]
+}
