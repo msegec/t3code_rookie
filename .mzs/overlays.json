@@ -20,6 +20,7 @@
       "name": "Project sidebar accents",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/feat/project-sidebar-accents",
+      "strategy": "merge",
       "sha": "c5f18f05c919d06577eef31dc50178d3e6a7d9f5"
     },
     {
@@ -27,6 +28,7 @@
       "name": "Code color previews",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/feat/code-color-previews",
+      "strategy": "merge",
       "sha": "6b05705c4c9d07dd85d6aa29cdc268ed216702e1"
     },
     {
@@ -34,20 +36,23 @@
       "name": "Files view uploads",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/feat/files-view-upload",
+      "strategy": "merge",
       "sha": "7d81edf628aae96bfdaee2da4e9b69d6c30633d8"
     },
     {
       "kind": "commit",
       "name": "Files view rename and delete",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/feat/files-rename-delete",
-      "sha": "5556344ef96950615403b74dec5280bbbd1a07f0"
+      "ref": "refs/heads/pc-f/files-view-mutations",
+      "strategy": "merge",
+      "sha": "baa658f610863f1f94e0acae7fb88e9992c7eb8f"
     },
     {
       "kind": "commit",
       "name": "Offline usage devices",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fix/usage-offline-devices",
+      "strategy": "merge",
       "sha": "e03ed66dd12258a6b20036f27a9001400ee2b0a8"
     },
     {
@@ -55,6 +60,7 @@
       "name": "GitHub repository search",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/feat/github-repo-search",
+      "strategy": "merge",
       "sha": "75452e49b108d3784973eb8648c6812c1a4b4021"
     },
     {

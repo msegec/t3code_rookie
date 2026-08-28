@@ -80,11 +80,19 @@ jobs:
               name="$(jq -r .name <<<"$overlay")"
               repository="$(jq -r .repository <<<"$overlay")"
               ref="$(jq -r .ref <<<"$overlay")"
+              strategy="$(jq -r '.strategy // "cherry-pick"' <<<"$overlay")"
               sha="$(jq -r .sha <<<"$overlay")"
               git -C source fetch --no-tags "https://github.com/${repository}.git" "$ref"
               git -C source cat-file -e "${sha}^{commit}"
               git -C source merge-base --is-ancestor "$sha" FETCH_HEAD
-              git -C source cherry-pick "$sha"
+              if [[ "$strategy" == merge ]]; then
+                git -C source merge --no-ff --no-edit "$sha"
+              elif [[ "$strategy" == cherry-pick ]]; then
+                git -C source cherry-pick "$sha"
+              else
+                printf 'Unsupported commit overlay strategy: %s\n' "$strategy" >&2
+                exit 1
+              fi
               results="$(jq -c \
                 --arg kind "$kind" \
                 --arg name "$name" \
