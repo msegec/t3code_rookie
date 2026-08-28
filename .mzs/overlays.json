@@ -44,6 +44,13 @@
       "kind": "pull-request",
       "number": 8329,
       "headRepository": "msegec/t3code_rookie"
+    },
+    {
+      "kind": "commit",
+      "name": "Structured repository lookup errors",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/feat/github-repo-search",
+      "sha": "6e7ff7d67aad571d112d38b608b4f39d524559af"
     }
   ],
   "tests": [
