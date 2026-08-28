@@ -16,34 +16,46 @@
       "sha": "83591c7d7820cffebd0097410727db7b94ba76ed"
     },
     {
-      "kind": "pull-request",
-      "number": 7972,
-      "headRepository": "msegec/t3code_rookie"
+      "kind": "commit",
+      "name": "Project sidebar accents",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/feat/project-sidebar-accents",
+      "sha": "c5f18f05c919d06577eef31dc50178d3e6a7d9f5"
     },
     {
-      "kind": "pull-request",
-      "number": 7979,
-      "headRepository": "msegec/t3code_rookie"
+      "kind": "commit",
+      "name": "Code color previews",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/feat/code-color-previews",
+      "sha": "6b05705c4c9d07dd85d6aa29cdc268ed216702e1"
     },
     {
-      "kind": "pull-request",
-      "number": 8151,
-      "headRepository": "msegec/t3code_rookie"
+      "kind": "commit",
+      "name": "Files view uploads",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/feat/files-view-upload",
+      "sha": "7d81edf628aae96bfdaee2da4e9b69d6c30633d8"
     },
     {
-      "kind": "pull-request",
-      "number": 8162,
-      "headRepository": "msegec/t3code_rookie"
+      "kind": "commit",
+      "name": "Files view rename and delete",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/feat/files-rename-delete",
+      "sha": "5556344ef96950615403b74dec5280bbbd1a07f0"
     },
     {
-      "kind": "pull-request",
-      "number": 8196,
-      "headRepository": "msegec/t3code_rookie"
+      "kind": "commit",
+      "name": "Offline usage devices",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fix/usage-offline-devices",
+      "sha": "e03ed66dd12258a6b20036f27a9001400ee2b0a8"
     },
     {
-      "kind": "pull-request",
-      "number": 8329,
-      "headRepository": "msegec/t3code_rookie"
+      "kind": "commit",
+      "name": "GitHub repository search",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/feat/github-repo-search",
+      "sha": "75452e49b108d3784973eb8648c6812c1a4b4021"
     },
     {
       "kind": "commit",
