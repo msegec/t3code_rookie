@@ -28,6 +28,13 @@ import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
+function repositoryErrorDetail(cause: unknown): string {
+  if (isSourceControlProviderError(cause) && cause.reason === "repository-not-found") {
+    return "Repository not found. Check the owner/repo path and try again.";
+  }
+  return "The source control operation could not be completed.";
+}
+
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
   {
@@ -53,12 +60,7 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
       : new SourceControlRepositoryError({
           operation,
           provider,
-          // Provider `detail` may quote provider output, so only the curated
-          // `userDetail` opt-in reaches the client; everything else stays
-          // behind the generic sentence.
-          detail:
-            (isSourceControlProviderError(cause) ? cause.userDetail : undefined) ??
-            "The source control operation could not be completed.",
+          detail: repositoryErrorDetail(cause),
           cause,
         }),
   );

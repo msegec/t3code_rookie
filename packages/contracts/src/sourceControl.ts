@@ -148,6 +148,9 @@ export const SourceControlProviderAuth = Schema.Struct({
 });
 export type SourceControlProviderAuth = typeof SourceControlProviderAuth.Type;
 
+export const SourceControlProviderFailureReason = Schema.Literals(["repository-not-found"]);
+export type SourceControlProviderFailureReason = typeof SourceControlProviderFailureReason.Type;
+
 const SourceControlDiscoverySharedFields = {
   label: TrimmedNonEmptyString,
   executable: Schema.optional(TrimmedNonEmptyString),
@@ -187,13 +190,7 @@ export class SourceControlProviderError extends Schema.TaggedErrorClass<SourceCo
     repository: Schema.optional(Schema.String),
     reference: Schema.optional(Schema.String),
     detail: Schema.String,
-    /**
-     * Set only to a compile-time constant that is safe to show the user.
-     * `detail` may quote provider output and stays out of client-facing
-     * errors; `userDetail` is the adapter's explicit opt-in to surface a
-     * curated explanation instead of the generic fallback.
-     */
-    userDetail: Schema.optional(Schema.String),
+    reason: Schema.optional(SourceControlProviderFailureReason),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {

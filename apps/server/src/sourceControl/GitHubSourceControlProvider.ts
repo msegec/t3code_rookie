@@ -318,9 +318,8 @@ export const make = Effect.gen(function* () {
                 input.repository,
               ),
               detail: error.detail,
-              // GitHubCliError details are compile-time constants, so they are
-              // safe to show the user in place of the generic fallback.
-              userDetail: error.detail,
+              reason:
+                error._tag === "GitHubRepositoryNotFoundError" ? "repository-not-found" : undefined,
               cause: error,
             }),
         ),

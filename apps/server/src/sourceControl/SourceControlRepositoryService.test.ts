@@ -178,14 +178,14 @@ it.effect("preserves provider failures without deriving the repository message f
   }).pipe(Effect.provide(makeLayer({ provider })));
 });
 
-it.effect("surfaces the provider's curated user detail when one is set", () => {
+it.effect("surfaces a safe detail for a structured repository miss", () => {
   const providerCause = new SourceControlProviderError({
     provider: "github",
     operation: "getRepositoryCloneUrls",
     cwd: "/workspace",
     repository: "octocat/nope",
     detail: "gh stderr that stays server-side",
-    userDetail: "Repository not found. Check the owner/repo path and try again.",
+    reason: "repository-not-found",
   });
   const provider = makeProvider({
     getRepositoryCloneUrls: () => Effect.fail(providerCause),
