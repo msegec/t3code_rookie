@@ -94,7 +94,7 @@ const PROJECT_ICON_COLOR_BY_NAME: Record<ProjectIconName, ProjectIconColor> = {
   web: "sky",
 };
 
-export function ProjectFavicon(input: {
+interface ProjectFaviconInput {
   environmentId: EnvironmentId;
   cwd: string;
   projectName: string;
@@ -102,7 +102,9 @@ export function ProjectFavicon(input: {
   projectIcon?: ProjectIconOverride | null | undefined;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
-}) {
+}
+
+export function ProjectFavicon(input: ProjectFaviconInput) {
   const state = useProjectFaviconAsset(input);
   const src = state._tag === "Success" ? state.url : null;
   if (input.projectIcon?.kind === "emoji") {

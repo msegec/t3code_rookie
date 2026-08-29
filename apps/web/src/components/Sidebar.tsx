@@ -32,6 +32,7 @@ import {
 import {
   resolveEnvironmentMachineKind,
   type EnvironmentMachineKind,
+  type ProjectAccent,
   type ProjectIconOverride,
   type ScopedThreadRef,
   type ThreadId,
@@ -183,6 +184,7 @@ import {
   type ProviderInstanceEntry,
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { projectAccentRowState, projectAccentRowStyle } from "../projectAccent";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -765,6 +767,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   projectCwd: string | null;
   projectFaviconPath: string | null;
   projectIcon: ProjectIconOverride | null;
+  projectAccent: ProjectAccent | null;
   projectTitle: string | null;
   projectDisplayName: string | null;
   providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
@@ -842,6 +845,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     },
     [clearComposerContent, threadRef],
   );
+  const projectAccent = props.projectAccent;
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
@@ -1181,12 +1185,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         : hasUnsentDraft
           ? cn(draftSurfaceClassName, "text-sidebar-foreground")
           : shouldRecede
-            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:text-sidebar-foreground"
             : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
     isInFlight &&
       !props.isActive &&
       !isSelected &&
-      "opacity-70 transition-opacity hover:opacity-100",
+      "opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100",
   );
 
   const title = isRenaming ? (
@@ -1219,7 +1223,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     : "text-foreground/90",
             )
           : cn(
-              "truncate group-hover/sidebar-row:text-foreground",
+              "truncate group-hover/sidebar-row:text-foreground group-focus-visible/sidebar-row:text-foreground",
               props.isActive || isWoke
                 ? "text-foreground"
                 : isUnread
@@ -1321,12 +1325,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       >
         <Tooltip>
           <TooltipTrigger
+            delay={600}
             render={
               <div
                 ref={rowRef}
                 role="button"
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
+                data-project-accent={projectAccent === null ? undefined : "true"}
+                data-project-accent-state={projectAccentRowState(
+                  projectAccent,
+                  props.isActive,
+                  isSelected,
+                )}
+                style={projectAccentRowStyle(projectAccent)}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
                 onClick={handleClick}
@@ -1342,7 +1354,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               className={cn(
                 "shrink-0 transition-opacity",
                 !props.isActive &&
-                  "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+                  "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0 group-focus-visible/sidebar-row:opacity-100 group-focus-visible/sidebar-row:grayscale-0",
               )}
             >
               <ProjectFavicon
@@ -1485,12 +1497,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     >
       <Tooltip disabled={snoozeMenuOpen}>
         <TooltipTrigger
+          delay={600}
           render={
             <div
               ref={rowRef}
               role="button"
               tabIndex={0}
               data-testid="sidebar-row-card"
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isActive,
+                isSelected,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -1733,6 +1753,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   projectCwd: string | null;
   projectFaviconPath: string | null;
   projectIcon: ProjectIconOverride | null;
+  projectAccent: ProjectAccent | null;
   projectTitle: string | null;
   projectDisplayName: string | null;
   environmentLabel: string | null;
@@ -1748,6 +1769,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
+  const projectAccent = props.projectAccent;
   // Same details tooltip as the regular rows: a search hit is still a thread,
   // and the hover card is how you disambiguate identically-titled results.
   const gitCwd = thread.worktreePath ?? props.projectCwd;
@@ -1789,6 +1811,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     <li role="presentation" className="list-none">
       <Tooltip>
         <TooltipTrigger
+          delay={600}
           render={
             <button
               ref={rowRef}
@@ -1800,6 +1823,18 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               tabIndex={-1}
               aria-selected={props.isHighlighted}
               aria-current={props.isRouteActive ? "page" : undefined}
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              // Focus stays on the search input and the option is tabIndex -1,
+              // so this fill is the keyboard cursor. It must stay on the
+              // strongest row token: sidebar-row-selected paints weaker than
+              // hover in the dark palette, which would make the highlighted
+              // row read as less prominent than a merely hovered one.
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isRouteActive || props.isHighlighted,
+                false,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               aria-label={
                 props.projectDisplayName
                   ? `${thread.title}, ${props.projectDisplayName}`
@@ -1809,7 +1844,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               onClick={props.onSelect}
               className={cn(
                 "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm outline-none",
-                props.isHighlighted || props.isRouteActive
+                props.isRouteActive || props.isHighlighted
                   ? "bg-sidebar-row-active text-sidebar-foreground"
                   : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
               )}
@@ -2068,6 +2103,19 @@ export default function Sidebar() {
   const projectTitleByKey = useMemo(
     () =>
       new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project.title])),
+    [projects],
+  );
+  // The accent travels with the project record, so a row has it on its first
+  // paint. Reading it from the favicon asset instead made the whole list
+  // repaint a round trip after it appeared.
+  const projectAccentByKey = useMemo(
+    () =>
+      new Map(
+        projects.map((project) => [
+          `${project.environmentId}:${project.id}`,
+          project.accent ?? null,
+        ]),
+      ),
     [projects],
   );
   const projectDisplayNameByKey = useMemo(
@@ -3875,6 +3923,10 @@ export default function Sidebar() {
                           projectIconByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
                           null
                         }
+                        projectAccent={
+                          projectAccentByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
+                          null
+                        }
                         projectTitle={
                           projectTitleByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
                           null
@@ -3999,6 +4051,10 @@ export default function Sidebar() {
                         }
                         projectIcon={
                           projectIconByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
+                          null
+                        }
+                        projectAccent={
+                          projectAccentByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
                           null
                         }
                         projectTitle={

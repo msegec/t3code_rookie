@@ -44,7 +44,7 @@ export function UsageRouteScreen() {
   const [metric, setMetric] = useState<UsageChartMetric>("cost");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, isUnreachable, refresh } = useUsage(window);
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -125,6 +125,10 @@ export function UsageRouteScreen() {
         ) : environments.length === 0 ? (
           <Text className="py-16 text-center text-base text-foreground-muted">
             Connect an environment to see usage.
+          </Text>
+        ) : isUnreachable ? (
+          <Text className="py-16 text-center text-base text-foreground-muted">
+            No device reported usage. Reconnect a device or pull to scan again.
           </Text>
         ) : (
           <>
@@ -461,12 +465,16 @@ function UsageCoverageNotice(props: {
   readonly isPartial: boolean;
 }) {
   const failed = props.environments.filter((environment) => environment.error !== null);
+  const offline = props.environments.filter(
+    (environment) => environment.offline && environment.summary === null,
+  );
   const stale = props.environments.filter((environment) =>
     props.merged.staleEnvironments.includes(environment.environmentId),
   );
   const duplicateSources = props.merged.duplicateSources;
   if (
     failed.length === 0 &&
+    offline.length === 0 &&
     stale.length === 0 &&
     duplicateSources.length === 0 &&
     !props.isPartial
@@ -484,6 +492,11 @@ function UsageCoverageNotice(props: {
       {failed.map((environment) => (
         <Text key={environment.environmentId} className="text-sm text-foreground-muted">
           {environment.label} could not report usage.
+        </Text>
+      ))}
+      {offline.map((environment) => (
+        <Text key={environment.environmentId} className="text-sm text-foreground-muted">
+          {environment.label} is offline and excluded from totals.
         </Text>
       ))}
       {stale.map((environment) => (

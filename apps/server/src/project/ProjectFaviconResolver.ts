@@ -6,6 +6,7 @@
  *
  * @module ProjectFaviconResolver
  */
+import type { ProjectAccent } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -123,6 +124,9 @@ export class ProjectFaviconResolver extends Context.Service<
       cwd: string,
       faviconPath?: string,
     ) => Effect.Effect<string | null, ProjectFaviconResolutionError>;
+    readonly resolveAccent: (
+      cwd: string,
+    ) => Effect.Effect<ProjectAccent | null, ProjectFaviconResolutionError>;
   }
 >()("t3/project/ProjectFaviconResolver") {}
 
@@ -155,6 +159,18 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const projectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+
+  const normalizeWorkspaceRoot = (cwd: string) =>
+    workspacePaths.normalizeWorkspaceRoot(cwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProjectFaviconResolutionError({
+            operation: "normalize-workspace",
+            workspaceRoot: cwd,
+            cause,
+          }),
+      ),
+    );
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
     const clean = href.replace(/^\//, "");
@@ -209,16 +225,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     faviconPath?: string,
   ): Effect.fn.Return<string | null, ProjectFaviconResolutionError> {
-    const projectCwd = yield* workspacePaths.normalizeWorkspaceRoot(cwd).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProjectFaviconResolutionError({
-            operation: "normalize-workspace",
-            workspaceRoot: cwd,
-            cause,
-          }),
-      ),
-    );
+    const projectCwd = yield* normalizeWorkspaceRoot(cwd);
     // A grouped project's saved path can be absent from one checkout. Use it
     // where it exists and retain automatic discovery for the other checkouts.
     if (faviconPath !== undefined) {
@@ -341,7 +348,24 @@ export const make = Effect.gen(function* () {
     return yield* Cache.get(faviconCache, key);
   });
 
-  return ProjectFaviconResolver.of({ resolvePath });
+  const resolveAccent: ProjectFaviconResolver["Service"]["resolveAccent"] = Effect.fn(
+    "ProjectFaviconResolver.resolveAccent",
+  )(function* (cwd) {
+    const projectCwd = yield* normalizeWorkspaceRoot(cwd);
+    const projectFile = yield* projectFileLoader.load(projectCwd);
+    return Option.isSome(projectFile) ? (projectFile.value.accentColor ?? null) : null;
+  });
+
+  return ProjectFaviconResolver.of({ resolveAccent, resolvePath });
 });
 
 export const layer = Layer.effect(ProjectFaviconResolver, make);
+
+/**
+ * The resolver with its own dependencies satisfied, for the several places
+ * that assemble project payloads and only need the service itself.
+ */
+export const layerLive = layer.pipe(
+  Layer.provide(WorkspacePaths.layer),
+  Layer.provide(T3ProjectFileLoader.layer),
+);

@@ -58,7 +58,11 @@ import { useShallow } from "zustand/react/shallow";
 import { createDeferredStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
-import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
+import {
+  inferReviewCommentFenceLanguage,
+  ReviewCommentContextSchema,
+  type ReviewCommentContext,
+} from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
@@ -648,6 +652,18 @@ interface ComposerDraftStoreState {
     comments: ReadonlyArray<ReviewCommentContext>,
   ) => void;
   removeReviewComment: (threadRef: ComposerThreadTarget, commentId: string) => void;
+  /**
+   * Repoints file review comments after a workspace file rename, so a
+   * submitted draft references the file's current path instead of one that no
+   * longer exists. Only comments made in the files view (sectionId
+   * `file:<path>`) move; diff review comments reference a diff snapshot and
+   * stay put.
+   */
+  renameReviewCommentPath: (
+    threadRef: ComposerThreadTarget,
+    fromPath: string,
+    toPath: string,
+  ) => void;
   clearPersistedAttachments: (threadRef: ComposerThreadTarget) => void;
   syncPersistedAttachments: (
     threadRef: ComposerThreadTarget,
@@ -3782,6 +3798,32 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
             else nextDraftsByThreadKey[threadKey] = nextDraft;
             return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        renameReviewCommentPath: (threadRef, fromPath, toPath) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || fromPath === toPath) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) return state;
+            let changed = false;
+            const reviewComments = current.reviewComments.map((entry) => {
+              if (entry.sectionId !== `file:${fromPath}`) return entry;
+              changed = true;
+              return {
+                ...entry,
+                filePath: toPath,
+                sectionId: `file:${toPath}`,
+                fenceLanguage: inferReviewCommentFenceLanguage(toPath),
+              };
+            });
+            if (!changed) return state;
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: { ...current, reviewComments },
+              },
+            };
           });
         },
         clearPersistedAttachments: (threadRef) => {

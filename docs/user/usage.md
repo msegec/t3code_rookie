@@ -33,3 +33,7 @@ Use **Past 24h** for an hourly chart covering the exact rolling 24-hour period. 
 headline and chart. Refreshing rescans every connected environment and refetches model pricing on
 each of them, so a newly released model that showed $0.00 gets a price without waiting for the daily
 pricing update.
+
+Devices that stay offline are left out of the totals after a short wait, and a coverage notice
+lists which ones are missing. If no device reports at all, the page shows an empty state instead
+of zero totals.

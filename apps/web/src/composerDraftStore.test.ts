@@ -1076,6 +1076,27 @@ describe("composerDraftStore review comments", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 
+  it("repoints file review comments when their file is renamed", () => {
+    const store = useComposerDraftStore.getState();
+    const diffComment = { ...comment, id: "comment-2", sectionId: "diff-section" };
+    store.addReviewComment(threadRef, comment);
+    store.addReviewComment(threadRef, diffComment);
+
+    store.renameReviewCommentPath(threadRef, "src/app.ts", "src/app.md");
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([
+      {
+        ...comment,
+        filePath: "src/app.md",
+        sectionId: "file:src/app.md",
+        fenceLanguage: "md",
+      },
+      // A diff review comment references a diff snapshot, not the workspace
+      // file, and must not move.
+      diffComment,
+    ]);
+  });
+
   it("stores review comments against a new-thread draft id", () => {
     const draftId = DraftId.make("draft-review-comment");
     useComposerDraftStore.getState().addReviewComment(draftId, comment);

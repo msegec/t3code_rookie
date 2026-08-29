@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
 export const SourceControlProviderKind = Schema.Literals([
@@ -66,6 +66,33 @@ export const SourceControlRepositoryLookupInput = Schema.Struct({
 });
 export type SourceControlRepositoryLookupInput = typeof SourceControlRepositoryLookupInput.Type;
 
+/** One repository a provider returned for a search query. Optional fields are provider metadata that not every provider reports. */
+export const SourceControlRepositorySearchResult = Schema.Struct({
+  nameWithOwner: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  sshUrl: TrimmedNonEmptyString,
+  ownedByViewer: Schema.Boolean,
+  description: Schema.optional(Schema.String),
+  starCount: Schema.optional(NonNegativeInt),
+  isFork: Schema.optional(Schema.Boolean),
+  isPrivate: Schema.optional(Schema.Boolean),
+});
+export type SourceControlRepositorySearchResult = typeof SourceControlRepositorySearchResult.Type;
+
+export const SourceControlRepositorySearchInput = Schema.Struct({
+  provider: SourceControlProviderKind,
+  query: TrimmedNonEmptyString,
+  cwd: Schema.optional(TrimmedNonEmptyString),
+});
+export type SourceControlRepositorySearchInput = typeof SourceControlRepositorySearchInput.Type;
+
+/** `supported` is false when the provider cannot search, so callers render that as state instead of erroring on every keystroke. */
+export const SourceControlRepositorySearchOutput = Schema.Struct({
+  supported: Schema.Boolean,
+  results: Schema.Array(SourceControlRepositorySearchResult),
+});
+export type SourceControlRepositorySearchOutput = typeof SourceControlRepositorySearchOutput.Type;
+
 export const SourceControlCloneRepositoryInput = Schema.Struct({
   provider: Schema.optional(SourceControlProviderKind),
   repository: Schema.optional(TrimmedNonEmptyString),
@@ -123,6 +150,9 @@ export const SourceControlProviderAuth = Schema.Struct({
 });
 export type SourceControlProviderAuth = typeof SourceControlProviderAuth.Type;
 
+export const SourceControlProviderFailureReason = Schema.Literals(["repository-not-found"]);
+export type SourceControlProviderFailureReason = typeof SourceControlProviderFailureReason.Type;
+
 const SourceControlDiscoverySharedFields = {
   label: TrimmedNonEmptyString,
   executable: Schema.optional(TrimmedNonEmptyString),
@@ -162,6 +192,7 @@ export class SourceControlProviderError extends Schema.TaggedErrorClass<SourceCo
     repository: Schema.optional(Schema.String),
     reference: Schema.optional(Schema.String),
     detail: Schema.String,
+    reason: Schema.optional(SourceControlProviderFailureReason),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {

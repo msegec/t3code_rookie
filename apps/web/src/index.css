@@ -998,6 +998,47 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* No [data-app-sidebar] ancestor scope: the mobile sheet sidebar renders
+   without that attribute. The gradient never reacts to hover: sweeping the
+   pointer down the list must not pulse each row's tint, so hover feedback
+   stays the flat row wash the Tailwind row classes already apply and the
+   gradient only changes with route state. Selected and active rows retain
+   their flat surface fill beneath a gradient that holds full strength across
+   the right quarter and fades toward that fill on the left. The mix
+   percentages run stronger than a full-card wash would need because the fade
+   halves the perceived tint. */
+[data-project-accent] {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--project-accent-idle, color-mix(in srgb, var(--project-accent-color) 9%, transparent)) 75%
+  );
+}
+
+[data-project-accent][data-project-accent-state="selected"] {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(
+        --project-accent-selected,
+        color-mix(in srgb, var(--project-accent-color) 22%, var(--sidebar-row-selected))
+      )
+      75%
+  );
+}
+
+[data-project-accent][data-project-accent-state="active"] {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(
+        --project-accent-active,
+        color-mix(in srgb, var(--project-accent-color) 22%, var(--sidebar-row-active))
+      )
+      75%
+  );
+}
+
 /* Theme files are expressed in app color roles and mapped to the existing
    semantic surface tokens here. Keep this block after the sidebar-version
    compatibility overrides so both navigation implementations receive the
@@ -1237,6 +1278,12 @@ html[data-theme-id="t3-chat"] {
 html[data-theme-id] .chat-markdown .chat-markdown-chrome-action:hover,
 html[data-theme-id] .chat-markdown .chat-markdown-chrome-action[aria-pressed="true"] {
   color: var(--code-foreground);
+}
+
+/* Themed palettes repaint the code surface with --code-foreground, so the
+   swatch border follows it instead of the app-chrome contrast colour. */
+html[data-theme-id] .chat-markdown [data-code-color-preview]::after {
+  --code-color-preview-border: color-mix(in srgb, var(--code-foreground) 35%, transparent);
 }
 
 html[data-theme-id] [data-app-sidebar] {
@@ -1742,6 +1789,36 @@ code {
 
 .chat-markdown .chat-markdown-shiki .shiki {
   background: transparent !important;
+}
+
+.chat-markdown [data-code-color-preview] {
+  position: relative;
+  white-space: nowrap;
+}
+
+.chat-markdown [data-code-color-preview]::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 50%;
+  inset-inline-start: 100%;
+  width: 0;
+  height: 0;
+  --code-color-preview-border: color-mix(in srgb, var(--contrast-foreground) 35%, transparent);
+  pointer-events: none;
+  transform: translateY(-50%);
+  visibility: hidden;
+  transition:
+    box-shadow 0s,
+    visibility 0s;
+}
+
+.chat-markdown [data-code-color-preview]:hover::after {
+  box-shadow:
+    0.68em 0 0 0.36em var(--code-color-preview),
+    0.68em 0 0 calc(0.36em + 1px) var(--code-color-preview-border);
+  visibility: visible;
+  transition-delay: 150ms;
 }
 
 /* Diagnostics-style tables: row separators only, uppercase headers, and a

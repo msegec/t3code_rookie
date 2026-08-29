@@ -9,7 +9,7 @@ import {
   isWorkspaceImagePreviewPath,
   isWorkspaceVideoPreviewPath,
 } from "@t3tools/shared/filePreview";
-import { VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
+import { getFiletypeFromFileName, VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
 import { Editor } from "@pierre/diffs/editor";
 import { EditProvider, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
@@ -35,8 +35,11 @@ import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hoo
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
+import { applyCodeColorPreviews } from "~/lib/codeColorPreviews";
 import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { isAbsolutePath, resolvePathLinkTarget } from "~/terminal-links";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Toggle } from "~/components/ui/toggle";
@@ -74,6 +77,7 @@ import {
 } from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import {
+  clearProjectFileQueryData,
   confirmProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
@@ -143,6 +147,40 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
       )
     ) !important;
     color: var(--diffs-selection-number-fg) !important;
+  }
+
+  [data-code-color-preview] {
+    position: relative;
+    white-space: nowrap;
+  }
+
+  [data-code-color-preview]::after {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset-block-start: 50%;
+    inset-inline-start: 100%;
+    width: 0;
+    height: 0;
+    --code-color-preview-border: color-mix(
+      in srgb,
+      var(--code-foreground) 35%,
+      transparent
+    );
+    pointer-events: none;
+    transform: translateY(-50%);
+    visibility: hidden;
+    transition:
+      box-shadow 0s,
+      visibility 0s;
+  }
+
+  [data-code-color-preview]:hover::after {
+    box-shadow:
+      0.68em 0 0 0.36em var(--code-color-preview),
+      0.68em 0 0 calc(0.36em + 1px) var(--code-color-preview-border);
+    visibility: visible;
+    transition-delay: 150ms;
   }
 `;
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
@@ -606,6 +644,18 @@ interface EditableFileSurfaceProps {
   wordWrap: boolean;
   onPostRender: FilePostRender;
   onPendingChange: (relativePath: string, pending: boolean) => void;
+  /**
+   * Receives the active editor's save controls: suspend before a rename or
+   * delete, then discard on success or resume on failure.
+   */
+  discardSavesRef?: { current: FileSaveControls | null } | undefined;
+}
+
+interface FileSaveControls {
+  suspend: () => void;
+  resume: () => void;
+  discard: () => void;
+  reset: () => void;
 }
 
 interface FileSelectionOverride {
@@ -618,9 +668,10 @@ function useFileSaveCoordinator({
   cwd,
   relativePath,
   onPendingChange,
+  discardSavesRef,
 }: Pick<
   EditableFileSurfaceProps,
-  "environmentId" | "cwd" | "relativePath" | "onPendingChange"
+  "environmentId" | "cwd" | "relativePath" | "onPendingChange" | "discardSavesRef"
 >): FileSaveCoordinator {
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
   const coordinator = useMemo(
@@ -641,6 +692,18 @@ function useFileSaveCoordinator({
   );
 
   useEffect(() => () => coordinator.dispose(), [coordinator]);
+  useEffect(() => {
+    if (!discardSavesRef) return;
+    discardSavesRef.current = {
+      suspend: () => coordinator.suspend(),
+      resume: () => coordinator.resume(),
+      discard: () => coordinator.discard(),
+      reset: () => coordinator.reset(),
+    };
+    return () => {
+      discardSavesRef.current = null;
+    };
+  }, [coordinator, discardSavesRef]);
   return coordinator;
 }
 
@@ -655,6 +718,7 @@ function EditableFileSurface({
   wordWrap,
   onPostRender,
   onPendingChange,
+  discardSavesRef,
 }: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
@@ -675,6 +739,7 @@ function EditableFileSurface({
     cwd,
     relativePath,
     onPendingChange,
+    discardSavesRef,
   });
   const editor = useMemo(
     () =>
@@ -922,6 +987,7 @@ function RenderedMarkdownSurface({
   threadRef,
   readOnly,
   onPendingChange,
+  discardSavesRef,
 }: Omit<
   EditableFileSurfaceProps,
   | "resolvedTheme"
@@ -939,6 +1005,7 @@ function RenderedMarkdownSurface({
     cwd,
     relativePath,
     onPendingChange,
+    discardSavesRef,
   });
 
   return (
@@ -1048,6 +1115,21 @@ export default function FilePreviewPanel({
     null,
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
+  const discardActiveFileSavesRef = useRef<FileSaveControls | null>(null);
+  // The delete and rename callbacks below can fire after a thread switch, when
+  // discardActiveFileSavesRef already points at the new thread's editor. This
+  // ref tracks what that editor shows now, so a stale callback cannot discard
+  // an unrelated file's pending edits.
+  const activeEditorFileRef = useRef({ environmentId, cwd, relativePath });
+  useEffect(() => {
+    activeEditorFileRef.current = { environmentId, cwd, relativePath };
+  });
+  const editorShowsFile = (path: string) => {
+    const active = activeEditorFileRef.current;
+    return (
+      active.environmentId === environmentId && active.cwd === cwd && active.relativePath === path
+    );
+  };
   const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
   // A reveal still wins over the preference: the line only exists in the source.
   const revealHandled =
@@ -1068,7 +1150,7 @@ export default function FilePreviewPanel({
     isBrowserPreviewFile(relativePath);
   const absolutePath =
     relativePath && attachment === undefined ? resolvePathLinkTarget(relativePath, cwd) : null;
-  const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
+  const onFileLinePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
   useWorkspaceMutationRefresh({
     enabled:
       attachment === undefined &&
@@ -1080,6 +1162,21 @@ export default function FilePreviewPanel({
     refresh: file.refresh,
     resourceKey: `file:${environmentId}:${cwd}:${relativePath ?? ""}`,
   });
+  // Only the read-only surface gets colour swatches. On the contentEditable
+  // surface the wrapping rewrites tokens under the caret (Safari retargets
+  // in-shadow selections to the host) and a wrapped literal never re-checks
+  // its colour while edited in place.
+  const onFilePostRender = useCallback<FilePostRender>(
+    (fileContainer, instance, phase) => {
+      onFileLinePostRender(fileContainer, instance, phase);
+      if (phase === "unmount" || relativePath === null) return;
+      applyCodeColorPreviews(
+        fileContainer.shadowRoot ?? fileContainer,
+        getFiletypeFromFileName(relativePath),
+      );
+    },
+    [onFileLinePostRender, relativePath],
+  );
 
   useEffect(() => {
     const currentCrumb = breadcrumbRef.current?.querySelector<HTMLElement>(
@@ -1303,6 +1400,7 @@ export default function FilePreviewPanel({
                 contents={file.data.contents}
                 readOnly={isHostFile}
                 onPendingChange={onPendingChange}
+                discardSavesRef={discardActiveFileSavesRef}
               />
             ) : file.data.truncated || isHostFile ? (
               <DiffWorkerPoolProvider>
@@ -1345,8 +1443,9 @@ export default function FilePreviewPanel({
                   resolvedTheme={resolvedTheme}
                   revealRequestId={revealRequestId}
                   wordWrap={wordWrap}
-                  onPostRender={onFilePostRender}
+                  onPostRender={onFileLinePostRender}
                   onPendingChange={onPendingChange}
+                  discardSavesRef={discardActiveFileSavesRef}
                 />
               </DiffWorkerPoolProvider>
             )
@@ -1373,6 +1472,80 @@ export default function FilePreviewPanel({
               {...(relativePath && !isMedia && !isPdf
                 ? { onRefreshSelectedFile: file.refresh }
                 : {})}
+              onEntryMutationStart={(path) => {
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.suspend();
+              }}
+              onEntryUploaded={(path) => {
+                // An overwrite upload replaced the bytes on disk; drop the
+                // stale optimistic overlay and pending edits so a later save
+                // cannot write the pre-upload snapshot over the upload.
+                clearProjectFileQueryData(environmentId, cwd, path);
+                if (!editorShowsFile(path)) return;
+                if (isImage) {
+                  // The image preview renders a signed asset URL whose query
+                  // stays fresh for minutes; re-mint it so the overwritten
+                  // bytes replace the stale bitmap immediately.
+                  if (absolutePath) {
+                    appAtomRegistry.refresh(
+                      assetEnvironment.createUrl({
+                        environmentId,
+                        input: {
+                          resource: {
+                            _tag: "workspace-file",
+                            threadId: threadRef.threadId,
+                            path: absolutePath,
+                          },
+                        },
+                      }),
+                    );
+                  }
+                  return;
+                }
+                discardActiveFileSavesRef.current?.reset();
+                file.refresh();
+              }}
+              onEntryMutationFailed={(path) => {
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.resume();
+              }}
+              onEntryDeleted={(path) => {
+                if (editorShowsFile(path)) discardActiveFileSavesRef.current?.discard();
+                clearProjectFileQueryData(environmentId, cwd, path);
+                useRightPanelStore.getState().closeSurface(threadRef, `file:${path}`);
+              }}
+              onEntryRenamed={(from, to) => {
+                if (editorShowsFile(from)) discardActiveFileSavesRef.current?.discard();
+                clearProjectFileQueryData(environmentId, cwd, from);
+                // Review comments drafted on the old path must follow the
+                // file, or the submitted draft references a path that no
+                // longer exists.
+                useComposerDraftStore
+                  .getState()
+                  .renameReviewCommentPath(composerDraftTarget, from, to);
+                const store = useRightPanelStore.getState();
+                const panel = selectThreadRightPanelState(store.byThreadKey, threadRef);
+                const fromSurface = panel.surfaces.find((surface) => surface.id === `file:${from}`);
+                const previousActiveId = panel.activeSurfaceId;
+                const wasPanelOpen = panel.isOpen;
+                store.closeSurface(threadRef, `file:${from}`);
+                if (!fromSurface) return;
+                // The surface a rename replaces keeps its scroll target; a
+                // tab opened at a line reopens at that line, not at the top.
+                const revealLine =
+                  fromSurface.kind === "file" && fromSurface.revealLine !== null
+                    ? fromSurface.revealLine
+                    : undefined;
+                store.openFile(threadRef, to, revealLine);
+                // Renaming a background tab must not steal focus from the
+                // file the user is looking at.
+                if (previousActiveId !== null && previousActiveId !== `file:${from}`) {
+                  store.activateSurface(threadRef, previousActiveId);
+                }
+                // The rename RPC can finish after the user closed the panel;
+                // swapping the surface must not override that close.
+                if (!wasPanelOpen) {
+                  store.close(threadRef);
+                }
+              }}
             />
           </aside>
         ) : null}

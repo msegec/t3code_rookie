@@ -300,3 +300,213 @@ export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteF
     } as any);
   }
 }
+
+export const PROJECT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+export const PROJECT_UPLOAD_URL_TTL_MS = 10 * 60_000;
+
+export const ProjectCreateUploadUrlInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROJECT_UPLOAD_MAX_BYTES)),
+  overwrite: Schema.optional(Schema.Boolean),
+});
+export type ProjectCreateUploadUrlInput = typeof ProjectCreateUploadUrlInput.Type;
+
+export const ProjectCreateUploadUrlResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+  // The signed token base64url-encodes the workspace cwd, so the bound must
+  // clear a PATH_MAX (4096) cwd plus the longest relative path after the
+  // 4/3 encoding overhead.
+  relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(8192)),
+  expiresAt: Schema.Number,
+});
+export type ProjectCreateUploadUrlResult = typeof ProjectCreateUploadUrlResult.Type;
+
+export class ProjectUploadTargetExistsError extends Schema.TaggedErrorClass<ProjectUploadTargetExistsError>()(
+  "ProjectUploadTargetExistsError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+  },
+) {
+  override get message(): string {
+    return `A file already exists at '${this.relativePath}' in '${this.cwd}'.`;
+  }
+}
+
+export const isProjectUploadTargetExistsError = Schema.is(ProjectUploadTargetExistsError);
+
+export const ProjectCreateUploadUrlStage = Schema.Literals([
+  "signing-key",
+  "resolve-path",
+  "target-not-file",
+  "target-check",
+]);
+export type ProjectCreateUploadUrlStage = typeof ProjectCreateUploadUrlStage.Type;
+
+type ProjectCreateUploadUrlFailureContext = {
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly stage: ProjectCreateUploadUrlStage;
+  readonly cause?: unknown;
+};
+
+function projectCreateUploadUrlStageMessage(props: ProjectCreateUploadUrlFailureContext): string {
+  switch (props.stage) {
+    case "signing-key":
+      return "Failed to load the upload signing key.";
+    case "resolve-path":
+      return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "target-not-file":
+      return `'${props.relativePath}' already exists as a folder; uploads can only replace files.`;
+    case "target-check":
+      return `Failed to check for an existing file at '${props.relativePath}' in '${props.cwd}'.`;
+  }
+}
+
+export class ProjectCreateUploadUrlError extends Schema.TaggedErrorClass<ProjectCreateUploadUrlError>()(
+  "ProjectCreateUploadUrlError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+    stage: ProjectCreateUploadUrlStage,
+    message: TrimmedNonEmptyString,
+    // Validation stages fail without an underlying error, so a cause only
+    // accompanies real I/O failures.
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ProjectCreateUploadUrlFailureContext) {
+    super({ ...props, message: projectCreateUploadUrlStageMessage(props) } as any);
+  }
+}
+
+export const ProjectRenameEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  newRelativePath: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH),
+  ),
+});
+export type ProjectRenameEntryInput = typeof ProjectRenameEntryInput.Type;
+
+export const ProjectRenameEntryResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+});
+export type ProjectRenameEntryResult = typeof ProjectRenameEntryResult.Type;
+
+export class ProjectRenameEntryTargetExistsError extends Schema.TaggedErrorClass<ProjectRenameEntryTargetExistsError>()(
+  "ProjectRenameEntryTargetExistsError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+  },
+) {
+  override get message(): string {
+    return `A file already exists at '${this.relativePath}' in '${this.cwd}'.`;
+  }
+}
+
+export const isProjectRenameEntryTargetExistsError = Schema.is(ProjectRenameEntryTargetExistsError);
+
+export const ProjectRenameEntryStage = Schema.Literals([
+  "resolve-path",
+  "escapes-root",
+  "not-a-file",
+  "cross-directory",
+  "rename",
+]);
+export type ProjectRenameEntryStage = typeof ProjectRenameEntryStage.Type;
+
+type ProjectRenameEntryFailureContext = {
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly stage: ProjectRenameEntryStage;
+  readonly cause?: unknown;
+};
+
+function projectRenameEntryStageMessage(props: ProjectRenameEntryFailureContext): string {
+  switch (props.stage) {
+    case "resolve-path":
+      return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "escapes-root":
+      return `'${props.relativePath}' resolves outside the project.`;
+    case "not-a-file":
+      return `'${props.relativePath}' is not a file.`;
+    case "cross-directory":
+      return `Cannot rename '${props.relativePath}' into a different directory.`;
+    case "rename":
+      return `Failed to rename '${props.relativePath}' in '${props.cwd}'.`;
+  }
+}
+
+export class ProjectRenameEntryError extends Schema.TaggedErrorClass<ProjectRenameEntryError>()(
+  "ProjectRenameEntryError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+    stage: ProjectRenameEntryStage,
+    message: TrimmedNonEmptyString,
+    // Validation stages fail without an underlying error, so a cause only
+    // accompanies real I/O failures.
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ProjectRenameEntryFailureContext) {
+    super({ ...props, message: projectRenameEntryStageMessage(props) } as any);
+  }
+}
+
+export const ProjectDeleteEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+});
+export type ProjectDeleteEntryInput = typeof ProjectDeleteEntryInput.Type;
+
+export const ProjectDeleteEntryStage = Schema.Literals([
+  "resolve-path",
+  "escapes-root",
+  "not-a-file",
+  "remove",
+]);
+export type ProjectDeleteEntryStage = typeof ProjectDeleteEntryStage.Type;
+
+type ProjectDeleteEntryFailureContext = {
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly stage: ProjectDeleteEntryStage;
+  readonly cause?: unknown;
+};
+
+function projectDeleteEntryStageMessage(props: ProjectDeleteEntryFailureContext): string {
+  switch (props.stage) {
+    case "resolve-path":
+      return `Failed to resolve '${props.relativePath}' within '${props.cwd}'.`;
+    case "escapes-root":
+      return `'${props.relativePath}' resolves outside the project.`;
+    case "not-a-file":
+      return `'${props.relativePath}' is not a file; only files can be deleted from the files view.`;
+    case "remove":
+      return `Failed to delete '${props.relativePath}' in '${props.cwd}'.`;
+  }
+}
+
+export class ProjectDeleteEntryError extends Schema.TaggedErrorClass<ProjectDeleteEntryError>()(
+  "ProjectDeleteEntryError",
+  {
+    cwd: TrimmedNonEmptyString,
+    relativePath: TrimmedNonEmptyString,
+    stage: ProjectDeleteEntryStage,
+    message: TrimmedNonEmptyString,
+    // Validation stages fail without an underlying error, so a cause only
+    // accompanies real I/O failures.
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ProjectDeleteEntryFailureContext) {
+    super({ ...props, message: projectDeleteEntryStageMessage(props) } as any);
+  }
+}

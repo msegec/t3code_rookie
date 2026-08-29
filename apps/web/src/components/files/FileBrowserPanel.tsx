@@ -2,11 +2,22 @@ import type {
   ContextMenuItem as TreeContextMenuItem,
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
-import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
+import type { ContextMenuItem, EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
+import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { ChevronsDownUpIcon, ChevronsUpDownIcon, RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import * as Cause from "effect/Cause";
+import {
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
+  RotateCcw,
+  RotateCw,
+  Upload,
+  XIcon,
+} from "lucide-react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -16,15 +27,29 @@ import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
+import { formatAttachmentUploadProgress } from "~/lib/attachmentUploadState";
+import {
+  cancelWorkspaceUpload,
+  dismissWorkspaceUpload,
+  retryWorkspaceUpload,
+  startWorkspaceUploads,
+  useWorkspaceUploadStore,
+  type WorkspaceUploadState,
+} from "~/lib/workspaceUploadQueue";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { projectEnvironment } from "~/state/projects";
 
+import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
+import { WorkspaceFileDropOverlay } from "../chat/WorkspaceFileDropOverlay";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
+import { RenameEntryDialog } from "./RenameEntryDialog";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -37,6 +62,28 @@ interface FileBrowserPanelProps {
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
   workspaceMutationId: string | null;
+  /**
+   * A rename, delete, or confirmed overwrite upload is about to run. Saves
+   * and mutations share one serial per-project command queue, so a save
+   * enqueued during the mutation would land after it and recreate the file,
+   * and uploads bypass the queue entirely; pending saves for the path must
+   * be held before the mutation runs.
+   */
+  onEntryMutationStart?: (relativePath: string) => void;
+  /**
+   * The mutation failed, or the upload settled, and the file is still in
+   * place; held saves may run again.
+   */
+  onEntryMutationFailed?: (relativePath: string) => void;
+  /** A rename succeeded; open surfaces for the old path should follow the file. */
+  onEntryRenamed?: (relativePath: string, newRelativePath: string) => void;
+  /** A delete succeeded; open surfaces for the path should close. */
+  onEntryDeleted?: (relativePath: string) => void;
+  /**
+   * An upload landed at the path, possibly replacing an open file; stale
+   * cached contents and pending edits for it should be dropped.
+   */
+  onEntryUploaded?: (relativePath: string) => void;
 }
 
 function treePath(entry: ProjectEntry): string {
@@ -61,6 +108,97 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
       </TooltipTrigger>
       <TooltipPopup>{props.isPending ? "Refreshing…" : "Refresh files"}</TooltipPopup>
     </Tooltip>
+  );
+}
+
+function UploadFilesButton(props: { onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Upload files"
+            onClick={props.onClick}
+          />
+        }
+      >
+        <Upload />
+      </TooltipTrigger>
+      <TooltipPopup>Upload files</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function UploadRowButton(props: { label: string; icon: ReactNode; onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost-muted"
+            size="icon-micro"
+            aria-label={props.label}
+            onClick={props.onClick}
+          />
+        }
+      >
+        {props.icon}
+      </TooltipTrigger>
+      <TooltipPopup>{props.label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function UploadRow(props: { id: string; upload: WorkspaceUploadState }) {
+  const { id, upload } = props;
+  return (
+    <div className="flex h-7 items-center gap-2 px-2 text-xs">
+      <Tooltip>
+        <TooltipTrigger
+          render={<span className="min-w-0 flex-1 truncate text-foreground">{upload.name}</span>}
+        />
+        <TooltipPopup>{upload.name}</TooltipPopup>
+      </Tooltip>
+      {upload.status === "uploading" ? (
+        <>
+          <span className="shrink-0 tabular-nums text-muted-foreground">
+            {formatAttachmentUploadProgress(upload.progress)}
+          </span>
+          <UploadRowButton
+            label={`Cancel upload of ${upload.name}`}
+            icon={<XIcon />}
+            onClick={() => cancelWorkspaceUpload(id)}
+          />
+        </>
+      ) : (
+        <>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="min-w-0 max-w-32 shrink truncate text-destructive">
+                  {upload.reason}
+                </span>
+              }
+            />
+            <TooltipPopup>{upload.reason}</TooltipPopup>
+          </Tooltip>
+          <UploadRowButton
+            label={`Retry upload of ${upload.name}`}
+            icon={<RotateCcw />}
+            onClick={() => retryWorkspaceUpload(id)}
+          />
+          <UploadRowButton
+            label={`Dismiss upload of ${upload.name}`}
+            icon={<XIcon />}
+            onClick={() => dismissWorkspaceUpload(id)}
+          />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -101,16 +239,105 @@ export default function FileBrowserPanel({
   onOpenFile,
   onRefreshSelectedFile,
   workspaceMutationId,
+  onEntryMutationStart,
+  onEntryMutationFailed,
+  onEntryRenamed,
+  onEntryDeleted,
+  onEntryUploaded,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleAddFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return;
+      startWorkspaceUploads({
+        environmentId,
+        cwd,
+        files,
+        // An overwrite upload replaces the open file's bytes outside the
+        // serial save lane, so pending saves hold from conflict discovery,
+        // before the confirm dialog opens, until the job settles. A successful
+        // upload re-arms saves through onEntryUploaded's reset, which makes
+        // the settle release a no-op.
+        onOverwriteStart: (relativePath) => {
+          onEntryMutationStart?.(relativePath);
+        },
+        onSettled: (relativePath) => {
+          onEntryMutationFailed?.(relativePath);
+        },
+        onUploaded: (relativePath) => {
+          entriesQuery.refresh();
+          onEntryUploaded?.(relativePath);
+        },
+      });
+    },
+    [
+      cwd,
+      entriesQuery,
+      environmentId,
+      onEntryMutationFailed,
+      onEntryMutationStart,
+      onEntryUploaded,
+    ],
+  );
+  // The shared drop handlers manage drag-active state, but their onDrop reads
+  // event.dataTransfer.files directly, which includes an unreadable stand-in
+  // File for a dropped directory. Filter with dataTransfer.items instead so
+  // directories never reach the upload queue.
+  const fileDropHandlers = useMemo(
+    () => makeWorkspaceFileDropHandlers({ setDragActive, addFiles: handleAddFiles }),
+    [handleAddFiles],
+  );
+  const handleDrop = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      setDragActive(false);
+      const items = Array.from(event.dataTransfer.items);
+      const supportsEntries = items.length > 0 && typeof items[0]?.webkitGetAsEntry === "function";
+      const files = supportsEntries
+        ? items.flatMap((item) => {
+            if (item.kind !== "file") return [];
+            const entry = item.webkitGetAsEntry();
+            if (entry !== null && !entry.isFile) return [];
+            const file = item.getAsFile();
+            return file ? [file] : [];
+          })
+        : Array.from(event.dataTransfer.files);
+      handleAddFiles(files);
+    },
+    [handleAddFiles],
+  );
+  // Flattened [id, state, id, state, ...] so the shallow compare sees stable
+  // string ids and per-upload state refs; uploads for other panels never
+  // re-render this one.
+  const uploadEntries = useWorkspaceUploadStore(
+    useShallow((state) =>
+      Object.entries(state.uploadsById)
+        .filter(([, upload]) => upload.environmentId === environmentId && upload.cwd === cwd)
+        .flat(),
+    ),
+  );
+  const uploads = useMemo(() => {
+    const pairs: Array<[string, WorkspaceUploadState]> = [];
+    for (let index = 0; index < uploadEntries.length; index += 2) {
+      pairs.push([
+        uploadEntries[index] as string,
+        uploadEntries[index + 1] as WorkspaceUploadState,
+      ]);
+    }
+    return pairs;
+  }, [uploadEntries]);
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
     [entries],
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
   const directoryPaths = useMemo(
     () => entries.filter((entry) => entry.kind === "directory").map(treePath),
@@ -133,6 +360,34 @@ export default function FileBrowserPanel({
     return () => document.removeEventListener("contextmenu", capturePointer, true);
   }, []);
 
+  const confirmAndDeleteEntry = async (relativePath: string) => {
+    const name = relativePath.split("/").at(-1) ?? relativePath;
+    const confirmed = await readLocalApi()?.dialogs.confirm(
+      `Delete ${name}?\nThis permanently deletes the file from the project.`,
+      { variant: "destructive" },
+    );
+    if (confirmed !== true) return;
+    onEntryMutationStart?.(relativePath);
+    const result = await runAtomCommand(
+      appAtomRegistry,
+      projectEnvironment.deleteEntry,
+      { environmentId, input: { cwd, relativePath } },
+      { reportFailure: false },
+    );
+    if (result._tag === "Success") {
+      entriesQuery.refresh();
+      onEntryDeleted?.(relativePath);
+      return;
+    }
+    onEntryMutationFailed?.(relativePath);
+    const failure = Cause.squash(result.cause);
+    toastManager.add({
+      type: "error",
+      title: "Failed to delete file",
+      description: failure instanceof Error ? failure.message : "An error occurred.",
+    });
+  };
+
   const showEntryContextMenu = async (
     item: TreeContextMenuItem,
     context: TreeContextMenuOpenContext,
@@ -150,14 +405,19 @@ export default function FileBrowserPanel({
     const position = pointerIsFresh
       ? { x: pointer.x, y: pointer.y }
       : { x: anchorRect.left, y: anchorRect.bottom };
-    try {
-      const clicked = await api.contextMenu.show(
-        [
-          { id: "copy-mention", label: "Copy mention" },
-          { id: "add-to-chat", label: "Add to chat" },
-        ],
-        position,
+    const menuItems: ContextMenuItem<"copy-mention" | "add-to-chat" | "rename" | "delete">[] = [
+      { id: "copy-mention", label: "Copy mention" },
+      { id: "add-to-chat", label: "Add to chat" },
+    ];
+    // Rename and delete operate on files only in v1; directories stay read-only.
+    if (entryKindsRef.current.get(relativePath) === "file") {
+      menuItems.push(
+        { id: "rename", label: "Rename", separatorBefore: true },
+        { id: "delete", label: "Delete", destructive: true },
       );
+    }
+    try {
+      const clicked = await api.contextMenu.show(menuItems, position);
       if (clicked === "copy-mention") {
         try {
           await writeTextToClipboard(mention);
@@ -189,6 +449,14 @@ export default function FileBrowserPanel({
             description: "The chat isn't ready to accept input right now.",
           });
         }
+        return;
+      }
+      if (clicked === "rename") {
+        setRenameTarget(relativePath);
+        return;
+      }
+      if (clicked === "delete") {
+        await confirmAndDeleteEntry(relativePath);
       }
     } finally {
       context.close();
@@ -369,14 +637,26 @@ export default function FileBrowserPanel({
   return (
     <div
       ref={panelRef}
-      className="flex min-h-0 flex-1 flex-col bg-background"
+      className="relative flex min-h-0 flex-1 flex-col bg-background"
       data-file-browser-panel={`${environmentId}:${cwd}`}
+      onDragEnter={fileDropHandlers.onDragEnter}
+      onDragOver={fileDropHandlers.onDragOver}
+      onDragLeave={fileDropHandlers.onDragLeave}
+      onDrop={handleDrop}
     >
+      {dragActive ? (
+        <WorkspaceFileDropOverlay
+          icon={<Upload className="size-4 text-primary" aria-hidden="true" />}
+          label="Drop files to upload"
+          data-file-browser-drop-overlay="true"
+        />
+      ) : null}
       <div
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
+        <UploadFilesButton onClick={() => fileInputRef.current?.click()} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -410,6 +690,16 @@ export default function FileBrowserPanel({
             </TooltipPopup>
           </Tooltip>
         ) : null}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          onChange={(event) => {
+            handleAddFiles(Array.from(event.target.files ?? []));
+            event.target.value = "";
+          }}
+        />
       </div>
       {entriesQuery.error && entriesQuery.data === null ? (
         <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
@@ -421,6 +711,31 @@ export default function FileBrowserPanel({
           style={pierreTreeStyle(resolvedTheme)}
         />
       )}
+      {uploads.length > 0 ? (
+        <div
+          className="flex max-h-40 shrink-0 flex-col divide-y divide-border/60 overflow-y-auto border-t border-border/60"
+          data-file-browser-uploads
+        >
+          {uploads.map(([id, upload]) => (
+            <UploadRow key={id} id={id} upload={upload} />
+          ))}
+        </div>
+      ) : null}
+      {renameTarget !== null ? (
+        <RenameEntryDialog
+          key={renameTarget}
+          environmentId={environmentId}
+          cwd={cwd}
+          relativePath={renameTarget}
+          onClose={() => setRenameTarget(null)}
+          onRenameStart={() => onEntryMutationStart?.(renameTarget)}
+          onRenameFailed={() => onEntryMutationFailed?.(renameTarget)}
+          onRenamed={(newRelativePath) => {
+            entriesQuery.refresh();
+            onEntryRenamed?.(renameTarget, newRelativePath);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

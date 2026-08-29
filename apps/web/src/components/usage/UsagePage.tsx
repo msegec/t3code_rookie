@@ -67,7 +67,7 @@ export function UsagePage() {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, isUnreachable, refresh } = useUsage(window);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
@@ -270,6 +270,17 @@ export function UsagePage() {
               <>
                 {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
                 <UsageSkeleton />
+              </>
+            ) : isUnreachable ? (
+              <>
+                <UsageCoverageNotice
+                  environments={environments}
+                  duplicateSources={merged.duplicateSources}
+                  staleEnvironments={merged.staleEnvironments}
+                />
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  No device reported usage. Reconnect a device or refresh to scan again.
+                </p>
               </>
             ) : (
               <>
@@ -559,10 +570,18 @@ function UsageCoverageNotice({
   readonly staleEnvironments: readonly string[];
 }) {
   const failed = environments.filter((environment) => environment.error !== null);
+  const offline = environments.filter(
+    (environment) => environment.offline && environment.summary === null,
+  );
   const stale = environments.filter((environment) =>
     staleEnvironments.includes(environment.environmentId),
   );
-  if (failed.length === 0 && stale.length === 0 && duplicateSources.length === 0) {
+  if (
+    failed.length === 0 &&
+    offline.length === 0 &&
+    stale.length === 0 &&
+    duplicateSources.length === 0
+  ) {
     return null;
   }
 
@@ -570,6 +589,11 @@ function UsageCoverageNotice({
     <div className="flex flex-col gap-1 border border-border px-3 py-2 text-xs text-muted-foreground">
       {failed.map((environment) => (
         <span key={environment.label}>{environment.label} could not report usage.</span>
+      ))}
+      {offline.map((environment) => (
+        <span key={environment.label}>
+          {environment.label} is offline and excluded from totals.
+        </span>
       ))}
       {stale.map((environment) => (
         <span key={environment.label}>
@@ -597,7 +621,8 @@ function UsageDeviceStrip({
   readonly environments: readonly EnvironmentUsageStatus[];
 }) {
   const scanning = environments.filter(
-    (environment) => environment.summary === null && environment.error === null,
+    (environment) =>
+      environment.summary === null && environment.error === null && !environment.offline,
   );
   return (
     <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border border-border px-3 py-2 text-xs">
@@ -621,6 +646,17 @@ function UsageDeviceStrip({
             >
               <XIcon className="size-3" aria-hidden />
               {environment.label}
+            </span>
+          );
+        }
+        if (environment.offline) {
+          return (
+            <span
+              key={environment.environmentId}
+              className="flex items-center gap-1 text-muted-foreground"
+            >
+              <XIcon className="size-3" aria-hidden />
+              {environment.label} · offline
             </span>
           );
         }

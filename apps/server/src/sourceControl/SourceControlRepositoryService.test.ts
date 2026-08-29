@@ -36,6 +36,7 @@ function makeProvider(
     getChangeRequest: () => unsupported("getChangeRequest"),
     createChangeRequest: () => unsupported("createChangeRequest"),
     getRepositoryCloneUrls: () => Effect.succeed(CLONE_URLS),
+    searchRepositories: () => unsupported("searchRepositories"),
     createRepository: () => Effect.succeed(CLONE_URLS),
     getDefaultBranch: () => Effect.succeed(null),
     checkoutChangeRequest: () => unsupported("checkoutChangeRequest"),
@@ -117,6 +118,33 @@ it.effect("looks up repositories through the requested provider without search",
   }).pipe(Effect.provide(makeLayer({ provider })));
 });
 
+it.effect("searches repositories through the requested provider", () => {
+  const calls: Array<{ cwd: string; query: string }> = [];
+  const searchResult = {
+    supported: true,
+    results: [{ ...CLONE_URLS, ownedByViewer: true }],
+  };
+  const provider = makeProvider({
+    searchRepositories: (input) =>
+      Effect.sync(() => {
+        calls.push({ cwd: input.cwd, query: input.query });
+        return searchResult;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.searchRepositories({
+      provider: "github",
+      query: "t3code",
+      cwd: "/workspace",
+    });
+
+    assert.deepStrictEqual(result, searchResult);
+    assert.deepStrictEqual(calls, [{ cwd: "/workspace", query: "t3code" }]);
+  }).pipe(Effect.provide(makeLayer({ provider })));
+});
+
 it.effect("preserves provider failures without deriving the repository message from them", () => {
   const providerCause = new SourceControlProviderError({
     provider: "github",
@@ -145,6 +173,41 @@ it.effect("preserves provider failures without deriving the repository message f
     assert.strictEqual(
       error.message,
       "Source control repository operation lookupRepository failed for github: The source control operation could not be completed.",
+    );
+    assert.strictEqual(error.cause, providerCause);
+  }).pipe(Effect.provide(makeLayer({ provider })));
+});
+
+it.effect("surfaces a safe detail for a structured repository miss", () => {
+  const providerCause = new SourceControlProviderError({
+    provider: "github",
+    operation: "getRepositoryCloneUrls",
+    cwd: "/workspace",
+    repository: "octocat/nope",
+    detail: "gh stderr that stays server-side",
+    reason: "repository-not-found",
+  });
+  const provider = makeProvider({
+    getRepositoryCloneUrls: () => Effect.fail(providerCause),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.lookupRepository({
+        provider: "github",
+        repository: "octocat/nope",
+        cwd: "/workspace",
+      }),
+    );
+
+    assert.strictEqual(
+      error.detail,
+      "Repository not found. Check the owner/repo path and try again.",
+    );
+    assert.strictEqual(
+      error.message,
+      "Source control repository operation lookupRepository failed for github: Repository not found. Check the owner/repo path and try again.",
     );
     assert.strictEqual(error.cause, providerCause);
   }).pipe(Effect.provide(makeLayer({ provider })));
