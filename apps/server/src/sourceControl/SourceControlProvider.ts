@@ -7,6 +7,7 @@ import type {
   SourceControlProviderInfo,
   SourceControlProviderKind,
   SourceControlRepositoryCloneUrls,
+  SourceControlRepositorySearchOutput,
   SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
 
@@ -111,6 +112,15 @@ export class SourceControlProvider extends Context.Service<
       readonly context?: SourceControlProviderContext;
       readonly repository: string;
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, SourceControlProviderError>;
+    /**
+     * Answers `supported: false` rather than failing when the provider cannot search, so a
+     * search-as-you-type caller renders that as state instead of an error on every keystroke.
+     */
+    readonly searchRepositories: (input: {
+      readonly cwd: string;
+      readonly context?: SourceControlProviderContext;
+      readonly query: string;
+    }) => Effect.Effect<SourceControlRepositorySearchOutput, SourceControlProviderError>;
     readonly createRepository: (input: {
       readonly cwd: string;
       readonly repository: string;
