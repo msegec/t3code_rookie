@@ -22,7 +22,11 @@ import * as Persistence from "../platform/persistence.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
-import { createSourceControlEnvironmentAtoms } from "./sourceControl.ts";
+import {
+  createSourceControlEnvironmentAtoms,
+  resolveRepositorySearchAnswer,
+  type RepositorySearchAnswer,
+} from "./sourceControl.ts";
 import { vcsRefsCacheStateAtom } from "./vcsRefInvalidation.ts";
 
 const TARGET = new PrimaryConnectionTarget({
@@ -56,6 +60,121 @@ function session(client: WsRpcProtocolClient): RpcSession {
     closed: Effect.never,
   };
 }
+
+describe("resolveRepositorySearchAnswer", () => {
+  const environmentId = EnvironmentId.make("environment-1");
+  const pending = { canSearch: true, data: null, error: null } as const;
+
+  it("defaults to supported with no error before any answer lands", () => {
+    expect(
+      resolveRepositorySearchAnswer({
+        memory: new Map(),
+        environmentId,
+        provider: "github",
+        ...pending,
+      }),
+    ).toEqual({ supported: true, error: null });
+  });
+
+  it("keeps an unsupported provider unsupported across a new keystroke's pending query", () => {
+    const memory = new Map<string, RepositorySearchAnswer>();
+    expect(
+      resolveRepositorySearchAnswer({
+        memory,
+        environmentId,
+        provider: "gitlab",
+        canSearch: true,
+        data: { supported: false },
+        error: null,
+      }),
+    ).toEqual({ supported: false, error: null });
+    expect(
+      resolveRepositorySearchAnswer({ memory, environmentId, provider: "gitlab", ...pending }),
+    ).toEqual({ supported: false, error: null });
+  });
+
+  it("scopes the memory to the environment and provider", () => {
+    const memory = new Map<string, RepositorySearchAnswer>();
+    resolveRepositorySearchAnswer({
+      memory,
+      environmentId,
+      provider: "gitlab",
+      canSearch: true,
+      data: { supported: false },
+      error: null,
+    });
+    expect(
+      resolveRepositorySearchAnswer({ memory, environmentId, provider: "github", ...pending }),
+    ).toEqual({ supported: true, error: null });
+    expect(
+      resolveRepositorySearchAnswer({
+        memory,
+        environmentId: EnvironmentId.make("environment-2"),
+        provider: "gitlab",
+        ...pending,
+      }),
+    ).toEqual({ supported: true, error: null });
+  });
+
+  it("carries a failure across the next pending query until a settled success replaces it", () => {
+    const memory = new Map<string, RepositorySearchAnswer>();
+    resolveRepositorySearchAnswer({
+      memory,
+      environmentId,
+      provider: "github",
+      canSearch: true,
+      data: null,
+      error: "gh exited 1",
+    });
+    expect(
+      resolveRepositorySearchAnswer({ memory, environmentId, provider: "github", ...pending }),
+    ).toEqual({ supported: true, error: "gh exited 1" });
+    expect(
+      resolveRepositorySearchAnswer({
+        memory,
+        environmentId,
+        provider: "github",
+        canSearch: true,
+        data: { supported: true },
+        error: null,
+      }),
+    ).toEqual({ supported: true, error: null });
+    expect(
+      resolveRepositorySearchAnswer({ memory, environmentId, provider: "github", ...pending }),
+    ).toEqual({ supported: true, error: null });
+  });
+
+  it("ignores the memory while the query is too short to search", () => {
+    const memory = new Map<string, RepositorySearchAnswer>([
+      [`${environmentId}:gitlab`, { supported: false, error: null }],
+    ]);
+    expect(
+      resolveRepositorySearchAnswer({
+        memory,
+        environmentId,
+        provider: "gitlab",
+        canSearch: false,
+        data: null,
+        error: null,
+      }),
+    ).toEqual({ supported: true, error: null });
+  });
+
+  it("records nothing without an environment and provider", () => {
+    const memory = new Map<string, RepositorySearchAnswer>();
+    expect(
+      resolveRepositorySearchAnswer({
+        memory,
+        environmentId: null,
+        provider: null,
+        canSearch: false,
+        data: null,
+        error: null,
+      }),
+    ).toEqual({ supported: true, error: null });
+    expect(memory.size).toBe(0);
+  });
+});
 
 describe("source control environment atoms", () => {
   it.effect("invalidates cached refs after successful and failed publishing", () =>

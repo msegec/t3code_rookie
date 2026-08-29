@@ -118,6 +118,7 @@ import * as DeviceService from "./device/DeviceService.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import { issueWorkspaceUploadUrl } from "./workspace/WorkspaceUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -128,6 +129,8 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as ProjectAccents from "./project/ProjectAccents.ts";
+import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import { importRecentAgentThreads } from "./project/AgentSessionImporter.ts";
@@ -151,14 +154,6 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
-import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
-import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
-import * as GitHubCli from "./sourceControl/GitHubCli.ts";
-import * as GitLabCli from "./sourceControl/GitLabCli.ts";
-import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
-import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
-import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
-import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
@@ -772,7 +767,11 @@ const makeWsRpcLayer = (
 
       const toShellStreamEvent = (
         event: ShellEvent,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
+      ): Effect.Effect<
+        Option.Option<OrchestrationShellStreamEvent>,
+        never,
+        ProjectFaviconResolver.ProjectFaviconResolver
+      > => {
         switch (event.type) {
           case "project.created":
           case "project.meta-updated":
@@ -827,32 +826,37 @@ const makeWsRpcLayer = (
           Effect.orElseSucceed(() => Option.none()),
         );
 
-      const projectUpsertOrRemove = (
-        projectId: ProjectId,
-        sequence: number,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> =>
+      const projectUpsertOrRemove = (projectId: ProjectId, sequence: number) =>
         retryShellProjectionRead(
           "project",
           projectId,
           projectionSnapshotQuery.getProjectShellById(projectId),
         ).pipe(
-          Effect.map(
-            Option.flatMap((project) =>
-              Option.match(project, {
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.succeedNone,
+              onSome: Option.match({
                 onNone: () =>
-                  Option.some<OrchestrationShellStreamEvent>({
+                  Effect.succeedSome<OrchestrationShellStreamEvent>({
                     kind: "project-removed" as const,
                     sequence,
                     projectId,
                   }),
+                // The upsert carries the accent for the same reason the
+                // snapshot does: a project that changes must not hand the
+                // client a record the rows then have to repaint.
                 onSome: (nextProject) =>
-                  Option.some<OrchestrationShellStreamEvent>({
-                    kind: "project-upserted" as const,
-                    sequence,
-                    project: nextProject,
-                  }),
+                  ProjectAccents.withProjectAccent(nextProject).pipe(
+                    Effect.map((project) =>
+                      Option.some<OrchestrationShellStreamEvent>({
+                        kind: "project-upserted" as const,
+                        sequence,
+                        project,
+                      }),
+                    ),
+                  ),
               }),
-            ),
+            }),
           ),
         );
 
@@ -910,7 +914,11 @@ const makeWsRpcLayer = (
       const SHELL_REFETCH_CONCURRENCY = 8;
       const coalesceShellEvents = (
         events: ReadonlyArray<ShellEvent>,
-      ): Effect.Effect<ReadonlyArray<OrchestrationShellStreamEvent>, never, never> =>
+      ): Effect.Effect<
+        ReadonlyArray<OrchestrationShellStreamEvent>,
+        never,
+        ProjectFaviconResolver.ProjectFaviconResolver
+      > =>
         Effect.gen(function* () {
           if (events.length === 0) {
             return [];
@@ -934,9 +942,7 @@ const makeWsRpcLayer = (
       // traffic so it can't serialize the shell stream behind per-event DB reads.
       const SHELL_COALESCE_WINDOW = Duration.millis(50);
       const SHELL_COALESCE_MAX_CHUNK = 512;
-      const coalesceShellStream = <E, R>(
-        stream: Stream.Stream<OrchestrationEvent, E, R>,
-      ): Stream.Stream<OrchestrationShellStreamEvent, E, R> =>
+      const coalesceShellStream = <E, R>(stream: Stream.Stream<OrchestrationEvent, E, R>) =>
         stream.pipe(
           Stream.map(toShellEvent),
           Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
@@ -951,9 +957,7 @@ const makeWsRpcLayer = (
       // A completion marker is queued alongside live event metadata so it cannot
       // overtake an event still waiting in the coalescing window. Split each
       // batch at markers and coalesce only the event segments on either side.
-      const coalesceShellLiveInputs = (
-        inputs: ReadonlyArray<ShellLiveInput>,
-      ): Effect.Effect<ReadonlyArray<OrchestrationShellStreamItem>, never, never> =>
+      const coalesceShellLiveInputs = (inputs: ReadonlyArray<ShellLiveInput>) =>
         Effect.gen(function* () {
           const output: Array<OrchestrationShellStreamItem> = [];
           let pendingEvents: Array<ShellEvent> = [];
@@ -1513,6 +1517,13 @@ const makeWsRpcLayer = (
               );
 
               const loadSnapshot = projectionSnapshotQuery.getShellSnapshot().pipe(
+                // Accents ride on the snapshot so sidebar rows never paint once
+                // without them and once with them. See ProjectAccents.
+                Effect.flatMap((snapshot) =>
+                  ProjectAccents.withProjectAccents(snapshot.projects).pipe(
+                    Effect.map((projects) => ({ ...snapshot, projects })),
+                  ),
+                ),
                 Effect.tapError((cause) =>
                   Effect.logError("orchestration shell snapshot load failed", { cause }),
                 ),
@@ -2299,6 +2310,14 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "source-control",
             },
           ),
+        [WS_METHODS.sourceControlSearchRepositories]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlSearchRepositories,
+            sourceControlRepositories.searchRepositories(input),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlCloneRepository,
@@ -2397,6 +2416,18 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.projectsCreateUploadUrl]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsCreateUploadUrl, issueWorkspaceUploadUrl(input), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.projectsRenameEntry]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsRenameEntry, workspaceFileSystem.renameEntry(input), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.projectsDeleteEntry]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsDeleteEntry, workspaceFileSystem.deleteEntry(input), {
+            "rpc.aggregate": "workspace",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",
@@ -3052,6 +3083,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     });
     const pullRequests = yield* PullRequestService.PullRequestService;
     const sql = yield* SqlClient.SqlClient;
+    const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3093,24 +3125,13 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
+              // Built once at server lifetime like PullRequestService above: every
+              // connection shares the same provider CLI caches and rate-limit
+              // circuits instead of minting fresh ones per client.
               Layer.provide(
-                SourceControlDiscovery.layer.pipe(
-                  Layer.provide(
-                    SourceControlProviderRegistry.layer.pipe(
-                      Layer.provide(
-                        Layer.mergeAll(
-                          AzureDevOpsCli.layer,
-                          BitbucketApi.layer,
-                          GitHubCli.layer,
-                          GitLabCli.layer,
-                        ),
-                      ),
-                      Layer.provideMerge(GitVcsDriver.layer),
-                      Layer.provide(
-                        VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
-                      ),
-                    ),
-                  ),
+                Layer.succeed(
+                  SourceControlDiscovery.SourceControlDiscovery,
+                  sourceControlDiscovery,
                 ),
               ),
             ),
