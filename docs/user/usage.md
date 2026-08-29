@@ -16,6 +16,9 @@ results appear as each one responds.
 If recent work is missing or a new model shows no cost, refresh to rescan session history and
 update model pricing.
 
+Devices that stay offline are left out of totals after a short wait, and a coverage notice lists
+which ones are missing. If no device reports, the page shows an empty state instead of zero totals.
+
 ## Set custom model prices
 
 On web or desktop, open the environment dropdown on **Usage**, then choose **Model prices** to add,
