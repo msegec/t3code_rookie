@@ -33,3 +33,31 @@ upstream.
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Sidebar accent
+
+Add `accentColor` to `t3.json` to tint every sidebar thread row for the project. The tint is
+strongest at the right edge of the row and fades out toward the left. A single color generates
+restrained idle, active, and selected tints:
+
+```json
+{
+  "accentColor": "#1688f0"
+}
+```
+
+For exact control, set all three row colors:
+
+```json
+{
+  "accentColor": {
+    "idle": "#7ea7d8",
+    "active": "#3d7ec4",
+    "selected": "#5c93cd"
+  }
+}
+```
+
+Colors must use six-digit hex notation. Exact colors replace the generated tints and the same
+values apply to both the light and dark themes, so pick mid-strength colors that stay readable
+behind text on each.

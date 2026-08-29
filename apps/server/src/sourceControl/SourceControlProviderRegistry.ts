@@ -98,6 +98,9 @@ function unsupportedProvider(
         repository: SourceControlProvider.transportSafeSourceControlErrorValue(input.repository),
         detail: `No ${kind} source control provider is registered.`,
       }),
+    // Search answers as data, never as an error: an unregistered provider must not raise a
+    // toast on every keystroke of a search-as-you-type field.
+    searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
     createRepository: (input) =>
       new SourceControlProviderError({
         provider: kind,
@@ -177,6 +180,11 @@ function bindProviderContext(
       }),
     getRepositoryCloneUrls: (input) =>
       provider.getRepositoryCloneUrls({
+        ...input,
+        context: input.context ?? context,
+      }),
+    searchRepositories: (input) =>
+      provider.searchRepositories({
         ...input,
         context: input.context ?? context,
       }),
