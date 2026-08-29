@@ -2,6 +2,7 @@ import { toHtml } from "hast-util-to-html";
 import { getSharedHighlighter } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
+import { codeColorPreviewTransformers } from "./codeColorPreviews";
 import { createIncrementalHighlightedDocument } from "./incrementalHighlighting";
 
 const samples = {
@@ -40,6 +41,38 @@ describe("incremental code highlighting", () => {
       }
     },
   );
+
+  it("preserves colour previews and completed nodes while streaming", async () => {
+    const highlighter = await highlighterPromise;
+    const transformers = codeColorPreviewTransformers("css");
+    const highlight = createIncrementalHighlightedDocument(
+      highlighter,
+      "css",
+      "pierre-dark",
+      transformers,
+    );
+    const code = "a { color: #fff; }\nb { color: #123456; }\n";
+    let completedLine: unknown;
+    for (let end = 0; end <= code.length; end++) {
+      const text = code.slice(0, end);
+      const root = highlight(text);
+      expect(toHtml(root)).toBe(
+        highlighter.codeToHtml(text, { lang: "css", theme: "pierre-dark", transformers }),
+      );
+      if (text.includes("\n")) {
+        const pre = root.children.find((node) => node.type === "element" && node.tagName === "pre");
+        const block =
+          pre?.type === "element"
+            ? pre.children.find((node) => node.type === "element" && node.tagName === "code")
+            : undefined;
+        const line = block?.type === "element" ? block.children[0] : undefined;
+        expect(line).toBeDefined();
+        if (completedLine) expect(line).toBe(completedLine);
+        completedLine = line;
+      }
+    }
+    expect(toHtml(highlight(code))).toContain("data-code-color-preview");
+  });
 
   it("resets after edits and truncation, including edits to a completed line", async () => {
     const highlighter = await highlighterPromise;
