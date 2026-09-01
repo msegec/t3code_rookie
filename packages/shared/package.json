@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./fleetRelease": {
+      "types": "./src/fleetRelease.ts",
+      "import": "./src/fleetRelease.ts"
+    },
     "./themePalettes": {
       "types": "./src/themePalettes.ts",
       "import": "./src/themePalettes.ts"

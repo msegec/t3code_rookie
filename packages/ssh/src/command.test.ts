@@ -134,6 +134,26 @@ describe("ssh command", () => {
     }),
   );
 
+  it.effect("resolves fleet builds to their release tarball instead of the npm registry", () =>
+    Effect.sync(() => {
+      assert.equal(
+        resolveRemoteT3CliPackageSpec({
+          appVersion: "0.0.38-nightly.20260901.1248.mzs.rf61ce767a0b2",
+          updateChannel: "nightly",
+        }),
+        "https://github.com/msegec/t3code_rookie/releases/download/v0.0.38-nightly.20260901.1248.mzs.rf61ce767a0b2/t3-0.0.38-nightly.20260901.1248.mzs.rf61ce767a0b2.tgz",
+      );
+      assert.equal(
+        resolveRemoteT3CliPackageSpec({
+          appVersion: "0.0.38-nightly.20260901.1248.mzs.rf61ce767a0b2",
+          updateChannel: "nightly",
+          isDevelopment: true,
+        }),
+        "t3@nightly",
+      );
+    }),
+  );
+
   it.effect("reads the last non-empty ssh output line", () =>
     Effect.sync(() => {
       assert.equal(
