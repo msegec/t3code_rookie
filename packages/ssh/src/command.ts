@@ -1,6 +1,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import type { DesktopSshEnvironmentTarget, DesktopUpdateChannel } from "@t3tools/contracts";
+import { fleetReleaseTarballUrl, isFleetVersion } from "@t3tools/shared/fleetRelease";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -370,6 +371,10 @@ export function resolveRemoteT3CliPackageSpec(input: {
   readonly isDevelopment?: boolean;
 }): string {
   const appVersion = input.appVersion.trim();
+  if (!input.isDevelopment && isFleetVersion(appVersion)) {
+    return fleetReleaseTarballUrl(appVersion);
+  }
+
   if (!input.isDevelopment && PUBLISHABLE_T3_VERSION_PATTERN.test(appVersion)) {
     return `t3@${appVersion}`;
   }
