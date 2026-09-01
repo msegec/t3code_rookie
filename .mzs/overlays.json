@@ -17,6 +17,13 @@
     },
     {
       "kind": "commit",
+      "name": "MZS fleet runtime ssh package spec",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-runtime-overlay",
+      "sha": "13f46789016cb0f02162a4c6531361c3067955b0"
+    },
+    {
+      "kind": "commit",
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
@@ -51,6 +58,9 @@
     "apps/web/src/components/CommandPalette.test.ts",
     "packages/client-runtime/src/state/sourceControl.test.ts",
     "packages/contracts/src/sourceControl.test.ts",
-    "apps/server/src/vcs/VcsProcess.test.ts"
+    "apps/server/src/vcs/VcsProcess.test.ts",
+    "packages/shared/src/fleetRelease.test.ts",
+    "packages/ssh/src/command.test.ts",
+    "packages/ssh/src/tunnel.test.ts"
   ]
 }
