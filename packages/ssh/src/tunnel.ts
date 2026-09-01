@@ -442,11 +442,11 @@ require_installed_t3_cli() {
 }
 if command -v npx >/dev/null 2>&1; then
   require_installed_t3_cli npx --yes --package @@T3_PACKAGE_SPEC@@ || exit 1
-  exec npx --yes @@T3_PACKAGE_SPEC@@ "$@"
+  exec npx --yes --package @@T3_PACKAGE_SPEC@@ -- t3 "$@"
 fi
 if command -v npm >/dev/null 2>&1; then
   require_installed_t3_cli npm exec --yes --package @@T3_PACKAGE_SPEC@@ || exit 1
-  exec npm exec --yes @@T3_PACKAGE_SPEC@@ -- "$@"
+  exec npm exec --yes --package @@T3_PACKAGE_SPEC@@ -- t3 "$@"
 fi
 printf 'Remote host is missing the t3 CLI and could not install @@T3_PACKAGE_SPEC@@ because node/npm/npx are unavailable on PATH. Install Node or configure a supported version manager for non-interactive shells.\\n' >&2
 exit 1
