@@ -146,7 +146,7 @@ describe("ssh tunnel scripts", () => {
       script,
       "require_installed_t3_cli npx --yes --package 't3@nightly; touch /tmp/t3-owned'",
     );
-    assert.notInclude(script, "exec npx --yes t3@nightly; touch /tmp/t3-owned");
+    assert.notInclude(script, "exec npx --yes --package t3@nightly; touch /tmp/t3-owned");
   });
 
   it("builds the remote t3 runner with a node script override", () => {
