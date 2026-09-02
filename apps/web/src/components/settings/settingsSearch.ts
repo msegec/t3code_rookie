@@ -627,6 +627,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["commands scripts setup run dev server checkout worktree t3.json import"],
   },
   {
+    id: "local-environment",
+    title: "Local environment",
+    to: "/settings/connections",
+    targetId: "connections-environment",
+    searchTerms: ["turn off on disable enable local server agents remote only restart"],
+    desktopOnly: true,
+  },
+  {
     id: "environment-icon",
     title: "Environment icon",
     to: "/settings/connections",

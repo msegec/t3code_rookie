@@ -212,3 +212,14 @@ Agent browser access must be enabled in Settings. An older desktop may need upda
 opening workspace files through agent tools. Web and mobile clients do not host the collaborative
 browser themselves; a compatible desktop must be connected to the environment.
 Externally managed OpenCode servers need their browser tools configured separately.
+## Use desktop with remote environments only
+
+In **Settings → Connections → This environment**, turn off **Local environment**
+and confirm the restart. The desktop app opens without a local server or agents,
+including desktop-managed WSL backends. Other devices can no longer connect to
+this computer's environment. Your local projects, history, and saved connections
+are kept, and you can still connect to other environments through pairing,
+T3 Connect, or SSH.
+
+Turn **Local environment** back on in the same place to restart with your saved
+local settings.
