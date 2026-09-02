@@ -3,6 +3,7 @@ import { AuthAccessWriteScope } from "@t3tools/contracts";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "~/env";
+import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
@@ -19,10 +20,11 @@ export function useAvailableSettingsSearchItems() {
   const primarySessionState = usePrimarySessionState();
   const desktopWsl = useEnvironmentQuery(isElectron ? desktopWslStateAtom : null);
   const canManageLocalBackend =
-    isElectron ||
-    ((primarySessionState.data?.authenticated &&
-      primarySessionState.data.scopes?.includes(AuthAccessWriteScope)) ??
-      false);
+    !isLocalEnvironmentDisabled() &&
+    (isElectron ||
+      ((primarySessionState.data?.authenticated &&
+        primarySessionState.data.scopes?.includes(AuthAccessWriteScope)) ??
+        false));
 
   return useMemo(
     () =>

@@ -87,3 +87,16 @@ Routes stay in bounded memory, expire after 15 minutes idle, retain active trans
 revocation. Existing session-removal events revoke owned routes without polling. The client releases
 unused routes on tab closure, failed loads and connection changes. Physical preview URLs remain
 desktop-local; a different desktop must reopen the logical application target.
+## Desktop without a local environment
+
+The desktop setting `localEnvironmentEnabled` defaults to true. Turning it off
+restarts the app without deleting local state. Startup skips port selection,
+server exposure, and the primary and WSL backends, then opens the window directly.
+The desktop control socket remains available in this mode.
+
+The renderer reads `desktopBridge.getLocalEnvironmentEnabled()` and has no
+primary target when local execution is disabled. Primary authentication and
+platform-managed discovery are skipped; saved pairing, relay, and SSH connections
+remain available. Packaged desktop serves bundled frontend files through
+`t3code://app`, while development proxies that protocol to Vite. API traffic uses
+each environment's own URL.
