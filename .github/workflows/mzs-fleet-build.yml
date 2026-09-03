@@ -501,16 +501,36 @@ jobs:
     name: Publish fleet release
     needs: [build, build_macos, build_linux]
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - name: Checkout fleet controls
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
       - name: Download verified release files
         uses: actions/download-artifact@v8
         with:
           pattern: mzs-t3-fleet-*-${{ needs.build.outputs.version }}
           merge-multiple: true
           path: release
+
+      - name: Merge macOS updater manifests
+        run: |
+          node scripts/merge-update-manifests.ts \
+            --platform mac \
+            release/nightly-mac-arm64.yml \
+            release/nightly-mac-x64.yml \
+            release/nightly-mac.yml
 
       - name: Validate release files
         shell: bash
@@ -526,6 +546,7 @@ jobs:
           test -f mzs-fleet.json
           test -n "$(find . -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -f nightly-mac.yml
           test -n "$(find . -maxdepth 1 -type f -name '*-mac-arm64.yml' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*-mac-x64.yml' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
