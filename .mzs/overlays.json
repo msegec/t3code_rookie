@@ -27,7 +27,7 @@
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "839cd7b421b5007a639d0571e719edc3f4e9d66e"
+      "sha": "5d8a2f8b43b8e45d783547d5873d55eb6afb8fe0"
     }
   ],
   "tests": [
