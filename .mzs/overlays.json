@@ -27,14 +27,21 @@
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "b2c5f0affcf053afb6f7c2c02fb17e0d211472a6"
+      "sha": "092691f71b033318c067e0a7150b105722cf7394"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "c7bc099d611ebccbd90a056412bd2d8892176a74"
+      "sha": "3478cc9d68733c1316b97672190674ae89fb4222"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS preserve drafts during compaction",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fix/preserve-draft-on-compact",
+      "sha": "d63a03becc2206e922a010c647b05d089fd6b034"
     }
   ],
   "tests": [
@@ -71,6 +78,8 @@
     "packages/ssh/src/tunnel.test.ts",
     "packages/contracts/src/settings.test.ts",
     "apps/web/src/components/chat/ContextWindowMeter.test.tsx",
-    "apps/web/src/components/chat/ContextWindowMeter.logic.test.ts"
+    "apps/web/src/components/chat/ContextWindowMeter.logic.test.ts",
+    "apps/web/src/composer-logic.test.ts",
+    "apps/web/src/state/usage.test.tsx"
   ]
 }
