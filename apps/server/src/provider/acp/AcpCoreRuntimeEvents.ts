@@ -9,6 +9,7 @@ import {
   type ProviderRuntimeEvent,
   type RuntimeRequestId,
   type ThreadId,
+  type ToolLifecycleItemType,
   type TurnId,
 } from "@t3tools/contracts";
 
@@ -18,6 +19,7 @@ import {
   type AcpToolCallState,
   canonicalItemTypeFromAcpToolKind,
 } from "./AcpRuntimeModel.ts";
+import { isAcpTaskToolCall } from "./AcpTaskSubagents.ts";
 
 type AcpAdapterRawSource = Extract<
   RuntimeEventRawSource,
@@ -47,6 +49,19 @@ function canonicalRequestTypeFromAcpKind(kind: string | "unknown"): AcpCanonical
     default:
       return "dynamic_tool_call";
   }
+}
+
+/**
+ * Task-tool launches over ACP (Cursor, Grok) currently arrive as anonymous
+ * background tool calls titled "Task: ..." with no agent identity on the wire.
+ * Classifying them as `dynamic_tool_call` renders them as generic tool rows.
+ * Claude and Codex classify the same work as `collab_agent_tool_call`.
+ */
+function canonicalItemTypeFromAcpToolCall(toolCall: AcpToolCallState): ToolLifecycleItemType {
+  if (isAcpTaskToolCall(toolCall)) {
+    return "collab_agent_tool_call";
+  }
+  return canonicalItemTypeFromAcpToolKind(toolCall.kind);
 }
 
 function runtimeItemStatusFromAcpToolStatus(
@@ -168,7 +183,7 @@ export function makeAcpToolCallEvent(input: {
     turnId: input.turnId,
     itemId: RuntimeItemId.make(input.toolCall.toolCallId),
     payload: {
-      itemType: canonicalItemTypeFromAcpToolKind(input.toolCall.kind),
+      itemType: canonicalItemTypeFromAcpToolCall(input.toolCall),
       ...(runtimeStatus ? { status: runtimeStatus } : {}),
       ...(input.toolCall.title ? { title: input.toolCall.title } : {}),
       ...(input.toolCall.detail ? { detail: input.toolCall.detail } : {}),

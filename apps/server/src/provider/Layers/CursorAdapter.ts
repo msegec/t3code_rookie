@@ -65,6 +65,12 @@ import {
   type AcpSessionModeState,
   parsePermissionRequest,
 } from "../acp/AcpRuntimeModel.ts";
+import {
+  advanceAcpTaskToolTracker,
+  emptyAcpTaskToolTrackState,
+  makeAcpTaskToolRuntimeEvent,
+  type AcpTaskToolTrackState,
+} from "../acp/AcpTaskSubagents.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import { applyCursorAcpModelSelection, makeCursorAcpRuntime } from "../acp/CursorAcpSupport.ts";
 import { CursorTransportFailure } from "../acp/CursorTransportFailure.ts";
@@ -146,6 +152,8 @@ interface CursorSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   assistantReply: CursorTransportFailure;
+  /** Tracks ACP Task-tool → task.* synthesis for the Agents panel. */
+  readonly taskToolTrack: AcpTaskToolTrackState;
   stopped: boolean;
 }
 
@@ -798,6 +806,7 @@ export function makeCursorAdapter(
             cursorSkillNames: undefined,
             promptsInFlight: 0,
             assistantReply: new CursorTransportFailure(),
+            taskToolTrack: emptyAcpTaskToolTrackState(),
             stopped: false,
           };
 
@@ -867,6 +876,22 @@ export function makeCursorAdapter(
                         rawPayload: event.rawPayload,
                       }),
                     );
+                    for (const spec of advanceAcpTaskToolTracker(
+                      ctx.taskToolTrack,
+                      event.toolCall,
+                    )) {
+                      // Fresh stamp: must not share eventId with the item.* row.
+                      yield* offerRuntimeEvent(
+                        makeAcpTaskToolRuntimeEvent({
+                          stamp: yield* makeEventStamp(),
+                          provider: PROVIDER,
+                          threadId: ctx.threadId,
+                          turnId: ctx.activeTurnId,
+                          spec,
+                          rawPayload: event.rawPayload,
+                        }),
+                      );
+                    }
                     return;
                   case "ContentDelta":
                     ctx.assistantReply.push(event.text);
