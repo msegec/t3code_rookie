@@ -5805,10 +5805,10 @@ export default function ChatView(props: ChatViewProps) {
     pendingApprovals.length > 0 ||
     pendingUserInputs.length > 0 ||
     showPlanFollowUpPrompt;
-  const compactDisabled = compactThreadUnavailable || composerHasUnsentContent;
+  const compactDisabled = compactThreadUnavailable || composerHasNonPromptContent;
   const compactDisabledReason = compactDisabled
-    ? composerHasUnsentContent
-      ? "Send or clear your draft before compacting"
+    ? composerHasNonPromptContent
+      ? "Send or clear attachments and context before compacting"
       : !activeProject
         ? "Choose a project before compacting"
         : !manualCompactionProviderAvailable

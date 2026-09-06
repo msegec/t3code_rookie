@@ -4,12 +4,15 @@ import {
   expandAssistantCitationsForProvider,
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  canContinueCompactionPreparation,
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
+  compactWithDraftProtection,
   composerSubmissionIntentForEnter,
+  createCompactionPreparationGuard,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
@@ -106,6 +109,163 @@ describe("composerSubmissionIntentForEnter", () => {
         isDraftThread: false,
       }),
     ).toBe("foreground");
+  });
+});
+
+describe("compactWithDraftProtection", () => {
+  it("continues without copying an empty draft", async () => {
+    const copyDraft = vi.fn();
+    const onCopied = vi.fn();
+    const compact = vi.fn();
+
+    await expect(
+      compactWithDraftProtection({
+        prompt: "  \n",
+        copyDraft,
+        isCurrent: () => true,
+        onCopied,
+        compact,
+      }),
+    ).resolves.toEqual({ status: "compacted", copied: false });
+    expect(copyDraft).not.toHaveBeenCalled();
+    expect(onCopied).not.toHaveBeenCalled();
+    expect(compact).toHaveBeenCalledOnce();
+  });
+
+  it("copies the exact text draft before continuing", async () => {
+    const calls: string[] = [];
+    const copyDraft = vi.fn(async () => {
+      calls.push("copy");
+      return true;
+    });
+
+    await expect(
+      compactWithDraftProtection({
+        prompt: "  keep this draft\n",
+        copyDraft,
+        isCurrent: () => true,
+        onCopied: () => calls.push("notify"),
+        compact: () => calls.push("compact"),
+      }),
+    ).resolves.toEqual({ status: "compacted", copied: true });
+    expect(copyDraft).toHaveBeenCalledWith("  keep this draft\n");
+    expect(calls).toEqual(["copy", "notify", "compact"]);
+  });
+
+  it("stops when copying fails", async () => {
+    const error = new Error("clipboard denied");
+    const onCopied = vi.fn();
+    const compact = vi.fn();
+
+    await expect(
+      compactWithDraftProtection({
+        prompt: "keep this draft",
+        copyDraft: async () => {
+          throw error;
+        },
+        isCurrent: () => true,
+        onCopied,
+        compact,
+      }),
+    ).resolves.toEqual({ status: "copy-failed", error });
+    expect(onCopied).not.toHaveBeenCalled();
+    expect(compact).not.toHaveBeenCalled();
+  });
+
+  it("stops when the draft changes while copying", async () => {
+    const onCopied = vi.fn();
+    const compact = vi.fn();
+
+    await expect(
+      compactWithDraftProtection({
+        prompt: "old draft",
+        copyDraft: async () => true,
+        isCurrent: () => false,
+        onCopied,
+        compact,
+      }),
+    ).resolves.toEqual({ status: "changed" });
+    expect(onCopied).not.toHaveBeenCalled();
+    expect(compact).not.toHaveBeenCalled();
+  });
+});
+
+describe("createCompactionPreparationGuard", () => {
+  it("blocks a second operation for the same target", () => {
+    const guard = createCompactionPreparationGuard();
+    const operation = guard.start("thread:a");
+
+    expect(operation).not.toBeNull();
+    expect(guard.start("thread:a")).toBeNull();
+  });
+
+  it("lets a new target supersede stale work", () => {
+    const guard = createCompactionPreparationGuard();
+    const oldOperation = guard.start("thread:a");
+    const newOperation = guard.start("thread:b");
+
+    expect(oldOperation).not.toBeNull();
+    expect(newOperation).not.toBeNull();
+    if (!oldOperation || !newOperation) throw new Error("Expected compaction operations");
+    expect(guard.isCurrent(oldOperation)).toBe(false);
+    expect(guard.isCurrent(newOperation)).toBe(true);
+
+    guard.finish(oldOperation);
+    expect(guard.start("thread:b")).toBeNull();
+    guard.finish(newOperation);
+    expect(guard.start("thread:b")).not.toBeNull();
+  });
+
+  it("invalidates pending work on cancellation", () => {
+    const guard = createCompactionPreparationGuard();
+    const operation = guard.start("thread:a");
+    if (!operation) throw new Error("Expected a compaction operation");
+
+    guard.cancel();
+
+    expect(guard.isCurrent(operation)).toBe(false);
+    expect(guard.start("thread:a")).not.toBeNull();
+  });
+
+  it("invalidates pending work when the mounted target changes", () => {
+    const guard = createCompactionPreparationGuard();
+    guard.setTarget("thread:a");
+    const operation = guard.start("thread:a");
+    if (!operation) throw new Error("Expected a compaction operation");
+
+    guard.setTarget("thread:b");
+
+    expect(guard.isCurrent(operation)).toBe(false);
+    expect(guard.start("thread:b")).not.toBeNull();
+  });
+});
+
+describe("canContinueCompactionPreparation", () => {
+  const current = {
+    allowed: true,
+    expectedTargetKey: "thread:a",
+    eligibleTargetKey: "thread:a",
+    liveTargetKey: "thread:a",
+    expectedThreadId: "a",
+    eligibleThreadId: "a",
+    expectedPrompt: "draft",
+    currentPrompt: "draft",
+    hasNonPromptContent: false,
+    pendingImageCompressions: 0,
+  };
+
+  it("accepts an unchanged eligible text draft", () => {
+    expect(canContinueCompactionPreparation(current)).toBe(true);
+  });
+
+  it.each([
+    ["thread navigation", { liveTargetKey: "thread:b" }],
+    ["attachment addition", { hasNonPromptContent: true }],
+    ["busy or provider transition", { allowed: false }],
+    ["prompt edit", { currentPrompt: "updated draft" }],
+    ["pending image compression", { pendingImageCompressions: 1 }],
+  ])("rejects %s while the clipboard write is pending", (_name, change) => {
+    expect(canContinueCompactionPreparation({ ...current, ...change })).toBe(false);
   });
 });
 

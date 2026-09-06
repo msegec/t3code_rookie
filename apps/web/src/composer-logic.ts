@@ -36,6 +36,96 @@ export function composerSubmissionIntentForEnter(input: {
   return input.modifierKey && input.isDraftThread ? "background" : "foreground";
 }
 
+export async function compactWithDraftProtection(input: {
+  prompt: string;
+  copyDraft: (prompt: string) => Promise<boolean>;
+  isCurrent: () => boolean;
+  onCopied: () => void;
+  compact: () => void;
+}) {
+  const hasDraft = input.prompt.trim().length > 0;
+  if (hasDraft) {
+    try {
+      if (!(await input.copyDraft(input.prompt))) {
+        return {
+          status: "copy-failed",
+          error: new Error("The draft could not be copied."),
+        } as const;
+      }
+    } catch (error) {
+      return { status: "copy-failed", error } as const;
+    }
+  }
+
+  if (!input.isCurrent()) {
+    return { status: "changed" } as const;
+  }
+  if (hasDraft) {
+    input.onCopied();
+  }
+  input.compact();
+  return { status: "compacted", copied: hasDraft } as const;
+}
+
+export type CompactionPreparationToken = Readonly<{
+  id: number;
+  targetKey: string;
+}>;
+
+export function createCompactionPreparationGuard() {
+  let nextId = 0;
+  let currentTargetKey: string | null = null;
+  let active: CompactionPreparationToken | null = null;
+
+  const setTarget = (targetKey: string): void => {
+    if (currentTargetKey === targetKey) return;
+    currentTargetKey = targetKey;
+    active = null;
+  };
+
+  return {
+    start(targetKey: string): CompactionPreparationToken | null {
+      setTarget(targetKey);
+      if (active?.targetKey === targetKey) return null;
+      active = { id: ++nextId, targetKey };
+      return active;
+    },
+    setTarget,
+    cancel(): void {
+      active = null;
+    },
+    isCurrent(token: CompactionPreparationToken): boolean {
+      return active?.id === token.id && active.targetKey === token.targetKey;
+    },
+    finish(token: CompactionPreparationToken): void {
+      if (active?.id === token.id && active.targetKey === token.targetKey) active = null;
+    },
+  };
+}
+
+export function canContinueCompactionPreparation(input: {
+  allowed: boolean;
+  expectedTargetKey: string;
+  eligibleTargetKey: string;
+  liveTargetKey: string;
+  expectedThreadId: string;
+  eligibleThreadId: string | null;
+  expectedPrompt: string;
+  currentPrompt: string;
+  hasNonPromptContent: boolean;
+  pendingImageCompressions: number;
+}) {
+  return (
+    input.allowed &&
+    input.eligibleTargetKey === input.expectedTargetKey &&
+    input.liveTargetKey === input.expectedTargetKey &&
+    input.eligibleThreadId === input.expectedThreadId &&
+    input.currentPrompt === input.expectedPrompt &&
+    !input.hasNonPromptContent &&
+    input.pendingImageCompressions === 0
+  );
+}
+
 const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean => segment.type !== "text";
 
 function clampCursor(text: string, cursor: number): number {

@@ -46,11 +46,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  canContinueCompactionPreparation,
   clampCollapsedComposerCursor,
+  compactWithDraftProtection,
   type ComposerSubmissionIntent,
   type ComposerTrigger,
   collapseExpandedComposerCursor,
   composerSubmissionIntentForEnter,
+  createCompactionPreparationGuard,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
@@ -84,6 +87,7 @@ import {
   composerFileDedupKey,
   composerFileMatchesReattachMarker,
   composerFileNeedsReattach,
+  composerDraftHasUserContent,
   composerTargetKey,
   hydrateImagesFromPersisted,
   useComposerDraftStore,
@@ -146,6 +150,7 @@ import {
   formatAttachmentUploadProgress,
 } from "../../lib/attachmentUploadState";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
@@ -1504,6 +1509,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const attachmentDraft = useComposerThreadDraft(attachmentDraftTarget);
   const attachmentTargetKey = composerTargetKey(attachmentDraftTarget);
   const questionPreparations = useQuestionAttachmentPreparation((state) => state.counts);
+  const [compactionPreparationGuard] = useState(createCompactionPreparationGuard);
   const prompt = composerDraft.prompt;
   const composerImages = attachmentDraft.images;
   const composerFiles = attachmentDraft.files;
@@ -3084,19 +3090,47 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
     submitComposer(undefined, intent ?? "foreground");
   }, [isMobileViewport, routeKind, submitComposer]);
+  const canCompactThreadContext =
+    !compactDisabled &&
+    !noProviderAvailable &&
+    activePendingApproval === null &&
+    pendingUserInputs.length === 0 &&
+    phase !== "running" &&
+    !isSendBusy &&
+    !isConnecting &&
+    activeThreadId !== null;
+  const compactionEligibilityRef = useRef({
+    allowed: false,
+    targetKey: "",
+    threadId: null as ThreadId | null,
+  });
+  useLayoutEffect(() => {
+    compactionEligibilityRef.current = {
+      allowed: canCompactThreadContext,
+      targetKey: composerTargetKey(composerDraftTarget),
+      threadId: activeThreadId,
+    };
+    return () => {
+      compactionEligibilityRef.current = {
+        allowed: false,
+        targetKey: "",
+        threadId: null,
+      };
+    };
+  }, [activeThreadId, canCompactThreadContext, composerDraftTarget]);
+  const submitComposerRef = useRef(submitComposer);
+  useLayoutEffect(() => {
+    submitComposerRef.current = submitComposer;
+  }, [submitComposer]);
+  const compactionTargetKey = composerTargetKey(composerDraftTarget);
+  useLayoutEffect(() => {
+    compactionPreparationGuard.setTarget(compactionTargetKey);
+    return () => {
+      compactionPreparationGuard.cancel();
+    };
+  }, [compactionPreparationGuard, compactionTargetKey]);
   const compactThreadContext = useCallback(() => {
-    if (
-      compactDisabled ||
-      noProviderAvailable ||
-      activePendingApproval !== null ||
-      pendingUserInputs.length > 0 ||
-      phase === "running" ||
-      isSendBusy ||
-      isConnecting ||
-      !activeThreadId
-    ) {
-      return;
-    }
+    if (!canCompactThreadContext || !activeThreadId) return;
     // The compact buttons cannot see the compression counter (it lives in
     // a ref), so they render enabled during a paste; toast instead of
     // silently ignoring the click.
@@ -3109,30 +3143,92 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
 
-    promptRef.current = "/compact";
-    setComposerDraftPrompt(composerDraftTarget, "/compact");
-    submitComposer();
-    // A blocked dispatch (busy send ref, provider preflight rejection)
-    // would leave the injected "/compact" behind as if the user typed it.
-    // Clearing here is safe even when the send did dispatch: the send
-    // snapshots its prompt synchronously and clears the draft itself.
-    if (promptRef.current === "/compact") {
-      promptRef.current = "";
-      setComposerDraftPrompt(composerDraftTarget, "");
-    }
+    const draftPrompt = promptRef.current;
+    const draftTargetKey = compactionTargetKey;
+    const operation = compactionPreparationGuard.start(draftTargetKey);
+    if (!operation) return;
+    void compactWithDraftProtection({
+      prompt: draftPrompt,
+      copyDraft: (value) => writeTextToClipboard(value, "composer draft"),
+      isCurrent: () => {
+        const eligibility = compactionEligibilityRef.current;
+        const currentDraft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
+        const hasNonPromptContent = currentDraft
+          ? composerDraftHasUserContent({ ...currentDraft, prompt: "" })
+          : false;
+        return (
+          compactionPreparationGuard.isCurrent(operation) &&
+          canContinueCompactionPreparation({
+            allowed: eligibility.allowed,
+            expectedTargetKey: draftTargetKey,
+            eligibleTargetKey: eligibility.targetKey,
+            liveTargetKey: composerDraftTargetKeyRef.current,
+            expectedThreadId: activeThreadId,
+            eligibleThreadId: eligibility.threadId,
+            expectedPrompt: draftPrompt,
+            currentPrompt: currentDraft?.prompt ?? "",
+            hasNonPromptContent,
+            pendingImageCompressions: pendingImageCompressionsRef.current.get(activeThreadId) ?? 0,
+          })
+        );
+      },
+      onCopied: () => {
+        toastManager.add({
+          type: "info",
+          title: "Draft copied before compacting",
+          description: "Paste it back after compaction if you still need it.",
+        });
+      },
+      compact: () => {
+        promptRef.current = "/compact";
+        setComposerDraftPrompt(composerDraftTarget, "/compact");
+        submitComposerRef.current();
+        if (promptRef.current === "/compact") {
+          promptRef.current = "";
+          setComposerDraftPrompt(composerDraftTarget, "");
+        }
+      },
+    })
+      .then((result) => {
+        if (!compactionPreparationGuard.isCurrent(operation)) return;
+        if (result.status === "copy-failed") {
+          console.error(result.error);
+          toastManager.add({
+            type: "error",
+            title: "Draft not copied",
+            description: "Compaction did not start. Copy or clear your draft and try again.",
+          });
+          return;
+        }
+        if (result.status === "changed") {
+          toastManager.add({
+            type: "warning",
+            title: "Compaction paused",
+            description: "The draft or thread changed while it was being copied. Try again.",
+          });
+          return;
+        }
+      })
+      .catch((error: unknown) => {
+        if (!compactionPreparationGuard.isCurrent(operation)) return;
+        console.error(error);
+        toastManager.add({
+          type: "error",
+          title: "Compaction did not start",
+          description: "Your draft is unchanged. Try again.",
+        });
+      })
+      .finally(() => {
+        compactionPreparationGuard.finish(operation);
+      });
   }, [
-    activePendingApproval,
     activeThreadId,
-    compactDisabled,
+    canCompactThreadContext,
+    compactionPreparationGuard,
+    compactionTargetKey,
     composerDraftTarget,
-    isConnecting,
-    isSendBusy,
-    noProviderAvailable,
-    pendingUserInputs.length,
-    phase,
     promptRef,
     setComposerDraftPrompt,
-    submitComposer,
   ]);
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {

@@ -108,6 +108,8 @@ Provider commands must start the message to run. T3 Code commands such as
 
 Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it. Web and desktop also offer compaction from the context meter.
+If the composer contains text, T3 Code copies it to the clipboard and notifies you
+before compacting. Send or clear attachments and context first.
 
 ## Images and videos in messages
 
