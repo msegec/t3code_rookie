@@ -78,6 +78,12 @@ with a readable, current version.
 
 ## Protocol traps
 
+Grok Build streams `agent()` children and workflow runs over private ACP methods
+(`x.ai/session_notification` / `_x.ai/session/update`). The
+[Grok adapter](../../apps/server/src/provider/Layers/GrokAdapter.ts) maps those onto the same
+`task.started` / `task.progress` / `task.completed` events Claude Task and Codex collab children
+already emit, so the Agents panel lists Grok subagents without a third UI.
+
 Codex async questions arrive as notifications and are answered with a new user message. There is
 no pending RPC response to send. Blocking questions still use the request/response path. The
 [adapter](../../apps/server/src/provider/Layers/CodexAdapter.ts) distinguishes them; the
