@@ -37,6 +37,7 @@ import { Button } from "~/components/ui/button";
  * user problem). Only settled states differentiate.
  */
 const STATUS_VISUALS: Record<RuntimeSubagent["status"], { dotClass: string; label: string }> = {
+  unknown: { dotClass: "bg-muted-foreground/50", label: "Status unknown" },
   pending: { dotClass: "bg-info", label: "Working" },
   running: { dotClass: "bg-info", label: "Working" },
   waiting: { dotClass: "bg-info", label: "Working" },
@@ -103,7 +104,7 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
     return () => clearInterval(id);
   }, [live, startedAt]);
 
-  if (!startedAt) {
+  if (!startedAt || agent.status === "unknown") {
     return null;
   }
   return (

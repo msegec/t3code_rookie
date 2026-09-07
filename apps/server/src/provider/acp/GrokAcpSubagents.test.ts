@@ -1,3 +1,5 @@
+import { ProviderRuntimeEvent } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
@@ -8,6 +10,8 @@ import {
   parseXAiSubagentUpdate,
   parseXAiWorkflowUpdated,
 } from "./GrokAcpSubagents.ts";
+
+const decodeRuntimeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
 
 describe("parseXAiSubagentUpdate", () => {
   it("reads snake_case subagent_spawned envelopes", () => {
@@ -444,5 +448,202 @@ describe("applyGrokWorkflowUpdate", () => {
       status: "running",
       summary: "running",
     });
+  });
+});
+
+describe("Grok notification continuity", () => {
+  it("omits absent metadata from sparse progress and completion", () => {
+    const spawn = parseXAiSubagentUpdate({
+      sessionUpdate: "subagent_spawned",
+      subagent_id: "child",
+      description: "Search the codebase",
+      role: "explore",
+      model: "grok-4.6",
+      child_session_id: "session",
+    })!;
+    let state = applyGrokSubagentUpdate(emptyGrokSubagentTrackState(), spawn).state;
+    for (const sessionUpdate of ["subagent_progress", "subagent_finished"]) {
+      const next = applyGrokSubagentUpdate(
+        state,
+        parseXAiSubagentUpdate({ sessionUpdate, subagent_id: "child", tokens_used: 10 })!,
+      );
+      expect(next.events).toHaveLength(1);
+      expect(() =>
+        decodeRuntimeEvent({
+          ...next.events[0],
+          eventId: "event",
+          createdAt: "2026-09-07T00:00:00.000Z",
+          provider: "grok",
+          threadId: "thread",
+        }),
+      ).not.toThrow();
+      if (sessionUpdate === "subagent_progress") {
+        expect(next.events[0]?.payload.description).toBe("Search the codebase");
+      }
+      for (const field of ["title", "role", "model", "agentPath"]) {
+        expect(next.events[0]?.payload).not.toHaveProperty(field);
+      }
+      state = next.state;
+    }
+  });
+
+  it("ignores stale and repeated workflow revisions", () => {
+    const update = parseXAiWorkflowUpdated({
+      sessionUpdate: "workflow_updated",
+      run_id: "run",
+      name: "review",
+      revision: 3,
+      agents: [{ agent_id: "a", state: "done" }],
+    })!;
+    const completed = applyGrokWorkflowUpdate(emptyGrokSubagentTrackState(), update);
+    for (const revision of [2, 3]) {
+      const stale = applyGrokWorkflowUpdate(completed.state, {
+        ...update,
+        revision,
+        agents: update.agents.map((agent) => ({ ...agent, state: "running" })),
+      });
+      expect(stale.events).toEqual([]);
+    }
+  });
+
+  it("accepts unversioned updates and treats revision zero as ordered", () => {
+    const update = parseXAiWorkflowUpdated({
+      sessionUpdate: "workflow_updated",
+      run_id: "run",
+      name: "review",
+    })!;
+    const first = applyGrokWorkflowUpdate(emptyGrokSubagentTrackState(), update);
+    expect(applyGrokWorkflowUpdate(first.state, update).events).toHaveLength(1);
+    const zero = applyGrokWorkflowUpdate(first.state, { ...update, revision: 0 });
+    expect(applyGrokWorkflowUpdate(zero.state, { ...update, revision: 0 }).events).toEqual([]);
+    expect(
+      applyGrokWorkflowUpdate(zero.state, { ...update, runId: "other", revision: 0 }).events,
+    ).toHaveLength(1);
+  });
+
+  it("does not reactivate finished members in newer snapshots", () => {
+    const update = parseXAiWorkflowUpdated({
+      sessionUpdate: "workflow_updated",
+      run_id: "run",
+      name: "review",
+      revision: 3,
+      agents: [{ agent_id: "a", state: "done" }],
+    })!;
+    const completed = applyGrokWorkflowUpdate(emptyGrokSubagentTrackState(), update);
+    const next = applyGrokWorkflowUpdate(completed.state, {
+      ...update,
+      revision: 4,
+      agents: update.agents.map((agent) => ({ ...agent, state: "running" })),
+    });
+    expect(next.events.filter((event) => event.payload.taskId === "run:wf:a")).toEqual([]);
+  });
+});
+
+describe("Grok session tracking retention", () => {
+  it("retains active usage and reuses session collections across historical completions", () => {
+    const state = emptyGrokSubagentTrackState();
+    const active = parseXAiSubagentUpdate({
+      sessionUpdate: "subagent_progress",
+      subagent_id: "active",
+      tokens_used: 42,
+    })!;
+    applyGrokSubagentUpdate(state, active);
+    for (let index = 0; index < 1000; index++) {
+      const next = applyGrokSubagentUpdate(state, {
+        ...active,
+        kind: "finished",
+        subagentId: `finished-${index}`,
+      });
+      expect(next.state).toBe(state);
+    }
+    expect(state.usageByTaskId.size).toBe(1);
+    expect(state.subagentDescriptions.size).toBe(1);
+    const progressed = applyGrokSubagentUpdate(state, {
+      ...active,
+      tokensUsed: undefined,
+      toolCallCount: 3,
+    });
+    expect(progressed.events[0]?.payload.typedUsage).toEqual({ totalTokens: 42, toolUses: 3 });
+  });
+
+  it("releases terminal subagent payload while suppressing late events", () => {
+    const update = parseXAiSubagentUpdate({
+      sessionUpdate: "subagent_finished",
+      subagent_id: "child",
+      tokens_used: 25,
+    })!;
+    const completed = applyGrokSubagentUpdate(emptyGrokSubagentTrackState(), update);
+    expect(completed.state.usageByTaskId.size).toBe(0);
+    expect(completed.state.subagentDescriptions.size).toBe(0);
+    for (const kind of ["spawned", "progress", "finished"] as const) {
+      expect(applyGrokSubagentUpdate(completed.state, { ...update, kind }).events).toEqual([]);
+    }
+  });
+
+  it("releases completed member payload without losing deduplication", () => {
+    const update = parseXAiWorkflowUpdated({
+      sessionUpdate: "workflow_updated",
+      run_id: "run",
+      name: "review",
+      agents: [{ agent_id: "a", state: "done", tokens_used: 25 }],
+    })!;
+    const completed = applyGrokWorkflowUpdate(emptyGrokSubagentTrackState(), update);
+    expect(completed.state.usageByTaskId.size).toBe(0);
+    expect(completed.state.memberFingerprints.size).toBe(0);
+    expect(completed.state.memberRunIds.size).toBe(0);
+    const late = applyGrokWorkflowUpdate(completed.state, {
+      ...update,
+      agents: update.agents.map((agent) => ({ ...agent, tokensUsed: 30 })),
+    });
+    expect(late.events.filter((event) => event.payload.taskId === "run:wf:a")).toEqual([]);
+  });
+});
+
+describe("Grok terminal workflow ownership", () => {
+  it("settles listed and omitted members before the run and rejects later snapshots", () => {
+    const update = parseXAiWorkflowUpdated({
+      sessionUpdate: "workflow_updated",
+      run_id: "run",
+      name: "review",
+      agents: [
+        { agent_id: "a", state: "running", tokens_used: 25 },
+        { agent_id: "b", state: "running", tokens_used: 10 },
+      ],
+    })!;
+    const state = applyGrokWorkflowUpdate(emptyGrokSubagentTrackState(), update).state;
+    const terminal = applyGrokWorkflowUpdate(state, {
+      ...update,
+      status: "complete",
+      agents: [{ ...update.agents[0]!, tokensUsed: 50 }],
+    });
+    expect(
+      terminal.events
+        .filter((event) => event.type === "task.completed")
+        .map((event) => [event.payload.taskId, event.payload.typedUsage]),
+    ).toEqual([
+      ["run:wf:a", { totalTokens: 50 }],
+      ["run:wf:b", { totalTokens: 10 }],
+      ["run", undefined],
+    ]);
+    for (const spec of terminal.events) {
+      expect(() =>
+        decodeRuntimeEvent({
+          ...spec,
+          eventId: "event",
+          createdAt: "2026-09-07T00:00:00.000Z",
+          provider: "grok",
+          threadId: "thread",
+        }),
+      ).not.toThrow();
+    }
+    expect(state.usageByTaskId.size).toBe(0);
+    expect(state.memberFingerprints.size).toBe(0);
+    expect(
+      applyGrokWorkflowUpdate(state, {
+        ...update,
+        revision: 100,
+        agents: [{ ...update.agents[0]!, agentId: "new" }],
+      }).events,
+    ).toEqual([]);
   });
 });
