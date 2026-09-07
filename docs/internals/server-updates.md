@@ -7,6 +7,12 @@ their service definition or select their own replacement. Local service commands
 may replace the launcher and state while the service is stopped. Foreground CLI
 processes do not self-update.
 
+Only [service-launcher.ts](../../apps/server/src/service-launcher.ts) starts the
+launcher. The shared launcher module has no startup side effects: bundling it into
+the CLI makes its `import.meta` describe the CLI entrypoint. The bundled entrypoint
+test verifies that CLI help and version work without a service home while the
+dedicated launcher still requires one.
+
 Exact-version installs keep restarts independent of npm cache eviction or a moving
 release tag. Installation and preflight happen in staging before publishing an
 immutable runtime. Preflight checks the launcher protocol because a target that
