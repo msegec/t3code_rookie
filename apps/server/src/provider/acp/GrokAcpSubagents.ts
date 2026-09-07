@@ -2,7 +2,7 @@ import type { RuntimeTaskStatus } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 /**
- * Pure mapping of Grok Build x.ai session notifications onto T3's shared
+ * Mapping of Grok Build x.ai session notifications onto T3's shared
  * task.* surface. Claude stamps workflow members with parentAgentId +
  * timelineBypass and a stable slot id; Codex does the same for collab
  * children. Grok must not invent a third shape.
@@ -41,7 +41,7 @@ export interface GrokWorkflowAgent {
 
 export interface GrokWorkflowUpdated {
   readonly runId: string;
-  readonly revision: number;
+  readonly revision: number | undefined;
   readonly name: string;
   readonly objective: string;
   readonly status: string;
@@ -81,25 +81,27 @@ export interface GrokTypedUsageSnapshot {
 }
 
 export interface GrokSubagentTrackState {
-  readonly seenRunIds: ReadonlySet<string>;
-  readonly completedRunIds: ReadonlySet<string>;
-  readonly seenMemberIds: ReadonlySet<string>;
-  readonly completedMemberIds: ReadonlySet<string>;
-  readonly memberFingerprints: ReadonlyMap<string, string>;
-  readonly seenSubagentIds: ReadonlySet<string>;
-  readonly completedSubagentIds: ReadonlySet<string>;
+  readonly revisionByRunId: Map<string, number>;
+  readonly seenRunIds: Set<string>;
+  readonly completedRunIds: Set<string>;
+  readonly memberRunIds: Map<string, string>;
+  readonly completedMemberIds: Set<string>;
+  readonly memberFingerprints: Map<string, string>;
+  readonly subagentDescriptions: Map<string, string>;
+  readonly completedSubagentIds: Set<string>;
   /** Last published usage per task id so a tool-only tick cannot zero tokens. */
-  readonly usageByTaskId: ReadonlyMap<string, GrokTypedUsageSnapshot>;
+  readonly usageByTaskId: Map<string, GrokTypedUsageSnapshot>;
 }
 
 export function emptyGrokSubagentTrackState(): GrokSubagentTrackState {
   return {
+    revisionByRunId: new Map(),
     seenRunIds: new Set(),
     completedRunIds: new Set(),
-    seenMemberIds: new Set(),
+    memberRunIds: new Map(),
     completedMemberIds: new Set(),
     memberFingerprints: new Map(),
-    seenSubagentIds: new Set(),
+    subagentDescriptions: new Map(),
     completedSubagentIds: new Set(),
     usageByTaskId: new Map(),
   };
@@ -191,7 +193,7 @@ export function parseXAiWorkflowUpdated(payload: unknown): GrokWorkflowUpdated |
     : [];
   return {
     runId,
-    revision: nonNegativeInt(update.revision) ?? 0,
+    revision: nonNegativeInt(update.revision),
     name,
     objective: readString(update.objective) ?? "",
     status: readString(update.status) ?? "active",
@@ -380,12 +382,27 @@ export function applyGrokWorkflowUpdate(
   state: GrokSubagentTrackState,
   update: GrokWorkflowUpdated,
 ): { readonly state: GrokSubagentTrackState; readonly events: ReadonlyArray<GrokTaskEventSpec> } {
-  const seenRunIds = new Set(state.seenRunIds);
-  const completedRunIds = new Set(state.completedRunIds);
-  const seenMemberIds = new Set(state.seenMemberIds);
-  const completedMemberIds = new Set(state.completedMemberIds);
-  const memberFingerprints = new Map(state.memberFingerprints);
-  const usageByTaskId = new Map(state.usageByTaskId);
+  if (state.completedRunIds.has(update.runId)) {
+    return { state, events: [] };
+  }
+  const previousRevision = state.revisionByRunId.get(update.runId);
+  if (
+    update.revision !== undefined &&
+    previousRevision !== undefined &&
+    update.revision <= previousRevision
+  ) {
+    return { state, events: [] };
+  }
+  const revisionByRunId = state.revisionByRunId;
+  if (update.revision !== undefined) {
+    revisionByRunId.set(update.runId, update.revision);
+  }
+  const seenRunIds = state.seenRunIds;
+  const completedRunIds = state.completedRunIds;
+  const memberRunIds = state.memberRunIds;
+  const completedMemberIds = state.completedMemberIds;
+  const memberFingerprints = state.memberFingerprints;
+  const usageByTaskId = state.usageByTaskId;
   const events: Array<GrokTaskEventSpec> = [];
 
   const phases = update.phases.map((phase, index) => ({ index, title: phase.title }));
@@ -429,32 +446,18 @@ export function applyGrokWorkflowUpdate(
     });
   }
 
-  if (grokWorkflowRunIsTerminal(update.status) && !completedRunIds.has(update.runId)) {
-    completedRunIds.add(update.runId);
-    events.push({
-      type: "task.completed",
-      payload: {
-        taskId: update.runId,
-        status: runCompletedStatus(update.status),
-        summary: update.resultSummary ?? update.pauseMessage ?? update.status,
-        taskType: "local_workflow",
-        workflowName: update.name,
-        title: update.name,
-        ...(phases.length > 0 ? { phases } : {}),
-        runHandles: { runId: update.runId },
-      },
-    });
-  }
-
   for (const [agentIndex, agent] of update.agents.entries()) {
     const memberId = grokWorkflowMemberTaskId(update.runId, agent.agentId);
+    if (completedMemberIds.has(memberId)) {
+      continue;
+    }
     const status = grokWorkflowAgentStatus(agent.state);
     const fingerprint = memberFingerprint(agent, status);
     if (memberFingerprints.get(memberId) === fingerprint) {
       continue;
     }
     memberFingerprints.set(memberId, fingerprint);
-    const memberSeen = seenMemberIds.has(memberId);
+    const memberSeen = memberRunIds.has(memberId);
     const linkage = {
       taskId: memberId,
       description: agent.label,
@@ -468,7 +471,7 @@ export function applyGrokWorkflowUpdate(
       timelineBypass: true,
     };
     if (!memberSeen) {
-      seenMemberIds.add(memberId);
+      memberRunIds.set(memberId, update.runId);
       events.push({ type: "task.started", payload: linkage });
     }
     const typedUsage = mergeTypedUsageFromCounts(
@@ -492,6 +495,9 @@ export function applyGrokWorkflowUpdate(
     });
     if (grokWorkflowAgentIsTerminal(agent.state) && !completedMemberIds.has(memberId)) {
       completedMemberIds.add(memberId);
+      memberRunIds.delete(memberId);
+      memberFingerprints.delete(memberId);
+      usageByTaskId.delete(memberId);
       events.push({
         type: "task.completed",
         payload: {
@@ -504,16 +510,50 @@ export function applyGrokWorkflowUpdate(
     }
   }
 
+  if (grokWorkflowRunIsTerminal(update.status)) {
+    for (const [memberId, runId] of memberRunIds) {
+      if (runId !== update.runId) continue;
+      const typedUsage = usageByTaskId.get(memberId);
+      events.push({
+        type: "task.completed",
+        payload: {
+          taskId: memberId,
+          parentAgentId: runId,
+          taskType: "subagent",
+          timelineBypass: true,
+          status: runCompletedStatus(update.status),
+          summary: update.resultSummary ?? update.status,
+          ...(typedUsage ? { typedUsage } : {}),
+        },
+      });
+      memberRunIds.delete(memberId);
+      completedMemberIds.add(memberId);
+      memberFingerprints.delete(memberId);
+      usageByTaskId.delete(memberId);
+    }
+    seenRunIds.delete(update.runId);
+    revisionByRunId.delete(update.runId);
+  }
+
+  if (grokWorkflowRunIsTerminal(update.status) && !completedRunIds.has(update.runId)) {
+    completedRunIds.add(update.runId);
+    events.push({
+      type: "task.completed",
+      payload: {
+        taskId: update.runId,
+        status: runCompletedStatus(update.status),
+        summary: update.resultSummary ?? update.pauseMessage ?? update.status,
+        taskType: "local_workflow",
+        workflowName: update.name,
+        title: update.name,
+        ...(phases.length > 0 ? { phases } : {}),
+        runHandles: { runId: update.runId },
+      },
+    });
+  }
+
   return {
-    state: {
-      ...state,
-      seenRunIds,
-      completedRunIds,
-      seenMemberIds,
-      completedMemberIds,
-      memberFingerprints,
-      usageByTaskId,
-    },
+    state,
     events,
   };
 }
@@ -522,32 +562,39 @@ export function applyGrokSubagentUpdate(
   state: GrokSubagentTrackState,
   update: GrokSubagentUpdate,
 ): { readonly state: GrokSubagentTrackState; readonly events: ReadonlyArray<GrokTaskEventSpec> } {
-  const seenSubagentIds = new Set(state.seenSubagentIds);
-  const completedSubagentIds = new Set(state.completedSubagentIds);
-  const usageByTaskId = new Map(state.usageByTaskId);
+  if (state.completedSubagentIds.has(update.subagentId)) {
+    return { state, events: [] };
+  }
+  const subagentDescriptions = state.subagentDescriptions;
+  const completedSubagentIds = state.completedSubagentIds;
+  const usageByTaskId = state.usageByTaskId;
   const events: Array<GrokTaskEventSpec> = [];
-  const title = subagentTitle(update);
+  const firstSeen = !subagentDescriptions.has(update.subagentId);
+  const title = firstSeen ? subagentTitle(update) : update.description;
+  const description =
+    update.description ?? subagentDescriptions.get(update.subagentId) ?? subagentTitle(update);
+  if (!firstSeen && update.description) subagentDescriptions.set(update.subagentId, description);
+  const role = update.role ?? (firstSeen ? "general-purpose" : undefined);
   const typedUsage = mergeTypedUsageFromCounts(update, usageByTaskId.get(update.subagentId));
   if (typedUsage) {
     usageByTaskId.set(update.subagentId, typedUsage);
   }
   const linkage = {
     taskId: update.subagentId,
-    description: title,
-    title,
+    ...(title ? { description: title, title } : {}),
     taskType: "subagent",
-    role: update.role ?? "general-purpose",
+    ...(role ? { role } : {}),
     ...(update.model ? { model: update.model } : {}),
     ...(update.childSessionId ? { agentPath: update.childSessionId } : {}),
     timelineBypass: true,
   };
 
-  if (update.kind === "spawned" && !seenSubagentIds.has(update.subagentId)) {
-    seenSubagentIds.add(update.subagentId);
+  if (update.kind === "spawned" && !subagentDescriptions.has(update.subagentId)) {
+    subagentDescriptions.set(update.subagentId, description);
     events.push({ type: "task.started", payload: linkage });
   } else if (update.kind === "progress") {
-    if (!seenSubagentIds.has(update.subagentId)) {
-      seenSubagentIds.add(update.subagentId);
+    if (!subagentDescriptions.has(update.subagentId)) {
+      subagentDescriptions.set(update.subagentId, description);
       events.push({ type: "task.started", payload: linkage });
     }
     if (!completedSubagentIds.has(update.subagentId)) {
@@ -555,6 +602,7 @@ export function applyGrokSubagentUpdate(
         type: "task.progress",
         payload: {
           ...linkage,
+          description,
           status: "running",
           summary: update.lastToolName ?? update.status ?? update.role ?? "running",
           ...(update.lastToolName ? { lastToolName: update.lastToolName } : {}),
@@ -563,11 +611,13 @@ export function applyGrokSubagentUpdate(
       });
     }
   } else if (update.kind === "finished" && !completedSubagentIds.has(update.subagentId)) {
-    if (!seenSubagentIds.has(update.subagentId)) {
-      seenSubagentIds.add(update.subagentId);
+    if (!subagentDescriptions.has(update.subagentId)) {
+      subagentDescriptions.set(update.subagentId, description);
       events.push({ type: "task.started", payload: linkage });
     }
     completedSubagentIds.add(update.subagentId);
+    subagentDescriptions.delete(update.subagentId);
+    usageByTaskId.delete(update.subagentId);
     const finished = update.status ?? "completed";
     events.push({
       type: "task.completed",
@@ -582,12 +632,7 @@ export function applyGrokSubagentUpdate(
   }
 
   return {
-    state: {
-      ...state,
-      seenSubagentIds,
-      completedSubagentIds,
-      usageByTaskId,
-    },
+    state,
     events,
   };
 }

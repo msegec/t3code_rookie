@@ -22,12 +22,14 @@ import type { AcpToolCallState } from "./AcpRuntimeModel.ts";
 export interface AcpTaskToolTrackState {
   readonly seenIds: Set<string>;
   readonly completedIds: Set<string>;
+  readonly backgroundIds: Set<string>;
 }
 
 export function emptyAcpTaskToolTrackState(): AcpTaskToolTrackState {
   return {
     seenIds: new Set(),
     completedIds: new Set(),
+    backgroundIds: new Set(),
   };
 }
 
@@ -120,6 +122,21 @@ export type AcpTaskToolEventSpec =
       };
     }
   | {
+      readonly type: "task.progress";
+      readonly payload: {
+        readonly taskId: RuntimeTaskId;
+        readonly status: "unknown";
+        readonly description: string;
+        readonly summary: string;
+        readonly taskType: "subagent";
+        readonly title?: string;
+        readonly role?: string;
+        readonly model?: string;
+        readonly toolUseId: string;
+        readonly timelineBypass: true;
+      };
+    }
+  | {
       readonly type: "task.completed";
       readonly payload: {
         readonly taskId: RuntimeTaskId;
@@ -167,6 +184,27 @@ export function advanceAcpTaskToolTracker(
     });
   }
 
+  const isBackground = asRecord(toolCall.data.rawOutput)?.isBackground;
+  if (
+    toolCall.status !== "failed" &&
+    (isBackground === true || (state.backgroundIds.has(taskId) && isBackground !== false))
+  ) {
+    if (!state.backgroundIds.has(taskId)) {
+      state.backgroundIds.add(taskId);
+      events.push({
+        type: "task.progress",
+        payload: {
+          taskId: runtimeTaskId,
+          status: "unknown",
+          description: linkage.title ?? "Subagent task",
+          summary: "Cursor does not report background task completion.",
+          ...linkage,
+        },
+      });
+    }
+    return events;
+  }
+
   const terminal =
     toolCall.status === "completed"
       ? ("completed" as const)
@@ -178,6 +216,7 @@ export function advanceAcpTaskToolTracker(
     return events;
   }
 
+  state.backgroundIds.delete(taskId);
   state.completedIds.add(taskId);
   const summary = readOptionalString(toolCall.detail);
   events.push({
@@ -217,6 +256,9 @@ export function makeAcpTaskToolRuntimeEvent(input: {
       type: "task.started",
       payload: input.spec.payload,
     };
+  }
+  if (input.spec.type === "task.progress") {
+    return { ...base, type: "task.progress", payload: input.spec.payload };
   }
   return {
     ...base,
