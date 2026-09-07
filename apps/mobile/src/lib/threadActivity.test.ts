@@ -3289,6 +3289,39 @@ describe("quiet timeline: nested agents", () => {
     });
   });
 
+  it("preserves unavailable background subagent status without showing working or completed", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-cursor-background"),
+      projectId: ProjectId.make("project-1"),
+      title: "Background agent",
+      activities: ["running", "unknown"].map((status, index) =>
+        makeActivity({
+          id: EventId.make(`background-${index}`),
+          kind: index === 0 ? "task.started" : "task.progress",
+          summary: "Background audit",
+          createdAt: `2026-04-01T00:00:0${index}.000Z`,
+          turnId: TurnId.make("background-turn"),
+          payload: { taskId: "background-agent", agentKind: "agent", title: "Audit", status },
+        }),
+      ),
+    });
+    const rows = buildThreadFeed(thread).flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      lifecycleStatus: "unknown",
+      summary: "Kicked off 1 subagent · status unavailable",
+      workEntry: { agentSpawn: { agents: [{ status: "unknown" }] } },
+    });
+    const spawn = rows[0]!.workEntry.agentSpawn!;
+    expect(agentSpawnSummary(spawn, rows[0]!.lifecycleStatus)).toMatchObject({
+      status: "Status unavailable",
+      tone: "unknown",
+      members: [{ status: "Status unavailable", tone: "unknown" }],
+    });
+  });
+
   it("keeps a nested agent's terminal row but hides its background work", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-nested"),

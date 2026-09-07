@@ -171,6 +171,49 @@ describe("AcpTaskSubagents", () => {
     });
   });
 
+  it("reports unknown background completion and accepts a later explicit result", () => {
+    const state = emptyAcpTaskToolTrackState();
+    const background = toolCall({
+      toolCallId: "background-task",
+      title: "Task: review changes",
+      status: "completed",
+      data: { rawOutput: { isBackground: true } },
+    });
+    const events = advanceAcpTaskToolTracker(state, background);
+    expect(events.map((event) => event.type)).toEqual(["task.started", "task.progress"]);
+    expect(events[1]).toMatchObject({
+      type: "task.progress",
+      payload: {
+        taskId: "background-task",
+        status: "unknown",
+        description: "review changes",
+        summary: "Cursor does not report background task completion.",
+      },
+    });
+    expect(advanceAcpTaskToolTracker(state, background)).toEqual([]);
+    expect(advanceAcpTaskToolTracker(state, { ...background, data: {} })).toEqual([]);
+    expect(
+      advanceAcpTaskToolTracker(state, {
+        ...background,
+        data: { rawOutput: { isBackground: false } },
+      }),
+    ).toMatchObject([{ type: "task.completed", payload: { status: "completed" } }]);
+  });
+
+  it("accepts failure after background acknowledgement", () => {
+    const state = emptyAcpTaskToolTrackState();
+    const task = toolCall({
+      toolCallId: "background-failure",
+      title: "Task: review",
+      status: "completed",
+      data: { rawOutput: { isBackground: true } },
+    });
+    advanceAcpTaskToolTracker(state, task);
+    expect(advanceAcpTaskToolTracker(state, { ...task, status: "failed" })).toMatchObject([
+      { type: "task.completed", payload: { status: "failed" } },
+    ]);
+  });
+
   it("builds runtime events with acp.jsonrpc raw source", () => {
     const state = emptyAcpTaskToolTrackState();
     const [spec] = advanceAcpTaskToolTracker(
