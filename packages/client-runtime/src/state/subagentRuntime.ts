@@ -20,6 +20,7 @@
 import type { OrchestrationThreadActivity } from "@t3tools/contracts";
 
 export type RuntimeSubagentStatus =
+  | "unknown"
   | "pending"
   | "running"
   | "waiting"
@@ -433,6 +434,7 @@ const TASK_COMPLETED_STATUS: ReadonlyMap<string, RuntimeSubagentStatus> = new Ma
 ]);
 
 const KNOWN_STATUSES: ReadonlySet<string> = new Set([
+  "unknown",
   "pending",
   "running",
   "waiting",
@@ -519,7 +521,8 @@ export function foldSubagentActivities(
         } else if (
           (payload.usageSnapshot !== true || !existed) &&
           !isTerminalSubagentStatus(agent.status) &&
-          agent.status !== "idle"
+          agent.status !== "idle" &&
+          agent.status !== "unknown"
         ) {
           applyStatus(agent, "running", at);
         }
@@ -840,7 +843,7 @@ export function deriveAgentPanelModel({
     if (agent.status === "running" || agent.status === "pending") runningCount += 1;
     else if (agent.status === "waiting") waitingCount += 1;
     else if (agent.status === "idle") idleCount += 1;
-    else settledCount += 1;
+    else if (isTerminalSubagentStatus(agent.status)) settledCount += 1;
     totalTokens += agent.usage?.totalTokens ?? 0;
   }
 

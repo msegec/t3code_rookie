@@ -32,6 +32,7 @@ describe("deriveAgentSpawnSummary", () => {
 
   it.each([
     ["idle", "1 idle", "inactive"],
+    ["unknown", "Status unavailable", "inactive"],
     ["cancelled", "1 stopped", "inactive"],
     ["interrupted", "1 stopped", "inactive"],
     ["failed", "1 failed", "failed"],
