@@ -41,6 +41,7 @@ jobs:
           [[ "$(git -C source rev-parse HEAD)" == "$GITHUB_SHA" ]]
           cp source/.mzs/overlays.json "$RUNNER_TEMP/overlays.json"
           cp source/.mzs/stage-server-package.mjs "$RUNNER_TEMP/stage-server-package.mjs"
+          cp source/.mzs/generate-release-notes.mjs "$RUNNER_TEMP/generate-release-notes.mjs"
 
       - id: compose
         name: Compose latest nightly and overlays
@@ -241,6 +242,8 @@ jobs:
           file apps/server/dist/resource-monitor/darwin-x64/t3-resource-monitor | grep -Eq 'x86_64|x86-64'
 
       - name: Package and smoke test
+        env:
+          GH_TOKEN: ${{ github.token }}
         working-directory: source
         shell: bash
         run: |
@@ -259,6 +262,10 @@ jobs:
             --argjson overlays "$overlays" \
             '{schemaVersion: $schemaVersion, version: $version, releaseTag: $releaseTag, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, overlays: $overlays}' \
             >apps/server/dist/mzs-fleet.json
+          node "$RUNNER_TEMP/generate-release-notes.mjs" \
+            apps/server/dist/mzs-fleet.json \
+            "$RUNNER_TEMP/overlays.json" \
+            "$release_dir/release-notes.md"
           node "$RUNNER_TEMP/stage-server-package.mjs" \
             "$PWD" \
             "$RUNNER_TEMP/fleet-package" \
@@ -280,7 +287,7 @@ jobs:
           git bundle create "$bundle" HEAD
           cp apps/server/dist/mzs-fleet.json "$release_dir/mzs-fleet.json"
           cd "$release_dir"
-          sha256sum "$(basename "$artifact")" "$(basename "$bundle")" >SHA256SUMS
+          sha256sum "$(basename "$artifact")" "$(basename "$bundle")" release-notes.md >SHA256SUMS
           smoke_dir="$RUNNER_TEMP/fleet-smoke"
           npm install --prefix "$smoke_dir" --no-fund --no-audit "$artifact"
           reported="$(node "$smoke_dir/node_modules/t3/dist/bin.mjs" --version)"
@@ -564,4 +571,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "T3 Code Fleet ${{ needs.build.outputs.version }}" \
-            --notes "Manual MZS fleet build from the matching official nightly and the overlays recorded in mzs-fleet.json."
+            --notes-file release/release-notes.md
