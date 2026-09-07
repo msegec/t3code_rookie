@@ -999,6 +999,7 @@ const AGENT_SPAWN_TONE_DOT_CLASS = {
   completed: "bg-adaptive-emerald-600-400",
   failed: "bg-adaptive-rose-600-400",
   stopped: "bg-foreground-muted",
+  unknown: "bg-foreground-muted",
 } as const satisfies Record<AgentSpawnSummary["tone"], string>;
 
 /**

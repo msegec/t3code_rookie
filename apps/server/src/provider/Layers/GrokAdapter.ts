@@ -463,6 +463,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 payload: input.payload,
               },
             } as ProviderRuntimeEvent);
+            if (spec.type === "task.completed") {
+              input.ctx.taskSpawnTurnIds.delete(taskIdValue);
+            }
           }),
         { discard: true },
       );
