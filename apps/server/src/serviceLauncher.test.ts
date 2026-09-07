@@ -32,6 +32,26 @@ it("orders exact semantic versions without treating build metadata as precedence
   assert.equal(compareExactServiceVersions("2.0.0+one", "2.0.0+two"), 0);
 });
 
+it("preserves a fixed service endpoint and rejects invalid endpoint state", () => {
+  const state = { protocol: SERVICE_LAUNCHER_PROTOCOL, activeVersion: "1.0.0" };
+  const endpoint = {
+    host: "127.0.0.1",
+    port: 3774,
+    tailscaleServeEnabled: true,
+    tailscaleServePort: 8443,
+  };
+  assert.deepEqual(decodeServiceState({ ...state, endpoint }), { ...state, endpoint });
+  for (const endpoint of [
+    { port: 0 },
+    { port: 65536 },
+    { port: 1.5 },
+    { port: "3774" },
+    { port: 3774, host: 3 },
+  ]) {
+    assert.isUndefined(decodeServiceState({ ...state, endpoint }));
+  }
+});
+
 it("rejects contradictory service state", () => {
   assert.isUndefined(
     decodeServiceState({
@@ -135,6 +155,8 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
       const encodedDatabasePath = JSON.stringify(databasePath);
       const childSource = `
 const context = JSON.parse(process.env.T3_SERVICE_LAUNCHER_CONTEXT);
+if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["serve", "--port", "3774", "--host", "127.0.0.1"])) process.exit(3);
+if (process.env.T3CODE_TAILSCALE_SERVE !== "true" || process.env.T3CODE_TAILSCALE_SERVE_PORT !== "8443") process.exit(4);
 if (context.update?.status === "pending") {
   process.send({ type: "prepared", updateId: context.update.id });
   process.on("message", (message) => {
@@ -158,6 +180,12 @@ if (context.update?.status === "pending") {
         writeServiceState(statePath, {
           protocol: SERVICE_LAUNCHER_PROTOCOL,
           activeVersion: "1.0.0",
+          endpoint: {
+            host: "127.0.0.1",
+            port: 3774,
+            tailscaleServeEnabled: true,
+            tailscaleServePort: 8443,
+          },
         }),
       );
 
@@ -172,6 +200,12 @@ if (context.update?.status === "pending") {
       const state = yield* Effect.promise(() => readServiceState(statePath));
       assert.equal(state.activeVersion, "1.1.0");
       assert.equal(state.update?.status, "committed");
+      assert.deepEqual(state.endpoint, {
+        host: "127.0.0.1",
+        port: 3774,
+        tailscaleServeEnabled: true,
+        tailscaleServePort: 8443,
+      });
     }),
   );
 

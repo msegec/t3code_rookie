@@ -47,15 +47,26 @@ describe("serverRuntimeState", () => {
   it.effect("records the dev web URL when the server fronts a dev server", () =>
     Effect.gen(function* () {
       const state = yield* ServerRuntimeState.makePersistedServerRuntimeState({
-        config: { host: undefined, devUrl: new URL("http://localhost:5733") },
+        config: {
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
+          host: undefined,
+          devUrl: new URL("http://localhost:5733"),
+        },
         port: 13_773,
       });
 
       assert.equal(state.devUrl, "http://localhost:5733/");
       assert.equal(state.origin, "http://127.0.0.1:13773");
 
+      assert.equal(state.ownership, "exclusive");
       const withoutDev = yield* ServerRuntimeState.makePersistedServerRuntimeState({
-        config: { host: undefined, devUrl: undefined },
+        config: {
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
+          host: undefined,
+          devUrl: undefined,
+        },
         port: 13_773,
       });
       assert.isFalse("devUrl" in withoutDev);
