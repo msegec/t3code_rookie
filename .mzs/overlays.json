@@ -70,6 +70,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
       "sha": "9fdb54144b1294befbc1fa2f2f3e0e0090b0f81b"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS ownership crash test lifecycle",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/pc-f/feature-overlay",
+      "sha": "7fed7e097b36f03e4db3162b66caab6f2a2ceca0"
     }
   ],
   "tests": [
