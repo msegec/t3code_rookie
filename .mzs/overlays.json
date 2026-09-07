@@ -27,14 +27,14 @@
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "7c13a78dcc60a833786106b50d3d0a43a7c4a515"
+      "sha": "b48aab3be4b3c8913ca5b4bce6b4a1bc3db11ce7"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "a576628b13c50679ef01f262bb1efd902476155d"
+      "sha": "0b375eebcb9a65d316b10d7e0f1a5b3e459d104d"
     },
     {
       "kind": "commit",
@@ -48,7 +48,14 @@
       "name": "MZS ACP Cursor/Grok subagent panel",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "4ffbad46a419952ca3ec6ae18bdaef00f918044e"
+      "sha": "eee4b0c52ac8ff37cee193f9552ea81ba9f73ab5"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS ACP subagent lifecycle fixes",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/pc-f/feature-overlay",
+      "sha": "6251fd29634eab7a588ebdcb94d65ca93f052622"
     }
   ],
   "tests": [
@@ -90,6 +97,14 @@
     "apps/web/src/state/usage.test.tsx",
     "apps/server/src/provider/acp/GrokAcpSubagents.test.ts",
     "apps/server/src/provider/acp/AcpTaskSubagents.test.ts",
-    "apps/server/src/provider/acp/AcpCoreRuntimeEvents.test.ts"
+    "apps/server/src/provider/acp/AcpCoreRuntimeEvents.test.ts",
+    "apps/server/src/provider/Layers/GrokAdapter.test.ts",
+    "apps/server/src/provider/Layers/CursorAdapter.test.ts",
+    "apps/server/src/orchestration/ThreadBackgroundLiveness.test.ts",
+    "packages/client-runtime/src/state/subagentRuntime.test.ts",
+    "packages/contracts/src/providerRuntime.test.ts",
+    "apps/web/src/components/chat/agentSpawnSummary.test.ts",
+    "apps/mobile/src/lib/threadActivity.test.ts",
+    "packages/client-runtime/src/work-log/presentation.test.ts"
   ]
 }
