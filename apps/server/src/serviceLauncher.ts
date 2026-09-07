@@ -7,8 +7,10 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import * as NodeTimersPromises from "node:timers/promises";
 
 import type {
+  ManualServerHandoff,
   PendingServiceUpdate,
   ServiceLauncherChildMessage,
   ServiceLauncherContext,
@@ -26,6 +28,7 @@ import {
   SERVICE_STATE_FILE,
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
+import type { PersistedServerRuntimeState } from "./serverRuntimeState.ts";
 import { isEntrypoint } from "./entrypoint.ts";
 
 const HANDOFF_DELAY_MS = 2_000;
@@ -263,6 +266,218 @@ async function terminateChild(
 const stopMarkerPath = (baseDir: string) =>
   NodePath.join(baseDir, "runtime", SERVICE_STOP_MARKER_FILE);
 
+async function hasProcessIdentity(): Promise<boolean> {
+  try {
+    await NodeFSP.access("/proc/self/stat");
+    return true;
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return false;
+    throw cause;
+  }
+}
+
+async function processIdentity(pid: number): Promise<string | undefined> {
+  if (!(await hasProcessIdentity())) {
+    try {
+      process.kill(pid, 0);
+    } catch (cause) {
+      if (cause instanceof Error && "code" in cause && cause.code === "ESRCH") return undefined;
+      throw cause;
+    }
+    throw new Error(
+      "Automatic replacement of a manual server requires Linux process ownership verification. Stop the manual server before installing the service on this platform.",
+    );
+  }
+  try {
+    const stat = await NodeFSP.stat(`/proc/${pid}`);
+    if (stat.uid !== process.getuid?.()) throw new Error("Manual server belongs to another user.");
+    const contents = await NodeFSP.readFile(`/proc/${pid}/stat`, "utf8");
+    const fields = contents.slice(contents.lastIndexOf(")") + 2).split(" ");
+    if (fields[0] === "Z") return undefined;
+    const startTime = fields[19];
+    if (startTime === undefined || !/^\d+$/.test(startTime))
+      throw new Error("Cannot verify manual server process identity.");
+    return startTime;
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined;
+    throw cause;
+  }
+}
+
+async function verifyStandaloneServer(pid: number): Promise<void> {
+  const args = (await NodeFSP.readFile(`/proc/${pid}/cmdline`, "utf8")).split("\0");
+  const entry = args[1];
+  if (entry === undefined || !entry.endsWith("/t3/dist/bin.mjs")) {
+    throw new Error("Automatic replacement requires a standalone installed T3 server.");
+  }
+  const command = args[2];
+  if (command !== undefined && command !== "" && command !== "serve" && !command.startsWith("--")) {
+    throw new Error("The recorded process is not a T3 server command.");
+  }
+}
+
+async function ownsDatabase(pid: number, dbPath: string): Promise<boolean> {
+  const database = await NodeFSP.stat(dbPath);
+  const handles = await NodeFSP.readdir(`/proc/${pid}/fd`);
+  if (handles.length > 65536)
+    throw new Error("Too many process handles to verify replacement safely.");
+  for (const handle of handles) {
+    try {
+      const file = await NodeFSP.stat(`/proc/${pid}/fd/${handle}`);
+      if (file.dev === database.dev && file.ino === database.ino) return true;
+    } catch (cause) {
+      if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
+    }
+  }
+  return false;
+}
+
+export async function recordedProcessOwnsDatabase(pid: number, dbPath: string): Promise<boolean> {
+  if (!(await hasProcessIdentity())) return true;
+  try {
+    return await ownsDatabase(pid, dbPath);
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return false;
+    throw cause;
+  }
+}
+
+export async function readServerNetworkSettings(
+  runtime: PersistedServerRuntimeState,
+  dbPath: string,
+  managed = false,
+) {
+  if (runtime.tailscaleServeEnabled !== undefined && runtime.tailscaleServePort !== undefined) {
+    return {
+      tailscaleServeEnabled: runtime.tailscaleServeEnabled,
+      tailscaleServePort: runtime.tailscaleServePort,
+    };
+  }
+  if (!(await hasProcessIdentity())) {
+    if (!managed) await processIdentity(runtime.pid);
+    return undefined;
+  }
+  const identity = await processIdentity(runtime.pid);
+  if (identity === undefined || !(await recordedProcessOwnsDatabase(runtime.pid, dbPath)))
+    return undefined;
+  const args = (await NodeFSP.readFile(`/proc/${runtime.pid}/cmdline`, "utf8")).split("\0");
+  const environment = (await NodeFSP.readFile(`/proc/${runtime.pid}/environ`, "utf8")).split("\0");
+  const env = (name: string) =>
+    environment.find((entry) => entry.startsWith(`${name}=`))?.slice(name.length + 1);
+  const flag = (name: string) => {
+    const index = args.findIndex((entry) => entry === name || entry.startsWith(`${name}=`));
+    if (index < 0) return undefined;
+    const argument = args[index];
+    if (argument === undefined) return undefined;
+    if (argument.startsWith(`${name}=`)) return argument.slice(name.length + 1);
+    const next = args[index + 1];
+    return next === undefined || next === "" || next.startsWith("--") ? "true" : next;
+  };
+  if (flag("--bootstrap-fd") !== undefined || env("T3CODE_BOOTSTRAP_FD") !== undefined) {
+    throw new Error(
+      "Cannot preserve legacy bootstrap network settings. Stop the server before installing the service.",
+    );
+  }
+  const enabled = args.includes("--no-tailscale-serve")
+    ? "false"
+    : (flag("--tailscale-serve") ?? env("T3CODE_TAILSCALE_SERVE") ?? "false");
+  const port = Number(
+    flag("--tailscale-serve-port") ?? env("T3CODE_TAILSCALE_SERVE_PORT") ?? "443",
+  );
+  if (
+    !["true", "false", "yes", "no", "on", "off", "1", "0", "y", "n"].includes(enabled) ||
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    throw new Error("Cannot preserve the server's Tailscale Serve settings.");
+  }
+  if ((await processIdentity(runtime.pid)) !== identity)
+    throw new Error("Server changed while reading network settings.");
+  return {
+    tailscaleServeEnabled: ["true", "yes", "on", "1", "y"].includes(enabled),
+    tailscaleServePort: port,
+  };
+}
+
+export async function captureManualServerHandoff(
+  pid: number,
+  dbPath: string,
+): Promise<ManualServerHandoff | undefined> {
+  if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error("Invalid manual server PID.");
+  const startTime = await processIdentity(pid);
+  if (startTime === undefined) return undefined;
+  try {
+    await verifyStandaloneServer(pid);
+    if (!(await ownsDatabase(pid, dbPath)))
+      throw new Error("Manual server does not own the expected database.");
+    const verified = await processIdentity(pid);
+    if (verified === undefined) return undefined;
+    if (verified !== startTime)
+      throw new Error("Manual server identity changed during verification.");
+  } catch (cause) {
+    if ((await processIdentity(pid)) === undefined) return undefined;
+    throw cause;
+  }
+  return { pid, startTime, dbPath };
+}
+
+export async function completeManualServerHandoff(handoff: ManualServerHandoff): Promise<void> {
+  if (handoff.pid === process.pid) throw new Error("The service launcher cannot replace itself.");
+  const current = await processIdentity(handoff.pid);
+  if (current === undefined) return;
+  if (current !== handoff.startTime)
+    throw new Error("Manual server PID was reused; refusing replacement.");
+  const verified = await captureManualServerHandoff(handoff.pid, handoff.dbPath);
+  if (verified === undefined) return;
+  if (verified.startTime !== handoff.startTime)
+    throw new Error("Manual server identity changed before shutdown.");
+  try {
+    process.kill(handoff.pid, "SIGTERM");
+  } catch (cause) {
+    if (!(cause instanceof Error && "code" in cause && cause.code === "ESRCH")) throw cause;
+  }
+  const deadline = performance.now() + 30_000;
+  while (performance.now() < deadline) {
+    if ((await processIdentity(handoff.pid)) !== handoff.startTime) return;
+    await NodeTimersPromises.setTimeout(50);
+  }
+  throw new Error(
+    "Manual server did not exit after graceful shutdown; replacement was not started.",
+  );
+}
+
+export async function verifyDatabaseOwner(
+  dbPath: string,
+  expectedPid: number | undefined,
+): Promise<void> {
+  if (!(await hasProcessIdentity())) return;
+  try {
+    await NodeFSP.stat(dbPath);
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return;
+    throw cause;
+  }
+  const entries = await NodeFSP.readdir("/proc");
+  if (entries.length > 65536) throw new Error("Too many processes to verify replacement safely.");
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) continue;
+    const pid = Number(entry);
+    try {
+      if ((await NodeFSP.stat(`/proc/${pid}`)).uid !== process.getuid?.()) continue;
+      const commandLine = await NodeFSP.readFile(`/proc/${pid}/cmdline`, "utf8");
+      if (!/t3|T3/.test(commandLine)) continue;
+      if ((await ownsDatabase(pid, dbPath)) && pid !== expectedPid) {
+        throw new Error(
+          `Another process (PID ${pid}) has ${dbPath} open; resolve the conflicting instance before updating.`,
+        );
+      }
+    } catch (cause) {
+      if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
+    }
+  }
+}
+
 export class Launcher {
   readonly #baseDir: string;
   readonly #statePath: string;
@@ -352,6 +567,18 @@ export class Launcher {
   }
 
   async #recover(): Promise<void> {
+    if (this.#state.handoff !== undefined) {
+      if (
+        NodePath.resolve(this.#state.handoff.dbPath) !==
+        NodePath.resolve(this.#baseDir, "userdata", "state.sqlite")
+      ) {
+        throw new Error("Manual server handoff does not match this service database.");
+      }
+      await completeManualServerHandoff(this.#state.handoff);
+      const { handoff: _handoff, ...next } = this.#state;
+      await writeServiceState(this.#statePath, next);
+      this.#state = next;
+    }
     // A fresh launcher means servers are running again: any stop marker from
     // a previous explicit stop is stale and must not make a future update
     // handoff release its tunnel.
@@ -402,10 +629,34 @@ export class Launcher {
       childVersion: version,
       ...(update === undefined ? {} : { update }),
     };
-    const child = NodeChildProcess.spawn(process.execPath, [paths.entryPath, "serve"], {
-      env: { ...process.env, [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context) },
-      stdio: ["inherit", "inherit", "inherit", "ipc"],
-    });
+    const endpoint = this.#state.endpoint;
+    const child = NodeChildProcess.spawn(
+      process.execPath,
+      [
+        paths.entryPath,
+        "serve",
+        ...(endpoint === undefined
+          ? []
+          : [
+              "--port",
+              String(endpoint.port),
+              ...(endpoint.host === undefined ? [] : ["--host", endpoint.host]),
+            ]),
+      ],
+      {
+        env: {
+          ...process.env,
+          ...(endpoint?.tailscaleServeEnabled === undefined
+            ? {}
+            : { T3CODE_TAILSCALE_SERVE: String(endpoint.tailscaleServeEnabled) }),
+          ...(endpoint?.tailscaleServePort === undefined
+            ? {}
+            : { T3CODE_TAILSCALE_SERVE_PORT: String(endpoint.tailscaleServePort) }),
+          [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context),
+        },
+        stdio: ["inherit", "inherit", "inherit", "ipc"],
+      },
+    );
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       child.once("error", onError);
@@ -624,4 +875,86 @@ if (
     process.stderr.write(`[service-launcher] ${error.message}\n`);
     process.exitCode = 1;
   });
+}
+
+type ServerReadinessReceipt =
+  | { readonly state: PersistedServerRuntimeState }
+  | { readonly reason: "watch" | "read" | "timeout"; readonly cause?: unknown };
+
+interface ServerReadinessWatchInput {
+  readonly startedAt: number;
+  readonly path: string;
+  readonly endpoint: { readonly port: number; readonly host?: string };
+  readonly previousPid?: number;
+  readonly timeoutMs?: number;
+  readonly decode: (raw: string) => PersistedServerRuntimeState;
+}
+
+export function startServerReadinessWatch(input: ServerReadinessWatchInput) {
+  let settled = false;
+  let checking = false;
+  let changed = false;
+  const { promise: result, resolve: finish } = Promise.withResolvers<ServerReadinessReceipt>();
+  const settle = (value: ServerReadinessReceipt) => {
+    if (settled) return;
+    settled = true;
+    void close().then(() => finish(value));
+  };
+  const check = async () => {
+    changed = true;
+    if (checking || settled) return;
+    checking = true;
+    try {
+      while (changed) {
+        if (settled) return;
+        changed = false;
+        let raw: string;
+        try {
+          raw = await NodeFSP.readFile(input.path, "utf8");
+        } catch (cause) {
+          if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") continue;
+          settle({ reason: "read", cause });
+          return;
+        }
+        let state: PersistedServerRuntimeState;
+        try {
+          state = input.decode(raw);
+        } catch {
+          continue;
+        }
+        if (
+          state.pid <= 1 ||
+          !Number.isSafeInteger(state.pid) ||
+          !(Date.parse(state.startedAt) >= input.startedAt) ||
+          state.pid === input.previousPid ||
+          state.port !== input.endpoint.port ||
+          state.host !== input.endpoint.host ||
+          state.devUrl !== undefined
+        )
+          continue;
+        try {
+          process.kill(state.pid, 0);
+        } catch {
+          continue;
+        }
+        settle({ state });
+      }
+    } finally {
+      checking = false;
+    }
+  };
+  const watcher = NodeFS.watch(NodePath.dirname(input.path), (_event, filename) => {
+    if (filename === null || filename === NodePath.basename(input.path)) void check();
+  });
+  watcher.on("error", (cause) => settle({ reason: "watch", cause }));
+  const timer = setTimeout(() => settle({ reason: "timeout" }), input.timeoutMs ?? 60_000);
+  const closed = new Promise<void>((resolve) => watcher.once("close", resolve));
+  const close = () => {
+    settled = true;
+    clearTimeout(timer);
+    watcher.close();
+    return closed;
+  };
+  void check();
+  return { result, close };
 }

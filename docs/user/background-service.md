@@ -25,6 +25,15 @@ Updating restarts the server. Finish active work first, and wait for any remote
 update already in progress. To match a remote client's version, follow
 [Updating T3 Code](./updating.md).
 
+Updates and repairs preserve the server's host, port, and Tailscale Serve
+settings, including a custom HTTPS port. On Linux, installing
+the service can replace a running command-line server after verifying that it
+owns the same T3 home. The service manager completes this handoff even if the
+update command disconnects with the old server. If ownership is ambiguous or
+the old server does not stop, setup refuses to start a second server.
+On macOS, stop a command-line server before installing the service; automatic
+handoff requires Linux process ownership checks.
+
 ## Platform support
 
 Linux needs systemd user services. Setup enables lingering so T3 Code starts at
