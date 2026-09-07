@@ -15,7 +15,7 @@ function isElectronReleaseNoteInfo(value: unknown): value is ElectronReleaseNote
 }
 
 const MAX_RELEASE_NOTE_GROUPS = 6;
-const MAX_RELEASE_NOTE_ITEMS_PER_GROUP = 8;
+const MAX_RELEASE_NOTE_ITEMS_PER_GROUP = 200;
 const MAX_RELEASE_NOTE_ITEM_LENGTH = 220;
 
 const HTML_ENTITY_REPLACEMENTS: Readonly<Record<string, string>> = {
@@ -100,6 +100,7 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
 
   const items: string[] = [];
   let totalItems = 0;
+  let skipSection = false;
   for (const rawLine of stripMarkup(note).split("\n")) {
     const item = rawLine
       .trim()
@@ -107,14 +108,21 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
       .replace(/^\d+[.)]\s+/, "")
       .replace(/\s+/g, " ");
     const normalized = normalizeReleaseNoteLine(item);
-    if (normalized === "new contributors" || normalized === "full changelog") break;
-    if (/^#{1,6}\s+/.test(item)) continue;
-    if (isIgnoredReleaseNoteLine(item)) continue;
+    if (normalized === "new contributors" || normalized === "full changelog") {
+      skipSection = true;
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(item)) {
+      skipSection = false;
+      continue;
+    }
+    if (skipSection || isIgnoredReleaseNoteLine(item)) continue;
     totalItems += 1;
-    items.push(truncateReleaseNoteItem(item));
-    if (items.length > MAX_RELEASE_NOTE_ITEMS_PER_GROUP) items.shift();
+    if (items.length < MAX_RELEASE_NOTE_ITEMS_PER_GROUP) {
+      items.push(truncateReleaseNoteItem(item));
+    }
   }
-  return { items: items.toReversed(), totalItems };
+  return { items, totalItems };
 }
 
 interface NormalizedDesktopUpdateReleaseNotes {
