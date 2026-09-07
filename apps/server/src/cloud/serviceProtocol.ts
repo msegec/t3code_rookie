@@ -1,5 +1,27 @@
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 
+export interface ManualServerHandoff {
+  readonly pid: number;
+  readonly startTime: string;
+  readonly dbPath: string;
+}
+
+export function decodeManualServerHandoff(value: unknown): ManualServerHandoff | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (!("pid" in value) || !("startTime" in value) || !("dbPath" in value)) return undefined;
+  if (
+    typeof value.pid !== "number" ||
+    !Number.isSafeInteger(value.pid) ||
+    value.pid <= 1 ||
+    typeof value.startTime !== "string" ||
+    !/^\d+$/.test(value.startTime) ||
+    typeof value.dbPath !== "string" ||
+    !value.dbPath.startsWith("/")
+  )
+    return undefined;
+  return { pid: value.pid, startTime: value.startTime, dbPath: value.dbPath };
+}
+
 /** Protocol 2 snapshots SQLite before trials so migrations can be rolled back safely. */
 export const SERVICE_LAUNCHER_PROTOCOL = 2 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
@@ -21,9 +43,16 @@ export interface PendingServiceUpdate {
 export type ServiceUpdateRecord = PendingServiceUpdate | ServerSelfUpdateOutcome;
 
 export interface ServiceState {
+  readonly handoff?: ManualServerHandoff;
   readonly protocol: typeof SERVICE_LAUNCHER_PROTOCOL;
   readonly activeVersion: string;
   readonly update?: ServiceUpdateRecord;
+  readonly endpoint?: {
+    readonly port: number;
+    readonly host?: string;
+    readonly tailscaleServeEnabled?: boolean;
+    readonly tailscaleServePort?: number;
+  };
 }
 
 /** Context is copied from launcher-owned state when a child is spawned. */
@@ -144,7 +173,29 @@ export function compareExactServiceVersions(left: string, right: string): number
 
 export function decodeServiceState(value: unknown): ServiceState | undefined {
   if (!isRecord(value)) return undefined;
+  const handoff =
+    value.handoff === undefined ? undefined : decodeManualServerHandoff(value.handoff);
+  if (value.handoff !== undefined && handoff === undefined) return undefined;
   const update = value.update === undefined ? undefined : decodeServiceUpdate(value.update);
+  const endpoint = value.endpoint;
+  if (
+    endpoint !== undefined &&
+    (!isRecord(endpoint) ||
+      typeof endpoint.port !== "number" ||
+      !Number.isInteger(endpoint.port) ||
+      endpoint.port < 1 ||
+      endpoint.port > 65535 ||
+      (endpoint.tailscaleServeEnabled !== undefined &&
+        typeof endpoint.tailscaleServeEnabled !== "boolean") ||
+      (endpoint.tailscaleServePort !== undefined &&
+        (typeof endpoint.tailscaleServePort !== "number" ||
+          !Number.isInteger(endpoint.tailscaleServePort) ||
+          endpoint.tailscaleServePort < 1 ||
+          endpoint.tailscaleServePort > 65535)) ||
+      (endpoint.host !== undefined &&
+        (typeof endpoint.host !== "string" || endpoint.host.trim() === "")))
+  )
+    return undefined;
   if (
     value.protocol !== SERVICE_LAUNCHER_PROTOCOL ||
     typeof value.activeVersion !== "string" ||
@@ -162,6 +213,21 @@ export function decodeServiceState(value: unknown): ServiceState | undefined {
   return {
     protocol: SERVICE_LAUNCHER_PROTOCOL,
     activeVersion: value.activeVersion,
+    ...(handoff === undefined ? {} : { handoff }),
+    ...(isRecord(endpoint) && typeof endpoint.port === "number"
+      ? {
+          endpoint: {
+            port: endpoint.port,
+            ...(typeof endpoint.tailscaleServeEnabled === "boolean"
+              ? { tailscaleServeEnabled: endpoint.tailscaleServeEnabled }
+              : {}),
+            ...(typeof endpoint.tailscaleServePort === "number"
+              ? { tailscaleServePort: endpoint.tailscaleServePort }
+              : {}),
+            ...(typeof endpoint.host === "string" ? { host: endpoint.host } : {}),
+          },
+        }
+      : {}),
     ...(update === undefined ? {} : { update }),
   };
 }

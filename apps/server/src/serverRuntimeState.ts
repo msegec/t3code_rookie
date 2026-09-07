@@ -10,9 +10,12 @@ import { formatHostForUrl, isWildcardHost } from "./startupAccess.ts";
 
 export const PersistedServerRuntimeState = Schema.Struct({
   version: Schema.Literal(1),
+  ownership: Schema.optional(Schema.Literal("exclusive")),
   pid: Schema.Int,
   host: Schema.optional(Schema.String),
   port: Schema.Int,
+  tailscaleServeEnabled: Schema.optional(Schema.Boolean),
+  tailscaleServePort: Schema.optional(Schema.Int),
   origin: Schema.String,
   // Present when the server fronts a dev web server (VITE_DEV_SERVER_URL).
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
@@ -48,14 +51,20 @@ const runtimeOriginForConfig = (
 };
 
 export const makePersistedServerRuntimeState = (input: {
-  readonly config: Pick<ServerConfig.ServerConfig["Service"], "host" | "devUrl">;
+  readonly config: Pick<
+    ServerConfig.ServerConfig["Service"],
+    "host" | "devUrl" | "tailscaleServeEnabled" | "tailscaleServePort"
+  >;
   readonly port: number;
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
     version: 1,
+    ownership: "exclusive",
     pid: process.pid,
     ...(input.config.host ? { host: input.config.host } : {}),
     port: input.port,
+    tailscaleServeEnabled: input.config.tailscaleServeEnabled,
+    tailscaleServePort: input.config.tailscaleServePort,
     origin: runtimeOriginForConfig(input.config, input.port),
     ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
     startedAt: DateTime.formatIso(now),
