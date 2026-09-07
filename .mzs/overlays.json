@@ -63,6 +63,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
       "sha": "25cb32d1ef6a7feeaec6269cba187c833e66d0f6"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS server replacement and endpoint preservation",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/pc-f/feature-overlay",
+      "sha": "9fdb54144b1294befbc1fa2f2f3e0e0090b0f81b"
     }
   ],
   "tests": [
@@ -114,7 +121,17 @@
     "apps/mobile/src/lib/threadActivity.test.ts",
     "packages/client-runtime/src/work-log/presentation.test.ts",
     "apps/desktop/src/updates/releaseNotes.test.ts",
-    "apps/web/src/components/desktopUpdate.logic.test.ts"
+    "apps/web/src/components/desktopUpdate.logic.test.ts",
+    "apps/server/src/serverOwnership.test.ts",
+    "apps/server/src/manualServerHandoff.test.ts",
+    "apps/server/src/serviceReadiness.test.ts",
+    "apps/server/src/serviceLauncher.test.ts",
+    "apps/server/src/cloud/bootService.test.ts",
+    "apps/server/src/serverRuntimeState.test.ts",
+    "apps/server/src/persistence/Layers/Sqlite.test.ts",
+    "apps/server/src/cli/service.test.ts",
+    "apps/server/src/cli/pair.test.ts",
+    "apps/server/src/bin.test.ts"
   ],
   "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371]
 }
