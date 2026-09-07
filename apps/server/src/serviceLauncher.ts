@@ -29,7 +29,6 @@ import {
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
 import type { PersistedServerRuntimeState } from "./serverRuntimeState.ts";
-import { isEntrypoint } from "./entrypoint.ts";
 
 const HANDOFF_DELAY_MS = 2_000;
 const PREPARED_TIMEOUT_MS = 120_000;
@@ -853,7 +852,7 @@ export class Launcher {
   }
 }
 
-async function main(): Promise<void> {
+export async function runServiceLauncher(): Promise<void> {
   const baseDir = process.env.T3CODE_HOME?.trim();
   if (baseDir === undefined || baseDir === "") {
     throw new Error("T3CODE_HOME is required by the T3 Code service launcher.");
@@ -861,20 +860,6 @@ async function main(): Promise<void> {
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
   await new Launcher(baseDir, state).run();
-}
-
-if (
-  isEntrypoint({
-    moduleUrl: import.meta.url,
-    entryPath: process.argv[1],
-    runtimeMain: import.meta.main,
-  })
-) {
-  main().catch((cause: unknown) => {
-    const error = cause instanceof Error ? cause : new Error(String(cause));
-    process.stderr.write(`[service-launcher] ${error.message}\n`);
-    process.exitCode = 1;
-  });
 }
 
 type ServerReadinessReceipt =
