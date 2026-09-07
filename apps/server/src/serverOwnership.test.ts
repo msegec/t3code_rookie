@@ -218,6 +218,7 @@ describe("server ownership", () => {
         import * as Effect from "effect/Effect";
         import * as NodeServices from "@effect/platform-node/NodeServices";
         import { acquireServerOwnership } from "./src/serverOwnership.ts";
+        process.stdin.resume();
         await Effect.runPromise(Effect.gen(function* () {
           yield* acquireServerOwnership({dbPath: process.argv[1], serverRuntimeStatePath: process.argv[2]});
           yield* Effect.sync(() => process.stdout.write("owned\\n"));
@@ -227,7 +228,7 @@ describe("server ownership", () => {
             config.dbPath,
             config.serverRuntimeStatePath,
           ],
-          { cwd: NodeURL.fileURLToPath(new URL("..", import.meta.url)) },
+          { cwd: NodeURL.fileURLToPath(new URL("..", import.meta.url)), stdin: Stream.never },
         ),
       );
       const ready = yield* child.stdout.pipe(
@@ -237,6 +238,7 @@ describe("server ownership", () => {
         Stream.runCollect,
       );
       assert.deepEqual(ready, ["owned"]);
+      assert.isTrue(yield* child.isRunning);
       assert.isTrue(
         Exit.isFailure(yield* acquireServerOwnership(config).pipe(Effect.scoped, Effect.exit)),
       );
