@@ -77,6 +77,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
       "sha": "7fed7e097b36f03e4db3162b66caab6f2a2ceca0"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS isolate service launcher entrypoint",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/pc-f/feature-overlay",
+      "sha": "2b3f54bbcc04300d91881cf26e6d7580b8e2c49c"
     }
   ],
   "tests": [
@@ -129,6 +136,7 @@
     "packages/client-runtime/src/work-log/presentation.test.ts",
     "apps/desktop/src/updates/releaseNotes.test.ts",
     "apps/web/src/components/desktopUpdate.logic.test.ts",
+    "apps/server/src/bundledEntrypoints.test.ts",
     "apps/server/src/serverOwnership.test.ts",
     "apps/server/src/manualServerHandoff.test.ts",
     "apps/server/src/serviceReadiness.test.ts",

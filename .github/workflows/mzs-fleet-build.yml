@@ -7,6 +7,14 @@ on:
         description: Official nightly tag, or blank for the latest
         required: false
         type: string
+      controls_sha:
+        description: Fleet controls commit verified by local preflight
+        required: true
+        type: string
+      release_tag:
+        description: Release identity verified by local preflight
+        required: true
+        type: string
 
 permissions: {}
 
@@ -28,6 +36,8 @@ jobs:
       nightly_tag: ${{ steps.compose.outputs.nightly_tag }}
     steps:
       - name: Clone fleet controls without credentials
+        env:
+          EXPECTED_CONTROLS_SHA: ${{ inputs.controls_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -38,8 +48,12 @@ jobs:
             --single-branch \
             https://github.com/msegec/t3code_rookie.git \
             source
-          [[ "$(git -C source rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          controls_sha="$EXPECTED_CONTROLS_SHA"
+          [[ "$controls_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git -C source rev-parse HEAD)" == "$controls_sha" ]]
+          [[ "$controls_sha" == "$GITHUB_SHA" ]]
           cp source/.mzs/overlays.json "$RUNNER_TEMP/overlays.json"
+          cp source/.mzs/preflight-release.mjs "$RUNNER_TEMP/preflight-release.mjs"
           cp source/.mzs/stage-server-package.mjs "$RUNNER_TEMP/stage-server-package.mjs"
           cp source/.mzs/generate-release-notes.mjs "$RUNNER_TEMP/generate-release-notes.mjs"
 
@@ -48,6 +62,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_NIGHTLY_TAG: ${{ inputs.nightly_tag }}
+          EXPECTED_RELEASE_TAG: ${{ inputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -154,6 +169,7 @@ jobs:
           revision="$(jq -cj '[.[] | if .kind == "commit" then {kind, name, sha} else {kind, number, sha} end]' <<<"$results" | sha256sum | cut -c1-12)"
           version="${base_version}.mzs.r${revision}"
           release_tag="v${version}"
+          [[ "$release_tag" == "$EXPECTED_RELEASE_TAG" ]]
           if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             printf 'Fleet release already exists: %s\n' "$release_tag" >&2
             exit 1
@@ -176,26 +192,14 @@ jobs:
           cache: true
           run-install: false
 
-      - name: Install dependencies
+      - name: Verify composed release locally and in CI
         working-directory: source
-        run: vp i --frozen-lockfile
+        run: node "$RUNNER_TEMP/preflight-release.mjs" "$PWD" "$RUNNER_TEMP/overlays.json" "${{ steps.compose.outputs.version }}"
 
-      - name: Run overlay tests
+      - name: Record release package versions
         working-directory: source
         shell: bash
         run: |
-          mapfile -t tests < <(jq -r '.tests[]' "$RUNNER_TEMP/overlays.json")
-          vp test run "${tests[@]}"
-
-      - name: Typecheck affected packages
-        working-directory: source
-        run: vp run --filter t3 --filter @t3tools/web --filter @t3tools/desktop --filter @t3tools/mobile --filter @t3tools/contracts --filter @t3tools/client-runtime --filter @t3tools/shared --filter @t3tools/scripts typecheck
-
-      - name: Align package versions
-        working-directory: source
-        shell: bash
-        run: |
-          node scripts/update-release-package-versions.ts "${{ steps.compose.outputs.version }}"
           git add -- \
             apps/server/package.json \
             apps/desktop/package.json \
@@ -203,16 +207,6 @@ jobs:
             packages/contracts/package.json \
             pnpm-lock.yaml
           git commit -m "chore(release): prepare ${{ steps.compose.outputs.release_tag }}"
-
-      - name: Build web and server
-        working-directory: source
-        env:
-          VITE_MZS_FLEET_LABEL: MZS Fleet
-        shell: bash
-        run: |
-          cp .env.example .env
-          vp run --filter @t3tools/web build
-          vp run --filter t3 build
 
       - name: Import official resource monitors
         working-directory: source
