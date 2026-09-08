@@ -32,6 +32,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const path = yield* Path.Path;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-self-update-test-" });
   const order: string[] = [];
+  let stagedEntryPath = "";
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
@@ -40,6 +41,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
           const prefix = input.args[input.args.indexOf("--prefix") + 1];
           if (prefix === undefined) return yield* Effect.die("missing npm prefix");
           const entry = path.join(prefix, "node_modules", "t3", "dist", "bin.mjs");
+          stagedEntryPath = entry;
           yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
           yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
           return {
@@ -53,7 +55,35 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
             stderrInvalidUtf8: false,
           };
         }
-        order.push("preflight");
+        if (input.args[0] === "-e") {
+          expect(input.command).toBe(process.execPath);
+          expect(input.args).toEqual([
+            "-e",
+            'require("node:module").createRequire(process.argv[1])("node-pty")',
+            stagedEntryPath,
+          ]);
+          order.push("native-probe");
+          return {
+            stdout: "",
+            stderr: "",
+            code: ChildProcessSpawner.ExitCode(0),
+            timedOut: false,
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            stdoutInvalidUtf8: false,
+            stderrInvalidUtf8: false,
+          };
+        }
+        expect(input.command).toBe("/usr/bin/node");
+        expect(input.args).toEqual([
+          stagedEntryPath,
+          "__service-preflight",
+          "--database-path",
+          config.dbPath,
+          "--launcher-protocol",
+          String(SERVICE_LAUNCHER_PROTOCOL),
+        ]);
+        order.push("service-preflight");
         const result =
           options.preflight === "blocked"
             ? { status: "blocked", version: "1.1.0", reason: "local update required" }
@@ -329,7 +359,7 @@ it.layer(NodeServices.layer)("server self update", (it) => {
         method: "boot-service",
         updateId: "launcher-id",
       });
-      expect(order).toEqual(["install", "preflight", "accept"]);
+      expect(order).toEqual(["install", "native-probe", "service-preflight", "accept"]);
     }),
   );
 
@@ -374,10 +404,11 @@ it.layer(NodeServices.layer)("server self update", (it) => {
 
   it.effect("preserves the preflight refusal reason", () =>
     Effect.gen(function* () {
-      const { selfUpdate } = yield* makeHarness({ preflight: "blocked" });
+      const { selfUpdate, order } = yield* makeHarness({ preflight: "blocked" });
       expect((yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason).toBe(
         "local update required",
       );
+      expect(order).toEqual(["install", "native-probe", "service-preflight"]);
     }),
   );
 
