@@ -186,3 +186,29 @@ Include the diagnostic message and trace ID when reporting a persistent failure.
 
 For a connection that still fails after linking, check the date and time on both
 devices. For server version warnings, follow [Updating T3 Code](./updating.md).
+
+## Previewing remote project content
+
+The collaborative browser runs in a connected desktop app. Its machine can differ from the
+environment where your agent and project run. A connected chat does not make a project's local
+web-server address reachable from that browser.
+
+For a static workspace page, ask the agent to open the file in the T3 browser. T3 serves supported
+HTML, PDF and image files through the existing environment connection, including supported relative
+stylesheets, scripts, images and fonts. You do not need to start a separate web server or forward a
+port. Paths resolve within the thread's project or worktree.
+
+For a running HTTP application, open its localhost address or discovered port in the browser, or
+ask the agent to navigate to the environment's port. T3 carries page requests and WebSockets
+through the existing environment connection and the desktop's local backend. Application ports
+stay private. This requires Node-based T3 servers on both machines; HTTPS application targets
+and Bun-based servers are not supported by this preview route yet.
+
+Preview addresses belong to the desktop that opened them. After changing desktops or reconnecting,
+open the project's original localhost address again. Closing unused tabs releases their routes.
+
+Agents can check browser status for the selected desktop, available operations and project context.
+Agent browser access must be enabled in Settings. An older desktop may need updating to support
+opening workspace files through agent tools. Web and mobile clients do not host the collaborative
+browser themselves; a compatible desktop must be connected to the environment.
+Externally managed OpenCode servers need their browser tools configured separately.
