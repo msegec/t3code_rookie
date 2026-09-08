@@ -243,6 +243,10 @@
       "types": "./src/work-log/scrollAnchor.ts",
       "default": "./src/work-log/scrollAnchor.ts"
     },
+    "./state/previewGateway": {
+      "types": "./src/state/previewGateway.ts",
+      "default": "./src/state/previewGateway.ts"
+    },
     "./thread-pull-request-compatibility": {
       "types": "./src/threadPullRequestCompatibility.ts",
       "default": "./src/threadPullRequestCompatibility.ts"

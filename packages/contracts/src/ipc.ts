@@ -1,4 +1,11 @@
 import type {
+  PreviewGatewayIssueInput,
+  PreviewGatewayIssueResult,
+  PreviewGatewayRegisterInput,
+  PreviewGatewayRegisterResult,
+  PreviewGatewayRevokeInput,
+} from "./previewGateway.ts";
+import type {
   VcsCreateRefInput,
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
@@ -1505,6 +1512,11 @@ export interface EnvironmentApi {
   };
   filesystem: {
     browse: (input: FilesystemBrowseInput) => Promise<FilesystemBrowseResult>;
+  };
+  previewGateway: {
+    issue: (input: PreviewGatewayIssueInput) => Promise<PreviewGatewayIssueResult>;
+    register: (input: PreviewGatewayRegisterInput) => Promise<PreviewGatewayRegisterResult>;
+    revoke: (input: PreviewGatewayRevokeInput) => Promise<void>;
   };
   assets: {
     createUrl: (input: AssetCreateUrlInput) => Promise<AssetCreateUrlResult>;

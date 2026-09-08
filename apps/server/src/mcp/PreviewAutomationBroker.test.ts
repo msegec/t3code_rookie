@@ -2,6 +2,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  PREVIEW_AUTOMATION_V1_OPERATIONS,
+  PREVIEW_AUTOMATION_V1_NAVIGATION_TARGETS,
+  PreviewAutomationStatus,
   PreviewAutomationClientDisconnectedError,
   PreviewAutomationInvalidSelectorError,
   PreviewAutomationMalformedResponseError,
@@ -56,6 +59,92 @@ const requestsFrom = (
       return Result.succeed({ ...event.request, connectionId: event.connectionId });
     }),
   );
+
+it.effect(
+  "reports the selected host capabilities and environment through focus and disconnects",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const broker = yield* makeBroker;
+        const foreignEnvironment = EnvironmentId.make("environment-2");
+        const serve = (host: PreviewAutomationHost) =>
+          Effect.gen(function* () {
+            const connected = yield* Deferred.make<string>();
+            const events = yield* broker.connect(host);
+            const fiber = yield* Stream.runForEach(events, (event) =>
+              event.type === "connected"
+                ? Deferred.succeed(connected, event.connectionId)
+                : broker.respond({
+                    clientId: host.clientId,
+                    connectionId: event.connectionId,
+                    requestId: event.request.requestId,
+                    ok: true,
+                    result: {
+                      available: true,
+                      visible: false,
+                      tabId: null,
+                      url: null,
+                      title: null,
+                      loading: false,
+                      ...(event.request.operation === "status"
+                        ? {
+                            environmentId: foreignEnvironment,
+                            browserHost: { clientId: "untrusted-host", supportedOperations: [] },
+                          }
+                        : {}),
+                    },
+                  }),
+            ).pipe(Effect.forkScoped);
+            return { fiber, connectionId: yield* Deferred.await(connected) };
+          });
+        const first = yield* serve(makeHost());
+        for (const operation of ["open", "navigate"] as const) {
+          const result = yield* broker.invoke<PreviewAutomationStatus>({
+            scope,
+            operation,
+            input: {},
+          });
+          expect(result.available).toBe(true);
+          expect(result.environmentId).toBeUndefined();
+          expect(result.threadId).toBeUndefined();
+          expect(result.browserHost).toBeUndefined();
+        }
+        const read = () =>
+          broker.invoke<PreviewAutomationStatus>({ scope, operation: "status", input: {} });
+        const initial = yield* read();
+        expect(initial).toMatchObject({
+          environmentId: scope.environmentId,
+          threadId: scope.threadId,
+          tabId: null,
+          browserHost: {
+            clientId: "client-1",
+            supportedOperations: PREVIEW_AUTOMATION_V1_OPERATIONS,
+            supportedNavigationTargets: PREVIEW_AUTOMATION_V1_NAVIGATION_TARGETS,
+          },
+        });
+        const second = yield* serve(
+          makeHost({ clientId: "client-2", supportedOperations: ["status"] }),
+        );
+        yield* serve(makeHost({ clientId: "foreign-client", environmentId: foreignEnvironment }));
+        yield* broker.focusHost({
+          ...makeHost({ clientId: "client-2" }),
+          connectionId: second.connectionId,
+          focused: true,
+        });
+        expect((yield* read()).browserHost?.clientId).toBe("client-1");
+        yield* Fiber.interrupt(first.fiber);
+        expect((yield* read()).browserHost).toEqual({
+          clientId: "client-2",
+          supportedOperations: ["status"],
+          supportedNavigationTargets: PREVIEW_AUTOMATION_V1_NAVIGATION_TARGETS,
+        });
+        yield* Fiber.interrupt(second.fiber);
+        expect(yield* read().pipe(Effect.flip)).toBeInstanceOf(
+          PreviewAutomationNoAvailableHostError,
+        );
+      }),
+    ),
+);
 
 it.effect("atomically registers a connected host and correlates its response", () =>
   Effect.scoped(
@@ -732,6 +821,76 @@ it.effect("does not route new operations to legacy hosts that did not advertise 
 
       expect(error).toBeInstanceOf(PreviewAutomationNoAvailableHostError);
       expect(error).toMatchObject({ operation: "resize", environmentId: scope.environmentId });
+    }),
+  ),
+);
+
+it.effect("routes workspace files only to capable hosts and preserves existing assignments", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const received: Array<{ clientId: string; request: PreviewAutomationRequest }> = [];
+      const serve = (host: PreviewAutomationHost) =>
+        Effect.gen(function* () {
+          const connected = yield* Deferred.make<void>();
+          const events = yield* broker.connect(host);
+          yield* Stream.runForEach(events, (event) => {
+            if (event.type === "connected") return Deferred.succeed(connected, undefined);
+            received.push({ clientId: host.clientId, request: event.request });
+            return broker.respond({
+              clientId: host.clientId,
+              connectionId: event.connectionId,
+              requestId: event.request.requestId,
+              ok: true,
+              result: host.clientId,
+            });
+          }).pipe(Effect.forkScoped);
+          yield* Deferred.await(connected);
+        });
+      yield* serve(makeHost({ clientId: "legacy" }));
+      const navigate = {
+        operation: "navigate",
+        input: { target: { kind: "workspace-file", path: "site/design.html" } },
+      } as const;
+      expect(yield* broker.invoke<void>({ scope, ...navigate }).pipe(Effect.flip)).toBeInstanceOf(
+        PreviewAutomationNoAvailableHostError,
+      );
+      expect(received).toEqual([]);
+      expect(
+        yield* broker.invoke({
+          scope,
+          operation: "navigate",
+          input: { url: "https://example.com" },
+        }),
+      ).toBe("legacy");
+      yield* serve(
+        makeHost({
+          clientId: "capable",
+          supportedNavigationTargets: ["url", "environment-port", "workspace-file"],
+        }),
+      );
+      yield* serve(makeHost({ clientId: "newer-legacy" }));
+      expect(yield* broker.invoke<void>({ scope, ...navigate }).pipe(Effect.flip)).toBeInstanceOf(
+        PreviewAutomationNoAvailableHostError,
+      );
+      expect(received).toHaveLength(1);
+      expect(
+        yield* broker.invoke({
+          scope: { ...scope, providerSessionId: "fresh-session" },
+          ...navigate,
+        }),
+      ).toBe("capable");
+      expect(received[1]).toMatchObject({
+        clientId: "capable",
+        request: { threadId: scope.threadId, ...navigate },
+      });
+      expect(
+        yield* broker.invoke({
+          scope: { ...scope, providerSessionId: "status-first-session" },
+          operation: "status",
+          input: {},
+        }),
+      ).toBe("capable");
     }),
   ),
 );

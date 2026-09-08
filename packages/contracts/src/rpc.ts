@@ -12,6 +12,15 @@ import {
   ProviderSetupInput,
 } from "./providerSetup.ts";
 
+import {
+  PreviewGatewayError,
+  PreviewGatewayIssueInput,
+  PreviewGatewayIssueResult,
+  PreviewGatewayRegisterInput,
+  PreviewGatewayRegisterResult,
+  PreviewGatewayRevokeInput,
+} from "./previewGateway.ts";
+
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   AuthAccessStreamError,
@@ -286,6 +295,9 @@ export const WS_METHODS = {
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
+  previewGatewayIssue: "previewGateway.issue",
+  previewGatewayRegister: "previewGateway.register",
+  previewGatewayRevoke: "previewGateway.revoke",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
 
@@ -928,6 +940,23 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
   ]),
 });
 
+export const WsPreviewGatewayIssueRpc = Rpc.make(WS_METHODS.previewGatewayIssue, {
+  payload: PreviewGatewayIssueInput,
+  success: PreviewGatewayIssueResult,
+  error: Schema.Union([PreviewGatewayError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewGatewayRegisterRpc = Rpc.make(WS_METHODS.previewGatewayRegister, {
+  payload: PreviewGatewayRegisterInput,
+  success: PreviewGatewayRegisterResult,
+  error: Schema.Union([PreviewGatewayError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewGatewayRevokeRpc = Rpc.make(WS_METHODS.previewGatewayRevoke, {
+  payload: PreviewGatewayRevokeInput,
+  error: Schema.Union([PreviewGatewayError, EnvironmentAuthorizationError]),
+});
+
 const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
@@ -1400,6 +1429,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
+  WsPreviewGatewayIssueRpc,
+  WsPreviewGatewayRegisterRpc,
+  WsPreviewGatewayRevokeRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
   WsProviderUploadFeedbackRpc,
