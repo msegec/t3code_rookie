@@ -10,7 +10,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as ServerConfig from "./config.ts";
-import { makeServerLayer } from "./server.ts";
+import { runServer } from "./server.ts";
 import * as Scope from "effect/Scope";
 import * as Exit from "effect/Exit";
 import {
@@ -45,7 +45,7 @@ describe("server ownership", () => {
       const fs = yield* FileSystem.FileSystem;
       const config = yield* ServerConfig.ServerConfig;
       yield* acquireServerOwnership(config);
-      const startup = yield* Layer.build(makeServerLayer).pipe(Effect.scoped, Effect.exit);
+      const startup = yield* runServer.pipe(Effect.exit);
       assert.isTrue(Exit.isFailure(startup));
       if (Exit.isFailure(startup))
         assert.include(String(startup.cause), "Cannot start another T3 server");
