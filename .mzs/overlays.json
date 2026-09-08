@@ -27,14 +27,14 @@
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "127b42081fbf75f740c0472e19cad8d19466cafb"
+      "sha": "55ce156392ceefcaee1f9f1fd765c751fc86e023"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "e6a61c477d30455b550b4d8cc81d54339e18847b"
+      "sha": "59d23ead641f57a878162a9eb67739a69550452a"
     },
     {
       "kind": "commit",
@@ -48,42 +48,42 @@
       "name": "MZS ACP Cursor/Grok subagent panel",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "57055ab3bcf6d40fb923375fc82050f3786fdf83"
+      "sha": "e48082c97fa4f5f75cecab25423f50f462ae84ae"
     },
     {
       "kind": "commit",
       "name": "MZS ACP subagent lifecycle fixes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "3c2163c7c055c26024e0e61999bc70c8c01bc450"
+      "sha": "d87e7bd56a2271ef28959f4d6b4287756ab67faa"
     },
     {
       "kind": "commit",
       "name": "MZS full fleet release notes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "22bc62a7955ea364ccce8c982b27aaf4927373dc"
+      "sha": "5e557357a04b41c88ff3d029a86a5799a81eb1fe"
     },
     {
       "kind": "commit",
       "name": "MZS server replacement and endpoint preservation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "1b10d7a50af965edd9d018ec53ff4bfd6b94aee6"
+      "sha": "790e73685b4579bd11b298a1493ffabfd20f6d63"
     },
     {
       "kind": "commit",
       "name": "MZS ownership crash test lifecycle",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "69bacb856c71e5a4fbddc8f9eae0aa37c1b6ad1b"
+      "sha": "6f8c86d383af63eb95206450392be0456a6e4b17"
     },
     {
       "kind": "commit",
       "name": "MZS isolate service launcher entrypoint",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "337ad8247d8bf7e522b5d84e7009aa5a410a2a7e"
+      "sha": "9b2dea029efddbca8ea1d78be667764550a00fe0"
     }
   ],
   "tests": [
