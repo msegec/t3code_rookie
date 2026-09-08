@@ -84,10 +84,19 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
       "sha": "8885cd15b75fc8886ab77b0f751633bec5e08ae8"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS native server update verification",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/pc-f/feature-overlay",
+      "sha": "88e16b3c285e9b9b637343bf60d6947bf7a0f0cf"
     }
   ],
   "tests": [
     "apps/server/src/cloud/pinnedRuntime.test.ts",
+    "apps/server/src/cloud/selfUpdate.test.ts",
+    "apps/web/src/components/ServerUpdateAction.test.tsx",
     "apps/server/src/assets/AssetAccess.test.ts",
     "apps/server/src/project/ProjectFaviconResolver.test.ts",
     "apps/web/src/components/ProjectFavicon.test.tsx",
