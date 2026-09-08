@@ -71,7 +71,7 @@ export const PreviewOpenTool = browserTool(
 export const PreviewNavigateTool = safeBrowserTool(
   Tool.make("preview_navigate", {
     description:
-      "Navigate a collaborative browser tab. Pass tabId to target a specific tab, plus {url:'https://t3.chat'} for a website or {target:{kind:'environment-port',port:5173}} for a dev server. Exactly one of url or target is required.",
+      "Navigate a collaborative browser tab. Use {target:{kind:'workspace-file',path:'design.html'}} for this thread's workspace content through the existing T3 connection, without starting an HTTP server or forwarding ports. Use {url:'https://t3.chat'} for a website or {target:{kind:'environment-port',port:5173}} for a running dev application. Pass tabId to select a tab. Exactly one of url or target is required.",
     parameters: PreviewAutomationNavigateInput,
     success: PreviewAutomationStatus,
     failure: PreviewAutomationError,

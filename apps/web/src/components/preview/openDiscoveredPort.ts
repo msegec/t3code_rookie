@@ -4,6 +4,10 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/unstable/reactivity";
+
+import { releaseUnusedPreviewGateway } from "~/browser/previewGateway";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
@@ -15,14 +19,25 @@ export async function openDiscoveredPort<E>(input: {
   readonly port: DiscoveredLocalServer;
   readonly openPreview: OpenPreviewMutation<E>;
 }): Promise<AtomCommandResult<void, E>> {
-  const resolvedUrl = resolveDiscoveredServerUrl(input.threadRef.environmentId, input.port.url);
-  const result = await openPreviewSession({
-    openPreview: input.openPreview,
-    threadRef: input.threadRef,
-    url: resolvedUrl,
-  });
-  return mapAtomCommandResult(result, (snapshot) => {
-    recordVisitForThread(input.threadRef, input.port.url);
-    useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
-  });
+  let resolvedUrl: string | undefined;
+  try {
+    resolvedUrl = await resolveDiscoveredServerUrl(
+      input.threadRef.environmentId,
+      input.port.url,
+      input.threadRef.threadId,
+    );
+    const result = await openPreviewSession({
+      openPreview: input.openPreview,
+      threadRef: input.threadRef,
+      url: resolvedUrl,
+    });
+    if (result._tag === "Failure") releaseUnusedPreviewGateway(resolvedUrl);
+    return mapAtomCommandResult(result, (snapshot) => {
+      recordVisitForThread(input.threadRef, input.port.url);
+      useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
+    });
+  } catch (error) {
+    if (resolvedUrl) releaseUnusedPreviewGateway(resolvedUrl);
+    return AsyncResult.failure(Cause.die(error));
+  }
 }

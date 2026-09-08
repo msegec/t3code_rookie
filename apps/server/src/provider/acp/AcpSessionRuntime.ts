@@ -20,6 +20,7 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { browserToolInstructions } from "../T3BrowserInstructions.ts";
 
 import {
   collectSessionConfigOptionValues,
@@ -302,6 +303,9 @@ export const make = (
     const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
     const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
     const promptSerializationSemaphore = yield* Semaphore.make(1);
+    let pendingBrowserInstructions = browserToolInstructions(
+      options.mcpServers?.some((server) => server.name === "t3-code") === true,
+    );
     const activePromptFiberRef = yield* Ref.make<
       Option.Option<Fiber.Fiber<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError>>
     >(Option.none());
@@ -736,6 +740,9 @@ export const make = (
             const requestPayload = {
               sessionId: started.sessionId,
               ...payload,
+              prompt: pendingBrowserInstructions
+                ? [{ type: "text" as const, text: pendingBrowserInstructions }, ...payload.prompt]
+                : payload.prompt,
             } satisfies EffectAcpSchema.PromptRequest;
             const cancelledResponse = {
               stopReason: "cancelled",
@@ -747,6 +754,11 @@ export const make = (
             ).pipe(Effect.forkIn(runtimeScope));
             yield* Ref.set(activePromptFiberRef, Option.some(promptRpcFiber));
             return yield* Fiber.join(promptRpcFiber).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  pendingBrowserInstructions = "";
+                }),
+              ),
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.succeed(cancelledResponse)

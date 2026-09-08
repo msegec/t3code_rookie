@@ -68,7 +68,23 @@ const invokeTargeted = <A>(
 };
 
 const handlers = {
-  preview_status: (input) => invokeTargeted<PreviewAutomationStatus>("status", input ?? {}),
+  preview_status: (input) =>
+    invokeTargeted<PreviewAutomationStatus>("status", input ?? {}).pipe(
+      Effect.catchTag("PreviewAutomationNoAvailableHostError", (error) =>
+        Effect.succeed({
+          available: false,
+          visible: false,
+          tabId: null,
+          url: null,
+          title: null,
+          loading: false,
+          environmentId: error.environmentId,
+          threadId: error.threadId,
+          browserHost: null,
+          unavailableReason: "no-compatible-browser-host" as const,
+        }),
+      ),
+    ),
   preview_open: (input) =>
     invokeTargeted<PreviewAutomationStatus>("open", normalizePreviewOpenInput(input)),
   preview_navigate: (input) =>

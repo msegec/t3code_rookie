@@ -20,12 +20,18 @@ import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
 import {
   ApprovalRequestId,
   OpenCodeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import {
+  browserToolInstructions,
+  EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS,
+} from "../T3BrowserInstructions.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
@@ -74,6 +80,8 @@ const runtimeMock = {
     messageCalls: [] as Array<{ sessionID: string; messageID: string }>,
     messageFailures: 0,
     promptCalls: [] as Array<unknown>,
+    mcpAddCalls: new Array<unknown>(),
+    mcpAddError: Option.none<Error>(),
     promptAsyncError: null as Error | null,
     promptAsyncImplementation: null as (() => Promise<void>) | null,
     autoPromptEcho: true,
@@ -121,6 +129,8 @@ const runtimeMock = {
     this.state.messageCalls.length = 0;
     this.state.messageFailures = 0;
     this.state.promptCalls.length = 0;
+    this.state.mcpAddCalls.length = 0;
+    this.state.mcpAddError = Option.none();
     this.state.promptAsyncError = null;
     this.state.promptAsyncImplementation = null;
     this.state.autoPromptEcho = true;
@@ -198,6 +208,15 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
   runOpenCodeCommand: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
   createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
     ({
+      mcp: {
+        add: async (input: unknown) => {
+          runtimeMock.state.mcpAddCalls.push(input);
+          if (Option.isSome(runtimeMock.state.mcpAddError)) {
+            throw runtimeMock.state.mcpAddError.value;
+          }
+          return { data: {} };
+        },
+      },
       session: {
         create: async (input: Record<string, unknown>) => {
           runtimeMock.state.sessionCreateUrls.push(baseUrl);
@@ -416,7 +435,8 @@ const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory
 // the layer graph reach for it — but the routing values the assertions
 // probe (serverUrl, serverPassword) must be threaded directly through the
 // decoded `OpenCodeSettings`.
-const openCodeAdapterTestSettings = Schema.decodeSync(OpenCodeSettings)({
+const decodeOpenCodeSettings = Schema.decodeSync(OpenCodeSettings);
+const openCodeAdapterTestSettings = decodeOpenCodeSettings({
   binaryPath: "fake-opencode",
   serverUrl: "http://127.0.0.1:9999",
   serverPassword: "secret-password",
@@ -482,6 +502,102 @@ const questionRequest = (id: string, sessionID: string): QuestionRequest => ({
 });
 
 it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
+  for (const scenario of ["owned", "external", "disabled", "mcp-failure"] as const) {
+    it.effect(`handles T3 browser guidance for ${scenario} OpenCode sessions`, () => {
+      const adapterLayer = Layer.effect(
+        OpenCodeAdapter,
+        makeOpenCodeAdapter(
+          decodeOpenCodeSettings({
+            binaryPath: "fake-opencode",
+            ...(scenario === "external" ? { serverUrl: "http://127.0.0.1:9999" } : {}),
+          }),
+        ),
+      ).pipe(
+        Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
+        Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+        Layer.provideMerge(ServerSettingsService.layerTest()),
+        Layer.provideMerge(providerSessionDirectoryTestLayer),
+        Layer.provideMerge(NodeServices.layer),
+      );
+      return Effect.gen(function* () {
+        const threadId = ThreadId.make(`thread-opencode-browser-${scenario}`);
+        if (scenario !== "disabled") {
+          McpProviderSession.setMcpProviderSession({
+            environmentId: EnvironmentId.make("environment-browser-test"),
+            threadId,
+            providerSessionId: "provider-browser-test",
+            providerInstanceId: ProviderInstanceId.make("opencode"),
+            endpoint: "http://127.0.0.1:4321/mcp",
+            authorizationHeader: "Bearer browser-test-token",
+          });
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+          );
+        }
+        if (scenario === "mcp-failure") {
+          runtimeMock.state.mcpAddError = Option.some(new Error("MCP connection failed"));
+        }
+        const adapter = yield* OpenCodeAdapter;
+        const start = adapter.startSession({
+          threadId,
+          provider: ProviderDriverKind.make("opencode"),
+          runtimeMode: "full-access",
+        });
+        if (scenario === "mcp-failure") {
+          const result = yield* start.pipe(Effect.result);
+          NodeAssert.equal(result._tag, "Failure");
+          NodeAssert.equal(runtimeMock.state.mcpAddCalls.length, 1);
+          NodeAssert.deepEqual(runtimeMock.state.promptCalls, []);
+          NodeAssert.deepEqual(yield* adapter.listSessions(), []);
+          return;
+        }
+        yield* start;
+        yield* adapter.sendTurn({
+          threadId,
+          input: "Open design.html",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("opencode"),
+            "anthropic/claude-sonnet-4-5",
+          ),
+        });
+        NodeAssert.equal(runtimeMock.state.mcpAddCalls.length, scenario === "owned" ? 1 : 0);
+        const prompt = runtimeMock.state.promptCalls.at(-1);
+        NodeAssert.ok(typeof prompt === "object" && prompt !== null);
+        if (scenario === "disabled") {
+          NodeAssert.equal("system" in prompt, false);
+        } else {
+          NodeAssert.ok("system" in prompt);
+          NodeAssert.equal(
+            prompt.system,
+            scenario === "owned"
+              ? browserToolInstructions(true)
+              : EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS,
+          );
+        }
+        NodeAssert.ok("parts" in prompt);
+        NodeAssert.deepEqual(prompt.parts, [{ type: "text", text: "Open design.html" }]);
+        if (scenario === "owned") {
+          yield* adapter.sendTurn({
+            threadId,
+            input: "Inspect the heading",
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("opencode"),
+              "anthropic/claude-sonnet-4-5",
+            ),
+          });
+          NodeAssert.equal(runtimeMock.state.promptCalls.length, 2);
+          NodeAssert.equal(runtimeMock.state.mcpAddCalls.length, 1);
+          const followup = runtimeMock.state.promptCalls.at(-1);
+          NodeAssert.ok(typeof followup === "object" && followup !== null);
+          NodeAssert.ok("system" in followup && "parts" in followup);
+          NodeAssert.equal(followup.system, browserToolInstructions(true));
+          NodeAssert.deepEqual(followup.parts, [{ type: "text", text: "Inspect the heading" }]);
+        }
+        yield* adapter.stopSession(threadId);
+      }).pipe(Effect.scoped, Effect.provide(adapterLayer));
+    });
+  }
+
   it.effect("reuses a configured OpenCode server URL instead of spawning a local server", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;
@@ -4386,6 +4502,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
       NodeAssert.match(messageID, /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
       NodeAssert.deepEqual(prompt, {
+        system: EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS,
         sessionID: "http://127.0.0.1:9999/session",
         model: {
           providerID: "anthropic",
@@ -4435,6 +4552,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
       NodeAssert.match(messageID, /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
       NodeAssert.deepEqual(prompt, {
+        system: EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS,
         sessionID: "http://127.0.0.1:9999/session",
         model: {
           providerID: "anthropic",

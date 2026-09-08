@@ -2,10 +2,11 @@ import type {
   BrowserNavigationTarget,
   EnvironmentId,
   PreviewUrlResolution,
+  ThreadId,
 } from "@t3tools/contracts";
 import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
 
-import { readPreparedConnection } from "~/state/session";
+import { previewGatewayTargetPort, resolvePreviewGateway } from "./previewGateway";
 
 export const normalizeHostname = (host: string): string =>
   host
@@ -157,98 +158,60 @@ export const isPublicFaviconHost = (host: string): boolean => {
   return true;
 };
 
-const readEnvironmentUrl = (environmentId: EnvironmentId): URL => {
-  const connection = readPreparedConnection(environmentId);
-  if (!connection) throw new Error(`Environment ${environmentId} is not connected.`);
-  return new URL(connection.httpBaseUrl);
-};
-
-const resolveEnvironmentPortTarget = (
+export async function resolveBrowserNavigationTarget(
   environmentId: EnvironmentId,
-  target: Extract<BrowserNavigationTarget, { readonly kind: "environment-port" }>,
-  environmentUrl: URL,
-  requestedUrl?: string,
-  sourceUrl?: URL,
-): PreviewUrlResolution => {
-  if (!isPrivateNetworkHost(environmentUrl.hostname)) {
+  target: Exclude<BrowserNavigationTarget, { readonly kind: "workspace-file" }>,
+  threadId: ThreadId,
+): Promise<PreviewUrlResolution> {
+  const requestedUrl =
+    target.kind === "url"
+      ? target.url
+      : `${target.protocol ?? "http"}://localhost:${target.port}/${target.path?.replace(/^\//, "") ?? ""}`;
+  const parsed = new URL(normalizePreviewUrl(requestedUrl));
+  const gatewayPort = previewGatewayTargetPort({ environmentId, threadId }, parsed.origin);
+  if (gatewayPort === null && parsed.hostname.endsWith(".localhost")) {
     throw new Error(
-      "This environment port needs the planned authenticated preview gateway; its server address is not directly private-network reachable.",
+      "This preview route is no longer owned by this browser. Navigate using the project's loopback URL.",
     );
   }
-  const protocol = target.protocol ?? "http";
-  const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
-  const normalizedEnvironmentHost = environmentUrl.hostname.replace(/^\[|\]$/g, "");
-  // Local loopback environments should advertise `localhost` so Chromium
-  // dual-stack lookup can reach a Vite server bound only to ::1 or 127.0.0.1.
-  const resolvedHost = isLocalLoopbackHost(normalizedEnvironmentHost)
-    ? "localhost"
-    : normalizedEnvironmentHost.includes(":")
-      ? `[${normalizedEnvironmentHost}]`
-      : normalizedEnvironmentHost;
-  const resolved = sourceUrl
-    ? new URL(sourceUrl)
-    : new URL(path, `${protocol}://${resolvedHost}:${target.port}`);
-  if (sourceUrl) {
-    resolved.hostname = resolvedHost;
-    resolved.port = String(target.port);
-  }
-  return {
-    requestedUrl: requestedUrl ?? `${protocol}://localhost:${target.port}${path}`,
-    resolvedUrl: resolved.toString(),
-    resolutionKind: isLocalLoopbackHost(normalizedEnvironmentHost)
-      ? "direct"
-      : "direct-private-network",
-    environmentId,
-  };
-};
-
-export function resolveBrowserNavigationTarget(
-  environmentId: EnvironmentId,
-  target: BrowserNavigationTarget,
-): PreviewUrlResolution {
-  if (target.kind === "url") {
-    let parsed: URL | null = null;
-    try {
-      parsed = new URL(normalizePreviewUrl(target.url));
-    } catch {
-      // Preserve the existing direct-navigation behavior so the preview host
-      // reports malformed URL errors through its normal navigation path.
-    }
-    if (parsed && isLoopbackHost(parsed.hostname)) {
-      const environmentUrl = readEnvironmentUrl(environmentId);
-      if (parsed.hostname === "0.0.0.0" || !isLocalLoopbackHost(environmentUrl.hostname)) {
-        return resolveEnvironmentPortTarget(
-          environmentId,
-          {
-            kind: "environment-port",
-            port: Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80)),
-            protocol: parsed.protocol === "https:" ? "https" : "http",
-            path: `${parsed.pathname}${parsed.search}${parsed.hash}`,
-          },
-          environmentUrl,
-          target.url,
-          parsed,
-        );
-      }
-    }
+  if (target.kind === "url" && !isLoopbackHost(parsed.hostname) && gatewayPort === null) {
     return {
-      requestedUrl: target.url,
-      resolvedUrl: target.url,
+      requestedUrl,
+      resolvedUrl: parsed.toString(),
       resolutionKind: "direct",
       environmentId,
     };
   }
-  return resolveEnvironmentPortTarget(environmentId, target, readEnvironmentUrl(environmentId));
+  if (parsed.protocol !== "http:") {
+    throw new Error(
+      "The T3 preview gateway supports HTTP development servers. Use an HTTP loopback URL.",
+    );
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Preview gateway URLs cannot contain credentials.");
+  }
+  const origin = await resolvePreviewGateway(
+    { environmentId, threadId },
+    gatewayPort ?? Number(parsed.port || 80),
+  );
+  const resolved = new URL(origin);
+  resolved.pathname = parsed.pathname;
+  resolved.search = parsed.search;
+  resolved.hash = parsed.hash;
+  return {
+    requestedUrl,
+    resolvedUrl: resolved.toString(),
+    resolutionKind: "gateway",
+    environmentId,
+  };
 }
 
-export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl: string): string {
-  try {
-    const normalizedUrl = normalizePreviewUrl(rawUrl);
-    return resolveBrowserNavigationTarget(environmentId, {
-      kind: "url",
-      url: normalizedUrl,
-    }).resolvedUrl;
-  } catch {
-    return rawUrl;
-  }
+export async function resolveDiscoveredServerUrl(
+  environmentId: EnvironmentId,
+  rawUrl: string,
+  threadId: ThreadId,
+): Promise<string> {
+  return (
+    await resolveBrowserNavigationTarget(environmentId, { kind: "url", url: rawUrl }, threadId)
+  ).resolvedUrl;
 }

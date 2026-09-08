@@ -1,5 +1,7 @@
 import {
   PREVIEW_AUTOMATION_V1_OPERATIONS,
+  PREVIEW_AUTOMATION_V1_NAVIGATION_TARGETS,
+  PreviewAutomationNavigateInput,
   PreviewAutomationClientDisconnectedError,
   PreviewAutomationControlInterruptedError,
   PreviewAutomationExecutionError,
@@ -13,8 +15,10 @@ import {
   PreviewAutomationTargetNotEditableError,
   PreviewAutomationTimeoutError,
   PreviewAutomationUnsupportedClientError,
+  PreviewAutomationStatus,
   PreviewTabId,
   type PreviewAutomationError,
+  type BrowserNavigationTarget,
   type PreviewAutomationOperation,
   type PreviewAutomationHost,
   type PreviewAutomationHostFocus,
@@ -63,6 +67,7 @@ interface ClientConnection {
   readonly connectionId: string;
   readonly environmentId: PreviewAutomationHost["environmentId"];
   readonly supportedOperations: ReadonlySet<PreviewAutomationOperation>;
+  readonly supportedNavigationTargets: ReadonlySet<BrowserNavigationTarget["kind"]>;
   readonly focused: boolean;
   readonly focusOrder: number;
   readonly queue: Queue.Queue<PreviewAutomationStreamEvent>;
@@ -154,6 +159,8 @@ const hostAssignmentKey = (scope: McpInvocationContext.McpInvocationScope): stri
   `${scope.environmentId}\u0000${scope.providerSessionId}`;
 
 const isPreviewTabId = Schema.is(PreviewTabId);
+const isPreviewAutomationNavigateInput = Schema.is(PreviewAutomationNavigateInput);
+const isPreviewAutomationStatus = Schema.is(PreviewAutomationStatus);
 
 const readResultTabId = (result: unknown): PreviewTabId | null | undefined => {
   if (typeof result !== "object" || result === null || !("tabId" in result)) return undefined;
@@ -331,6 +338,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       connectionId,
       environmentId: host.environmentId,
       supportedOperations: new Set(host.supportedOperations ?? PREVIEW_AUTOMATION_V1_OPERATIONS),
+      supportedNavigationTargets: new Set(
+        host.supportedNavigationTargets ?? PREVIEW_AUTOMATION_V1_NAVIGATION_TARGETS,
+      ),
       focused: false,
       focusOrder: 0,
       queue,
@@ -427,6 +437,14 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     input: Parameters<PreviewAutomationBroker["Service"]["invoke"]>[0],
   ): Effect.fn.Return<A, PreviewAutomationError> {
     const timeoutMs = input.timeoutMs ?? 15_000;
+    const navigationTarget =
+      input.operation === "navigate" && isPreviewAutomationNavigateInput(input.input)
+        ? (input.input.target?.kind ?? "url")
+        : undefined;
+    const supportsRequest = (connection: ClientConnection) =>
+      supportsOperation(connection, input.operation) &&
+      (navigationTarget === undefined ||
+        connection.supportedNavigationTargets.has(navigationTarget));
     const deferred = yield* Deferred.make<unknown, PreviewAutomationError>();
     const route = yield* SynchronizedRef.modify(state, (current) => {
       const assignments = new Map(
@@ -449,19 +467,19 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       // capability failure and can deliberately start a fresh provider
       // session. A dead lease is pruned above and may fail over.
       const connection =
-        hasLiveAssignment && supportsOperation(assignedConnection, input.operation)
+        hasLiveAssignment && supportsRequest(assignedConnection)
           ? assignedConnection
           : hasLiveAssignment
             ? undefined
             : Array.from(current.clients.values())
                 .filter(
                   (host) =>
-                    host.environmentId === input.scope.environmentId &&
-                    supportsOperation(host, input.operation),
+                    host.environmentId === input.scope.environmentId && supportsRequest(host),
                 )
                 .sort(
                   (left, right) =>
                     right.supportedOperations.size - left.supportedOperations.size ||
+                    right.supportedNavigationTargets.size - left.supportedNavigationTargets.size ||
                     Number(right.focused) - Number(left.focused) ||
                     right.focusOrder - left.focusOrder,
                 )[0];
@@ -550,7 +568,20 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         onSome: (value) => Effect.succeed(value as A),
       });
     });
-    const result = yield* awaitResponse().pipe(Effect.ensuring(removePending));
+    const response = yield* awaitResponse().pipe(Effect.ensuring(removePending));
+    const result =
+      input.operation === "status" && isPreviewAutomationStatus(response)
+        ? ({
+            ...response,
+            environmentId: input.scope.environmentId,
+            threadId: input.scope.threadId,
+            browserHost: {
+              clientId: connection.clientId,
+              supportedOperations: [...connection.supportedOperations],
+              supportedNavigationTargets: [...connection.supportedNavigationTargets],
+            },
+          } as A)
+        : response;
     const responseTabId = readResultTabId(result);
     const resultTabId = responseTabId === undefined ? input.tabId : responseTabId;
     if (resultTabId === undefined) return result;

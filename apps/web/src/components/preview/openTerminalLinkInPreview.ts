@@ -3,10 +3,10 @@ import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime"
 import { isPreviewableUrl } from "@t3tools/shared/preview";
 import * as Schema from "effect/Schema";
 
-import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
+import { openUrlInPreview, type OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
-import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { isPreviewSupportedInRuntime } from "~/previewStateStore";
+import { toastManager } from "~/components/ui/toast";
 
 const terminalLinkErrorContext = {
   environmentId: Schema.String,
@@ -82,9 +82,10 @@ export async function openTerminalLinkInPreview<E>(
   }
 
   if (choice === "open-in-preview") {
-    const result = await input.openPreview({
-      environmentId: input.threadRef.environmentId,
-      input: { threadId: input.threadRef.threadId, url: input.url },
+    const result = await openUrlInPreview({
+      threadRef: input.threadRef,
+      url: input.url,
+      openPreview: input.openPreview,
     });
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) {
@@ -96,12 +97,14 @@ export async function openTerminalLinkInPreview<E>(
           cause: result.cause,
         }),
       );
-      input.fallbackToBrowser();
+      toastManager.add({
+        type: "error",
+        title: "Unable to open terminal link in preview",
+        description: "Check the project environment connection and try again.",
+      });
       return;
     }
     recordVisitForThread(input.threadRef, input.url);
-    applyPreviewServerSnapshot(input.threadRef, result.value);
-    useRightPanelStore.getState().openBrowser(input.threadRef, result.value.tabId);
     return;
   }
 

@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 
-import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { AssetResource } from "./assets.ts";
+import { EnvironmentId, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   PREVIEW_VIEWPORT_MAX_AREA,
   PreviewRenderedViewportSize,
@@ -48,6 +49,15 @@ export const PREVIEW_AUTOMATION_OPERATIONS = [
 export const PreviewAutomationOperation = Schema.Literals(PREVIEW_AUTOMATION_OPERATIONS);
 export type PreviewAutomationOperation = typeof PreviewAutomationOperation.Type;
 
+export const PREVIEW_AUTOMATION_V1_NAVIGATION_TARGETS = ["url", "environment-port"] as const;
+export const PREVIEW_AUTOMATION_NAVIGATION_TARGETS = [
+  ...PREVIEW_AUTOMATION_V1_NAVIGATION_TARGETS,
+  "workspace-file",
+] as const;
+export const PreviewAutomationNavigationTargetKind = Schema.Literals(
+  PREVIEW_AUTOMATION_NAVIGATION_TARGETS,
+);
+
 const PreviewAutomationTabTargetFields = {
   tabId: Schema.optional(
     PreviewTabId.annotate({
@@ -70,6 +80,33 @@ export const PreviewAutomationStatus = Schema.Struct({
   url: Schema.NullOr(Schema.String),
   title: Schema.NullOr(Schema.String),
   loading: Schema.Boolean,
+  environmentId: Schema.optional(EnvironmentId),
+  threadId: Schema.optional(ThreadId),
+  browserHost: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        clientId: TrimmedNonEmptyString,
+        supportedOperations: Schema.Array(PreviewAutomationOperation),
+        supportedNavigationTargets: Schema.optional(
+          Schema.Array(PreviewAutomationNavigationTargetKind),
+        ),
+      }),
+    ),
+  ),
+  connectionKind: Schema.optional(Schema.Literals(["primary", "bearer", "relay", "ssh"])).annotate({
+    description:
+      "Selected browser client's connection to the execution environment. Primary is a connection role, not proof that the browser and provider run on the same machine.",
+  }),
+  environmentLabel: Schema.optional(Schema.String),
+  workspace: Schema.optional(
+    Schema.Struct({
+      projectId: ProjectId,
+      projectName: Schema.String,
+      projectDirectory: TrimmedNonEmptyString,
+      workingDirectory: TrimmedNonEmptyString,
+    }),
+  ),
+  unavailableReason: Schema.optional(Schema.Literal("no-compatible-browser-host")),
   /** Optional for compatibility with desktop hosts predating viewport sizing. */
   viewportSetting: Schema.optional(PreviewViewportSetting),
   /** Measured guest-page viewport in CSS pixels when a webview is ready. */
@@ -116,6 +153,16 @@ export type PreviewAutomationOpenInput = typeof PreviewAutomationOpenInput.Type;
 
 export const BrowserNavigationTarget = Schema.Union([
   Schema.Struct({
+    kind: Schema.Literal("workspace-file").annotate({
+      description:
+        "Selects a file in this thread's project or worktree through the existing T3 connection.",
+    }),
+    path: AssetResource.members[0].fields.path.annotate({
+      description:
+        "Workspace-relative browser document or image path, for example design.html. T3 resolves the current thread's workspace and supported relative assets; no HTTP server or port forwarding is needed.",
+    }),
+  }),
+  Schema.Struct({
     kind: Schema.Literal("url").annotate({
       description: "Selects direct URL navigation.",
     }),
@@ -152,11 +199,11 @@ export const PreviewAutomationNavigateInput = Schema.Struct({
   target: Schema.optional(
     BrowserNavigationTarget.annotate({
       description:
-        "Environment-relative target. Prefer {kind:'environment-port',port:5173} for a dev server in the current environment.",
+        "Use {kind:'workspace-file',path:'design.html'} for workspace content through the existing T3 connection. Environment-port targets identify running dev applications.",
     }),
   ).annotate({
     description:
-      "Environment-relative target. Prefer {kind:'environment-port',port:5173} for a dev server in the current environment.",
+      "Use {kind:'workspace-file',path:'design.html'} for workspace content through the existing T3 connection. Environment-port targets identify running dev applications.",
   }),
   readiness: Schema.optional(
     Schema.Literals(["load", "domContentLoaded", "none"]).annotate({
@@ -576,6 +623,7 @@ export type PreviewAutomationHostIdentity = typeof PreviewAutomationHostIdentity
 
 export const PreviewAutomationHost = Schema.Struct({
   ...PreviewAutomationHostIdentity.fields,
+  supportedNavigationTargets: Schema.optional(Schema.Array(PreviewAutomationNavigationTargetKind)),
   /**
    * Missing means the pre-capability-negotiation V1 operation set. This lets
    * a newer server safely coexist with an older desktop during rollout.
@@ -877,7 +925,7 @@ export type PreviewAutomationError = typeof PreviewAutomationError.Type;
 export const PreviewUrlResolution = Schema.Struct({
   requestedUrl: Schema.String,
   resolvedUrl: Schema.String,
-  resolutionKind: Schema.Literals(["direct", "direct-private-network"]),
+  resolutionKind: Schema.Literals(["direct", "direct-private-network", "gateway"]),
   environmentId: EnvironmentId,
 });
 export type PreviewUrlResolution = typeof PreviewUrlResolution.Type;

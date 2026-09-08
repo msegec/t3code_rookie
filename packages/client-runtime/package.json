@@ -158,6 +158,10 @@
     "./state/vcs": {
       "types": "./src/state/vcs.ts",
       "default": "./src/state/vcs.ts"
+    },
+    "./state/previewGateway": {
+      "types": "./src/state/previewGateway.ts",
+      "default": "./src/state/previewGateway.ts"
     }
   },
   "scripts": {

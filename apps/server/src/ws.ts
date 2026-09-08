@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
+  PreviewGatewayError,
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
   type AuthEnvironmentScope,
@@ -101,6 +102,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as PreviewGateway from "./preview/Gateway.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
@@ -142,6 +144,7 @@ import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+const isPreviewGatewayError = Schema.is(PreviewGatewayError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
@@ -502,6 +505,7 @@ const makeWsRpcLayer = (
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
+      const previewGateway = yield* PreviewGateway.Gateway;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerService = yield* ProviderService.ProviderService;
@@ -2057,6 +2061,55 @@ const makeWsRpcLayer = (
             WS_METHODS.attachmentsDelete,
             deletePendingAttachment(input.attachmentId),
             { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.previewGatewayIssue]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.previewGatewayIssue,
+            Effect.gen(function* () {
+              const thread = yield* projectionSnapshotQuery.getThreadShellById(input.threadId).pipe(
+                Effect.mapError(
+                  () =>
+                    new PreviewGatewayError({
+                      reason: "thread-unavailable",
+                      message: "The preview thread is unavailable.",
+                    }),
+                ),
+              );
+              if (Option.isNone(thread))
+                return yield* new PreviewGatewayError({
+                  reason: "thread-unavailable",
+                  message: "The preview thread is unavailable.",
+                });
+              return yield* Effect.try({
+                try: () => previewGateway.issue(input, currentSessionId),
+                catch: (cause) =>
+                  isPreviewGatewayError(cause)
+                    ? cause
+                    : new PreviewGatewayError({
+                        reason: "invalid-target",
+                        message: "Could not create a preview route.",
+                      }),
+              });
+            }),
+          ),
+        [WS_METHODS.previewGatewayRegister]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.previewGatewayRegister,
+            Effect.try({
+              try: () => previewGateway.register(input, currentSessionId),
+              catch: (cause) =>
+                isPreviewGatewayError(cause)
+                  ? cause
+                  : new PreviewGatewayError({
+                      reason: "invalid-target",
+                      message: "Could not register a preview route.",
+                    }),
+            }),
+          ),
+        [WS_METHODS.previewGatewayRevoke]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.previewGatewayRevoke,
+            Effect.sync(() => previewGateway.revoke(input.origin, currentSessionId)),
           ),
         [WS_METHODS.assetsCreateUrl]: (input) =>
           observeRpcEffect(

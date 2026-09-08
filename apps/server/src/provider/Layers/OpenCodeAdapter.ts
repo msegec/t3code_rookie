@@ -33,6 +33,10 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import {
+  browserToolInstructions,
+  EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS,
+} from "../T3BrowserInstructions.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
   ProviderAdapterProcessError,
@@ -319,6 +323,7 @@ function isOpenCodeDefaultTitle(title: string): boolean {
 }
 
 interface OpenCodeSessionContext {
+  readonly browserInstructions: string;
   session: ProviderSession;
   readonly client: OpencodeClient;
   readonly server: OpenCodeServerConnection;
@@ -2422,6 +2427,9 @@ export function makeOpenCodeAdapter(
                 sessionScope,
                 server,
                 client,
+                browserInstructions: server.external
+                  ? EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS
+                  : browserToolInstructions(mcpSession !== undefined),
                 openCodeSession: resolved.openCodeSession,
                 created: resolved.created,
               };
@@ -2457,6 +2465,7 @@ export function makeOpenCodeAdapter(
         const context: OpenCodeSessionContext = {
           session,
           client: started.client,
+          browserInstructions: started.browserInstructions,
           server: started.server,
           directory,
           openCodeSessionId: started.openCodeSession.id,
@@ -2690,6 +2699,7 @@ export function makeOpenCodeAdapter(
                 sessionID: context.openCodeSessionId,
                 messageID: messageId,
                 model: parsedModel,
+                ...(context.browserInstructions ? { system: context.browserInstructions } : {}),
                 ...(context.activeAgent ? { agent: context.activeAgent } : {}),
                 ...(context.activeVariant ? { variant: context.activeVariant } : {}),
                 parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],

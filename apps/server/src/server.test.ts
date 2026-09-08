@@ -131,6 +131,7 @@ import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as PreviewGateway from "./preview/Gateway.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
@@ -867,6 +868,7 @@ const buildAppUnderTest = (options?: {
     );
 
     const appLayer = servedRoutesLayer.pipe(
+      Layer.provide(PreviewGateway.layer),
       Layer.provide(resourceTelemetryLayer),
       Layer.provide(UsageService.layerTest),
       Layer.provide(
@@ -4777,6 +4779,51 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.strictEqual(error.threadId, threadId);
         assert.strictEqual(error.message, `Failed to upload feedback for thread ${threadId}.`);
         assert.isDefined(error.cause);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "issues preview gateway capabilities for an existing execution thread through RPC",
+    () =>
+      Effect.gen(function* () {
+        yield* buildAppUnderTest({
+          layers: {
+            projectionSnapshotQuery: {
+              getThreadShellById: (threadId) =>
+                Effect.succeed(
+                  threadId === defaultThreadId
+                    ? Option.some(makeDefaultOrchestrationThreadShell())
+                    : Option.none(),
+                ),
+            },
+          },
+        });
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const result = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.previewGatewayIssue]({ threadId: defaultThreadId, port: 5173 }),
+          ),
+        );
+        assert.match(result.path, /^\/api\/preview\/[a-f0-9]{32}\/$/);
+        assert.isAbove(result.expiresAt, 0);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects preview gateway capabilities for missing threads through RPC", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.previewGatewayIssue]({ threadId: defaultThreadId, port: 5173 }).pipe(
+            Effect.flip,
+          ),
+        ),
+      );
+      assert.strictEqual(error._tag, "PreviewGatewayError");
+      if (error._tag === "PreviewGatewayError") {
+        assert.strictEqual(error.reason, "thread-unavailable");
       }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

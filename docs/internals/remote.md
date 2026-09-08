@@ -212,6 +212,36 @@ Hosted pairing is a client-side convenience only. The hosted app must not receiv
 through query parameters, must not store pairing state server-side, and must not imply that an HTTP
 backend is reachable from an HTTPS browser context.
 
+## Collaborative browser context
+
+Providers receive one shared browser instruction block from
+[`T3BrowserInstructions.ts`](../../apps/server/src/provider/T3BrowserInstructions.ts). Codex and
+Claude use their instruction channels; OpenCode uses request system context. Cursor and Grok receive
+the block with the first successfully submitted prompt of each new or resumed ACP runtime because
+ACP has no system instruction field. The existing prompt semaphore owns delivery and retry state.
+Tool schemas own operation details. Current environment and browser-host facts
+appear only in `preview_status`, not in injected prompts or every navigation result.
+
+The automation broker keeps each provider session on its selected desktop host. That host resolves
+workspace files against its own prepared environment connection using the existing asset capability
+flow. The server owns thread-to-worktree resolution and path validation. Navigation target support
+is negotiated separately from operation support, so an older host can reject a workspace-file
+target without attempting to interpret it as a port.
+
+Dynamic HTTP previews use the desktop's existing local T3 listener as a browser origin. A scoped
+`t3-preview-*.localhost` host routes through the environment's existing HTTP endpoint to its
+loopback application port. The same transport streams HTTP and WebSocket upgrades; it adds no
+listener, process, dependency, HTML rewriting or application port exposure. Relay and SSH
+connections reuse their prepared endpoint. The initial transport requires Node on both T3 servers
+and HTTP at the application, although the environment endpoint may use HTTPS.
+
+Authenticated RPCs issue and register routes scoped to an environment, thread and application port.
+The environment validates the execution thread; the desktop validates its local backend connection.
+Routes stay in bounded memory, expire after 15 minutes idle, retain active transfers and close on
+revocation. Existing session-removal events revoke owned routes without polling. The client releases
+unused routes on tab closure, failed loads and connection changes. Physical preview URLs remain
+desktop-local; a different desktop must reopen the logical application target.
+
 ## Version coordination
 
 Remote environments stay online while clients move to newer releases. The environment descriptor
