@@ -60,6 +60,8 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";
+import * as PreviewGateway from "./preview/Gateway.ts";
+import { makeGatewayServer } from "./preview/GatewayTransport.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -247,11 +249,19 @@ const HttpServerLive = Layer.unwrap(
         },
       });
     } else {
-      const [NodeHttpServer, NodeHttp] = yield* Effect.all([
-        Effect.promise(() => import("@effect/platform-node/NodeHttpServer")),
-        Effect.promise(() => import("node:http")),
-      ]);
-      return NodeHttpServer.layer(() => guardHttpResponseWriteErrors(NodeHttp.createServer()), {
+      const NodeHttpServer = yield* Effect.promise(
+        () => import("@effect/platform-node/NodeHttpServer"),
+      );
+      const gateway = yield* PreviewGateway.Gateway;
+      const transport = yield* Effect.acquireRelease(
+        Effect.sync(() => makeGatewayServer(gateway.resolve)),
+        (transport) => Effect.sync(transport.dispose),
+      );
+      transport.server.once("listening", () => {
+        const address = transport.server.address();
+        if (address && typeof address !== "string") gateway.setListeningPort(address.port);
+      });
+      return NodeHttpServer.layer(() => guardHttpResponseWriteErrors(transport.server), {
         host: config.host ?? "127.0.0.1",
         port: config.port,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
@@ -557,6 +567,7 @@ const SourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
 );
 
 export const makeRoutesLayer = Layer.mergeAll(
+  PreviewGateway.revocationLayer,
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(authHttpApiLayer),
@@ -795,6 +806,7 @@ const makeServerLayer = Layer.unwrap(
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),
       Layer.provideMerge(HttpServerLive),
+      Layer.provideMerge(PreviewGateway.layer),
       Layer.provide(ApplicationObservabilityLive),
       Layer.provideMerge(FetchHttpClient.layer),
       // PR reads, Git operations, and WebSocket discovery share one process limiter.

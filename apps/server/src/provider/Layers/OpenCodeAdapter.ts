@@ -35,6 +35,10 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import {
+  browserToolInstructions,
+  EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS,
+} from "../T3BrowserInstructions.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
   ProviderAdapterProcessError,
@@ -334,6 +338,7 @@ type OpenCodeTextPartState = Pick<OpenCodeTextPart, "id" | "messageID" | "type" 
 type OpenCodeStepUsage = Pick<Extract<Part, { readonly type: "step-finish" }>, "id" | "tokens">;
 
 interface OpenCodeSessionContext {
+  readonly browserInstructions: string;
   session: ProviderSession;
   readonly client: OpencodeClient;
   readonly server: OpenCodeServerConnection;
@@ -2947,6 +2952,9 @@ export function makeOpenCodeAdapter(
                 sessionScope,
                 server,
                 client,
+                browserInstructions: server.external
+                  ? EXTERNAL_OPENCODE_BROWSER_INSTRUCTIONS
+                  : browserToolInstructions(mcpSession !== undefined),
                 openCodeSession: resolved.openCodeSession,
                 created: resolved.created,
               };
@@ -2982,6 +2990,7 @@ export function makeOpenCodeAdapter(
         const context: OpenCodeSessionContext = {
           session,
           client: started.client,
+          browserInstructions: started.browserInstructions,
           server: started.server,
           directory,
           openCodeSessionId: started.openCodeSession.id,
@@ -3220,10 +3229,15 @@ export function makeOpenCodeAdapter(
                 ...(context.activeAgent ? { agent: context.activeAgent } : {}),
                 ...(context.activeVariant ? { variant: context.activeVariant } : {}),
                 // OpenCode appends this after its own agent/provider prompts.
-                system: buildRuntimeInstructions({
-                  harness: "OpenCode",
-                  model: `${parsedModel.providerID}/${parsedModel.modelID}`,
-                }),
+                system: [
+                  buildRuntimeInstructions({
+                    harness: "OpenCode",
+                    model: `${parsedModel.providerID}/${parsedModel.modelID}`,
+                  }),
+                  context.browserInstructions,
+                ]
+                  .filter(Boolean)
+                  .join("\n\n"),
                 parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
               },
               { signal },

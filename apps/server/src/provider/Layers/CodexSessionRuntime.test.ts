@@ -608,7 +608,10 @@ describe("T3 browser developer instructions", () => {
       NodeAssert.match(instructions, /t3-code/);
       NodeAssert.match(instructions, /preview_status/);
       NodeAssert.match(instructions, /preview_open/);
-      NodeAssert.match(instructions, /Do not switch to global browser skills/);
+      NodeAssert.match(instructions, /workspace-file/);
+      NodeAssert.match(instructions, /Do not expose application ports/);
+      NodeAssert.match(instructions, /selected browser host can be on another machine/);
+      NodeAssert.match(instructions, /Use another browser only when preview tools are absent/);
     }
   });
 
@@ -620,7 +623,10 @@ describe("T3 browser developer instructions", () => {
       NodeAssert.doesNotMatch(instructions, /T3 Code collaborative browser/);
       // Steering away from other browser automation must go with the tools;
       // keeping it would leave the model talked out of its only option.
-      NodeAssert.doesNotMatch(instructions, /Do not switch to global browser skills/);
+      NodeAssert.doesNotMatch(
+        instructions,
+        /Use another browser only when preview tools are absent/,
+      );
       // The rest of the collaboration mode is untouched.
       NodeAssert.match(instructions, /<collaboration_mode>/);
       NodeAssert.match(instructions, /<\/collaboration_mode>/);

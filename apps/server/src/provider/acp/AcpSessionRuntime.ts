@@ -21,6 +21,7 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { browserToolInstructions } from "../T3BrowserInstructions.ts";
 
 import {
   collectSessionConfigOptionValues,
@@ -356,6 +357,9 @@ export const make = (
     const stderrFailure = yield* Deferred.make<never, EffectAcpErrors.AcpError>();
     const runtimeClosed = yield* Deferred.make<void>();
     const promptSerializationSemaphore = yield* Semaphore.make(1);
+    let pendingBrowserInstructions = browserToolInstructions(
+      options.mcpServers?.some((server) => server.name === "t3-code") === true,
+    );
     const promptDispatchSemaphore = yield* Semaphore.make(1);
     const activePromptRef = yield* Ref.make<Option.Option<AcpActivePrompt>>(Option.none());
     const sessionLoadGateRef = yield* Ref.make<Option.Option<SessionLoadGate>>(Option.none());
@@ -987,6 +991,12 @@ export const make = (
                 const requestPayload = {
                   sessionId: started.sessionId,
                   ...payload,
+                  prompt: pendingBrowserInstructions
+                    ? [
+                        { type: "text" as const, text: pendingBrowserInstructions },
+                        ...payload.prompt,
+                      ]
+                    : payload.prompt,
                 } satisfies EffectAcpSchema.PromptRequest;
                 const completed = yield* Deferred.make<void>();
                 const fiber = yield* runLoggedRequest(
@@ -1004,6 +1014,11 @@ export const make = (
             ),
             (activePrompt) =>
               Fiber.join(activePrompt.fiber).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    pendingBrowserInstructions = "";
+                  }),
+                ),
                 Effect.catchCause((cause) =>
                   options.cancelBehavior !== "wait-for-prompt" && Cause.hasInterruptsOnly(cause)
                     ? Effect.succeed({

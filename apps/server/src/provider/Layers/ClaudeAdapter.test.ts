@@ -15,6 +15,7 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -38,6 +39,8 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { browserToolInstructions } from "../T3BrowserInstructions.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   SYNTHETIC_CLAUDE_CAPABLE_MODEL,
@@ -317,6 +320,87 @@ const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 const SYNTHETIC_SUBAGENT_MODEL = "claude-synthetic-subagent[expanded]";
 
 describe("ClaudeAdapterLive", () => {
+  for (const resumed of [false, true]) {
+    it.effect(
+      `adds T3 browser guidance without changing the ${resumed ? "resumed" : "new"} Claude user prompt`,
+      () => {
+        const harness = makeHarness();
+        return Effect.gen(function* () {
+          const threadId = ThreadId.make(`thread-claude-browser-${resumed}`);
+          McpProviderSession.setMcpProviderSession({
+            environmentId: EnvironmentId.make("environment-browser-test"),
+            threadId,
+            providerSessionId: "provider-browser-test",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            endpoint: "http://127.0.0.1:4321/mcp",
+            authorizationHeader: "Bearer browser-test-token",
+            capabilities: new Set(["preview"]),
+          });
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+          );
+          const adapter = yield* ClaudeAdapter;
+          yield* adapter.startSession({
+            threadId,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            runtimeMode: "full-access",
+            ...(resumed
+              ? { resumeCursor: { resume: "550e8400-e29b-41d4-a716-446655440000" } }
+              : {}),
+          });
+          yield* adapter.sendTurn({ threadId, input: "Open design.html", attachments: [] });
+
+          const createInput = harness.getLastCreateQueryInput();
+          assert.deepEqual(createInput?.options.systemPrompt, {
+            type: "preset",
+            preset: "claude_code",
+            append:
+              buildRuntimeInstructions({ harness: "Claude Code" }) + browserToolInstructions(true),
+          });
+          assert.equal(
+            createInput?.options.resume,
+            resumed ? "550e8400-e29b-41d4-a716-446655440000" : undefined,
+          );
+          assert.equal(
+            yield* Effect.promise(() => readFirstPromptText(createInput)),
+            "Open design.html",
+          );
+          yield* adapter.sendTurn({ threadId, input: "Inspect the heading", attachments: [] });
+          const followupInput = harness.getLastCreateQueryInput();
+          assert.strictEqual(followupInput, createInput);
+          assert.deepEqual(followupInput?.options.systemPrompt, {
+            type: "preset",
+            preset: "claude_code",
+            append:
+              buildRuntimeInstructions({ harness: "Claude Code" }) + browserToolInstructions(true),
+          });
+          assert.equal(
+            yield* Effect.promise(() => readFirstPromptText(followupInput)),
+            "Inspect the heading",
+          );
+        }).pipe(Effect.scoped, Effect.provide(harness.layer));
+      },
+    );
+  }
+
+  it.effect("omits T3 browser guidance when Claude has no MCP session", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: ThreadId.make("thread-claude-browser-disabled"),
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+        append: buildRuntimeInstructions({ harness: "Claude Code" }),
+      });
+      assert.equal(harness.getLastCreateQueryInput()?.options.mcpServers, undefined);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
