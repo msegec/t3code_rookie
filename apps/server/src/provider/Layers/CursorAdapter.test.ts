@@ -18,6 +18,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 
 import {
   ApprovalRequestId,
+  EnvironmentId,
   CursorSettings,
   ProviderDriverKind,
   type ProviderRuntimeEvent,
@@ -27,12 +28,23 @@ import {
 
 import { ServerConfig } from "../../config.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { browserToolInstructions } from "../T3BrowserInstructions.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import type { CursorAdapterShape } from "../Services/CursorAdapter.ts";
 import { makeCursorAdapter } from "./CursorAdapter.ts";
 import { execScriptSource, writeFakeCli } from "../../testUtils/fakeCli.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 const decodeCursorSettings = Schema.decodeSync(CursorSettings);
+const decodeBrowserPromptRequest = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    sessionId: Schema.String,
+    prompt: Schema.Array(Schema.Struct({ type: Schema.Literal("text"), text: Schema.String })),
+  }),
+);
+const decodeBrowserSetupRequest = Schema.decodeUnknownEffect(
+  Schema.Struct({ mcpServers: Schema.Array(Schema.Struct({ name: Schema.String })) }),
+);
 
 // Test-local service tag so the rest of the file can keep using `yield* CursorAdapter`.
 class CursorAdapter extends Context.Service<CursorAdapter, CursorAdapterShape>()(
@@ -197,6 +209,98 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       assert.isFalse(runtimeEvents.some((event) => event.type === "turn.completed"));
     }),
   );
+  for (const attached of [false, true]) {
+    for (const resumed of [false, true]) {
+      it.effect(
+        `sends browser guidance once after rejection with MCP ${attached} on resumed session ${resumed}`,
+        () =>
+          Effect.gen(function* () {
+            const threadId = ThreadId.make(`cursor-browser-${attached}-${resumed}`);
+            const tempDir = yield* Effect.acquireRelease(
+              Effect.promise(() =>
+                NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-browser-")),
+              ),
+              (directory) =>
+                Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
+            );
+            const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+            const adapter = yield* CursorAdapter;
+            const settings = yield* ServerSettingsService;
+            const wrapperPath = yield* Effect.promise(() =>
+              makeMockAgentWrapper({
+                T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+                ...(attached ? { T3_ACP_FAIL_FIRST_PROMPT: "1" } : {}),
+              }),
+            );
+            yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+            if (attached) {
+              yield* Effect.acquireRelease(
+                Effect.sync(() =>
+                  McpProviderSession.setMcpProviderSession({
+                    environmentId: EnvironmentId.make("browser-test-environment"),
+                    threadId,
+                    providerSessionId: "browser-test-session",
+                    providerInstanceId: ProviderInstanceId.make("cursor"),
+                    endpoint: "http://127.0.0.1:1234/mcp",
+                    authorizationHeader: "Bearer test-only",
+                    capabilities: new Set(["preview"]),
+                  }),
+                ),
+                () => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+              );
+            }
+            yield* adapter.startSession({
+              threadId,
+              provider: ProviderDriverKind.make("cursor"),
+              cwd: process.cwd(),
+              runtimeMode: "full-access",
+              ...(resumed
+                ? { resumeCursor: { schemaVersion: 1, sessionId: "mock-session-1" } }
+                : {}),
+            });
+            const invalid = yield* adapter
+              .sendTurn({ threadId, input: " ", attachments: [] })
+              .pipe(Effect.result);
+            assert.equal(invalid._tag, "Failure");
+            if (attached) {
+              const rejected = yield* adapter
+                .sendTurn({ threadId, input: "rejected request", attachments: [] })
+                .pipe(Effect.result);
+              assert.equal(rejected._tag, "Failure");
+            }
+            yield* adapter.sendTurn({ threadId, input: "first user request", attachments: [] });
+            yield* adapter.sendTurn({ threadId, input: "second user request", attachments: [] });
+            yield* adapter.stopSession(threadId);
+            const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+            const prompts = yield* Effect.forEach(
+              requests.filter((entry) => entry.method === "session/prompt"),
+              (entry) => decodeBrowserPromptRequest(entry.params),
+            );
+            assert.deepEqual(
+              prompts.map((prompt) =>
+                prompt.prompt
+                  .map((part) => part.text)
+                  .filter((text) => !text.startsWith("<runtime_info>")),
+              ),
+              [
+                ...(attached ? [[browserToolInstructions(true), "rejected request"]] : []),
+                [...(attached ? [browserToolInstructions(true)] : []), "first user request"],
+                ["second user request"],
+              ],
+            );
+            const setupRequest = requests.find(
+              (entry) => entry.method === (resumed ? "session/load" : "session/new"),
+            );
+            assert.isDefined(setupRequest);
+            const setup = yield* decodeBrowserSetupRequest(setupRequest?.params);
+            assert.deepEqual(
+              setup.mcpServers.map((server) => server.name),
+              attached ? ["t3-code"] : [],
+            );
+          }),
+      );
+    }
+  }
 
   it.effect("starts a session and maps mock ACP prompt flow to runtime events", () =>
     Effect.gen(function* () {

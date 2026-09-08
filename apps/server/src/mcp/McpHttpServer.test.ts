@@ -115,6 +115,29 @@ const callSnapshot = (args: Record<string, unknown>) =>
       );
   });
 
+it.effect("reports missing browser hosts in status while actions remain unavailable", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const status = yield* server.callTool({ name: "preview_status", arguments: {} });
+      expect(status.isError).toBe(false);
+      expect(status.structuredContent).toMatchObject({
+        available: false,
+        environmentId,
+        threadId,
+        browserHost: null,
+        unavailableReason: "no-compatible-browser-host",
+      });
+      const open = yield* server.callTool({ name: "preview_open", arguments: {} });
+      expect(open.isError).toBe(true);
+    }),
+  ).pipe(
+    Effect.provide(TestLayer),
+    Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+    Effect.provideService(McpSchema.McpServerClient, client),
+  ),
+);
+
 it("normalizes empty successful notification responses to accepted", () => {
   const notificationResponse = McpHttpServer.normalizeMcpHttpResponse(
     HttpServerResponse.text("", { status: 200, contentType: "application/json" }),
