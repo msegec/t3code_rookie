@@ -35,7 +35,6 @@ const packageManifest = {
   engines: serverPackage.engines,
   files: serverPackage.files,
   dependencies: resolveCatalogDependencies(serverPackage.dependencies, catalog, "apps/server"),
-  overrides: resolveCatalogDependencies(workspace.overrides ?? {}, catalog, "apps/server"),
 };
 
 await NodeFSP.mkdir(output, { recursive: false });

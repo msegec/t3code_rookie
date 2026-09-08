@@ -15,7 +15,7 @@ function run(command, args, options) {
   if (result.status !== 0) throw new Error(`${command} failed: ${result.signal ?? result.status}`);
 }
 
-export function smokeCli(root, version) {
+export function smokeCli(entrypoint, version) {
   const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cli-smoke-"));
   try {
     const env = {
@@ -29,17 +29,13 @@ export function smokeCli(root, version) {
     };
     for (const configured of [false, true]) {
       for (const argument of ["--version", "--help"]) {
-        const result = NodeChildProcess.spawnSync(
-          process.execPath,
-          [NodePath.join(root, "apps/server/dist/bin.mjs"), argument],
-          {
-            cwd: home,
-            env: configured ? { ...env, T3CODE_HOME: NodePath.join(home, "t3") } : env,
-            encoding: "utf8",
-            timeout: 15_000,
-            maxBuffer: 1024 * 1024,
-          },
-        );
+        const result = NodeChildProcess.spawnSync(process.execPath, [entrypoint, argument], {
+          cwd: home,
+          env: configured ? { ...env, T3CODE_HOME: NodePath.join(home, "t3") } : env,
+          encoding: "utf8",
+          timeout: 15_000,
+          maxBuffer: 1024 * 1024,
+        });
         if (result.error) throw result.error;
         if (result.status !== 0 || result.stderr.trim()) {
           throw new Error(
@@ -59,6 +55,57 @@ export function smokeCli(root, version) {
     }
   } finally {
     NodeFS.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+export function packageServer(root, output, version) {
+  const temporary = NodeFS.mkdtempSync(
+    NodePath.join(NodePath.dirname(output), "t3-package-smoke-"),
+  );
+  try {
+    const staged = NodePath.join(temporary, "package");
+    const installed = NodePath.join(temporary, "installed");
+    run(process.execPath, [
+      NodeURL.fileURLToPath(new URL("./stage-server-package.mjs", import.meta.url)),
+      root,
+      staged,
+      version,
+    ]);
+    NodeFS.mkdirSync(output, { recursive: true });
+    run("npm", ["pack", "--ignore-scripts", "--pack-destination", output], { cwd: staged });
+    const artifact = NodePath.join(output, `t3-${version}.tgz`);
+    run(
+      "npm",
+      ["install", "--prefix", installed, "--ignore-scripts", "--no-fund", "--no-audit", artifact],
+      { cwd: temporary },
+    );
+    run("npm", ["rebuild", "node-pty", "--prefix", installed, "--no-fund", "--no-audit"], {
+      cwd: temporary,
+    });
+    run(
+      process.execPath,
+      [
+        "--input-type=commonjs",
+        "-e",
+        `
+      const pty = require("node-pty").spawn(process.execPath, [
+        "-e", "process.stdout.write('t3-pty-smoke')",
+      ], { cwd: process.cwd(), env: { PATH: process.env.PATH } });
+      let output = "";
+      pty.onData((data) => { output += data; });
+      pty.onExit(({ exitCode }) => {
+        if (exitCode !== 0 || output !== "t3-pty-smoke") {
+          throw new Error("Installed terminal smoke failed: " + JSON.stringify({ exitCode, output }));
+        }
+      });
+    `,
+      ],
+      { cwd: NodePath.join(installed, "node_modules/t3"), timeout: 15_000 },
+    );
+    smokeCli(NodePath.join(installed, "node_modules/t3/dist/bin.mjs"), version);
+    return artifact;
+  } finally {
+    NodeFS.rmSync(temporary, { recursive: true, force: true });
   }
 }
 
@@ -103,7 +150,14 @@ function preflight(root, manifestPath, version) {
   NodeFS.copyFileSync(NodePath.join(root, ".env.example"), NodePath.join(root, ".env"));
   step("build", "vp", ["run", "--filter", "t3", "build"]);
   process.stderr.write("fleet_phase=preflight_cli\n");
-  smokeCli(root, version);
+  smokeCli(NodePath.join(root, "apps/server/dist/bin.mjs"), version);
+  process.stderr.write("fleet_phase=preflight_package\n");
+  const output = NodeFS.mkdtempSync(NodePath.join(root, ".fleet-package-"));
+  try {
+    packageServer(root, output, version);
+  } finally {
+    NodeFS.rmSync(output, { recursive: true, force: true });
+  }
   process.stderr.write("fleet_preflight=passed\n");
 }
 
@@ -111,7 +165,8 @@ if (
   process.argv[1] &&
   NodeURL.pathToFileURL(NodePath.resolve(process.argv[1])).href === import.meta.url
 ) {
-  const [root, manifest, version, ...extra] = process.argv.slice(2);
+  const packageOnly = process.argv[2] === "--package";
+  const [root, manifest, version, ...extra] = process.argv.slice(packageOnly ? 3 : 2);
   if (
     !root ||
     !manifest ||
@@ -119,8 +174,12 @@ if (
     extra.length
   ) {
     throw new Error(
-      "Usage: preflight-release.mjs <composed-root> <manifest-path> <release-version>",
+      "Usage: preflight-release.mjs [--package] <composed-root> <manifest-path|output-dir> <release-version>",
     );
   }
-  preflight(NodePath.resolve(root), NodePath.resolve(manifest), version);
+  (packageOnly ? packageServer : preflight)(
+    NodePath.resolve(root),
+    NodePath.resolve(manifest),
+    version,
+  );
 }

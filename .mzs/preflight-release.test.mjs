@@ -11,7 +11,7 @@ function fixture(test, source) {
   test.after(() => NodeFS.rmSync(root, { recursive: true, force: true }));
   NodeFS.mkdirSync(NodePath.join(root, "apps/server/dist"), { recursive: true });
   NodeFS.writeFileSync(NodePath.join(root, "apps/server/dist/bin.mjs"), source);
-  return root;
+  return NodePath.join(root, "apps/server/dist/bin.mjs");
 }
 const cli = `console.log(process.argv.includes("--version") ? "t3 v${version}" : "USAGE t3");`;
 

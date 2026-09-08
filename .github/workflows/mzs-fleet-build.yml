@@ -260,14 +260,10 @@ jobs:
             apps/server/dist/mzs-fleet.json \
             "$RUNNER_TEMP/overlays.json" \
             "$release_dir/release-notes.md"
-          node "$RUNNER_TEMP/stage-server-package.mjs" \
+          node "$RUNNER_TEMP/preflight-release.mjs" --package \
             "$PWD" \
-            "$RUNNER_TEMP/fleet-package" \
+            "$release_dir" \
             "${{ steps.compose.outputs.version }}"
-          (
-            cd "$RUNNER_TEMP/fleet-package"
-            vp pm pack --pack-destination "$release_dir" >/dev/null
-          )
           artifact="$release_dir/t3-${{ steps.compose.outputs.version }}.tgz"
           test -f "$artifact"
           tar -tzf "$artifact" >"$RUNNER_TEMP/package-files.txt"
@@ -282,10 +278,6 @@ jobs:
           cp apps/server/dist/mzs-fleet.json "$release_dir/mzs-fleet.json"
           cd "$release_dir"
           sha256sum "$(basename "$artifact")" "$(basename "$bundle")" release-notes.md >SHA256SUMS
-          smoke_dir="$RUNNER_TEMP/fleet-smoke"
-          npm install --prefix "$smoke_dir" --no-fund --no-audit "$artifact"
-          reported="$(node "$smoke_dir/node_modules/t3/dist/bin.mjs" --version)"
-          [[ "$reported" == *"v${{ steps.compose.outputs.version }}" ]]
 
       - name: Upload verified release files
         uses: actions/upload-artifact@v7
