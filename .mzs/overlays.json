@@ -27,70 +27,84 @@
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "55ce156392ceefcaee1f9f1fd765c751fc86e023"
+      "sha": "033ffa7dfc5fd45039d63f06ebed9feb5eb30968"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "59d23ead641f57a878162a9eb67739a69550452a"
+      "sha": "51411514c81b71c1dcd17c05ecdcdbd7fa2f178e"
     },
     {
       "kind": "commit",
       "name": "MZS preserve drafts during compaction",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fix/preserve-draft-on-compact",
-      "sha": "533bd241e39f4219774fd5fe1136aba411b97b7d"
+      "sha": "a4c1375cb0bd654dd5160d7d67682cb0b9e177d3"
     },
     {
       "kind": "commit",
       "name": "MZS ACP Cursor/Grok subagent panel",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "e48082c97fa4f5f75cecab25423f50f462ae84ae"
+      "sha": "967d2fe751598273fe49dc59bd67a92e28097c7f"
     },
     {
       "kind": "commit",
       "name": "MZS ACP subagent lifecycle fixes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "d87e7bd56a2271ef28959f4d6b4287756ab67faa"
+      "sha": "0009b3380b6070a58543531d21a8a16622e6f2c9"
     },
     {
       "kind": "commit",
       "name": "MZS full fleet release notes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "5e557357a04b41c88ff3d029a86a5799a81eb1fe"
+      "sha": "d5991aff6b2206b3971365d0ec8133141b92d82b"
     },
     {
       "kind": "commit",
       "name": "MZS server replacement and endpoint preservation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "b8e3b1f241bdd403b4fb2b21e22210efa131c846"
+      "sha": "4ffc3ddb7ff68098dea771b59330904882b9070f"
     },
     {
       "kind": "commit",
       "name": "MZS ownership crash test lifecycle",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "902060e74dd97a6790d6a250ddabbe88be6f1bf7"
+      "sha": "d988f03996fbd4fc88fbba674aaff6731b265c25"
     },
     {
       "kind": "commit",
       "name": "MZS isolate service launcher entrypoint",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "8885cd15b75fc8886ab77b0f751633bec5e08ae8"
+      "sha": "358ffb429a9beca9478a76966896d2761a3c0bc8"
     },
     {
       "kind": "commit",
       "name": "MZS native server update verification",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "88e16b3c285e9b9b637343bf60d6947bf7a0f0cf"
+      "sha": "999b8c43131d3787844c649aca0c5aeacb0d699a"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS browser previews over T3 connections",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-browser-preview-overlay",
+      "sha": "295cb88518a1b0cd0a3a08a33360432dc5961bbf"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS ownership test public startup API",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-browser-preview-overlay",
+      "sha": "121950433756ff8c11e1946a78d014248e41bae3"
     }
   ],
   "tests": [
@@ -155,7 +169,26 @@
     "apps/server/src/persistence/Layers/Sqlite.test.ts",
     "apps/server/src/cli/service.test.ts",
     "apps/server/src/cli/pair.test.ts",
-    "apps/server/src/bin.test.ts"
+    "apps/server/src/bin.test.ts",
+    "apps/server/src/mcp/McpHttpServer.test.ts",
+    "apps/server/src/mcp/PreviewAutomationBroker.test.ts",
+    "apps/server/src/preview/Gateway.test.ts",
+    "apps/server/src/preview/GatewayTransport.test.ts",
+    "apps/server/src/provider/Layers/ClaudeAdapter.test.ts",
+    "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts",
+    "apps/server/src/provider/Layers/OpenCodeAdapter.test.ts",
+    "apps/server/src/server.test.ts",
+    "apps/web/src/browser/browserAutomationContext.test.ts",
+    "apps/web/src/browser/browserTargetResolver.test.ts",
+    "apps/web/src/browser/openFileInPreview.test.ts",
+    "apps/web/src/browser/previewGateway.test.ts",
+    "apps/web/src/components/preview/openDiscoveredPort.test.ts",
+    "apps/web/src/components/preview/openTerminalLinkInPreview.test.ts",
+    "packages/client-runtime/src/state/previewGateway.test.ts",
+    "packages/contracts/src/previewAutomationNavigation.test.ts",
+    "apps/web/src/components/preview/openPreviewSession.test.ts",
+    "apps/web/src/components/preview/previewAutomationOpenReadiness.test.ts",
+    "apps/web/src/components/preview/PreviewAutomationHosts.test.tsx"
   ],
   "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371]
 }
