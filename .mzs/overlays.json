@@ -97,14 +97,14 @@
       "name": "MZS browser previews over T3 connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-browser-preview-overlay",
-      "sha": "d0090490b71c1049f7f2dd28648ac87f2c7db7bc"
+      "sha": "5b24ad21f3067d6d0af16df4feaced22f7a07807"
     },
     {
       "kind": "commit",
       "name": "MZS ownership test public startup API",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-browser-preview-overlay",
-      "sha": "946914dbdce6e2a3a0354fdaa80225f85f64fa17"
+      "sha": "9b8efb1d850e599a74609b06b3797b9c5eb25892"
     }
   ],
   "tests": [
