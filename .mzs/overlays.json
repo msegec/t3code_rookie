@@ -6,105 +6,105 @@
       "name": "MZS fleet runtime source",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-runtime-overlay",
-      "sha": "c9134b4591b813fc6d3b34a002cab88cf3a79d10"
+      "sha": "9f9c35af43e2f634ad4a1e69b79c64d0ae1f5355"
     },
     {
       "kind": "commit",
       "name": "MZS fleet runtime native verification",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-runtime-overlay",
-      "sha": "9e9de8d21232172dcad36723d589495e7794fc55"
+      "sha": "fdebc8027f02bc1f7273a6d456ce82bb34360a27"
     },
     {
       "kind": "commit",
       "name": "MZS fleet runtime ssh package spec",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-runtime-overlay",
-      "sha": "bf39e8bcf900b30bfc1a95f8a04663b053bc6b24"
+      "sha": "53d5fe77f216e7e93a98a9508ecbbefd113d8d89"
     },
     {
       "kind": "commit",
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "033ffa7dfc5fd45039d63f06ebed9feb5eb30968"
+      "sha": "06a6cf145d5bcb0926e645e680a1ec81279b1d6b"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "51411514c81b71c1dcd17c05ecdcdbd7fa2f178e"
+      "sha": "378c1232ce78aa0471b48de524a906e1de1da90f"
     },
     {
       "kind": "commit",
       "name": "MZS preserve drafts during compaction",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fix/preserve-draft-on-compact",
-      "sha": "a4c1375cb0bd654dd5160d7d67682cb0b9e177d3"
+      "sha": "9f8960ba7ccf2b1fce626679097d858cd301e8f2"
     },
     {
       "kind": "commit",
       "name": "MZS ACP Cursor/Grok subagent panel",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "967d2fe751598273fe49dc59bd67a92e28097c7f"
+      "sha": "95c7cb026c73f81ad08b22b507351e2501d4c3de"
     },
     {
       "kind": "commit",
       "name": "MZS ACP subagent lifecycle fixes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "0009b3380b6070a58543531d21a8a16622e6f2c9"
+      "sha": "6113ffd2d2b76e623c836241f6e047e008770b32"
     },
     {
       "kind": "commit",
       "name": "MZS full fleet release notes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "d5991aff6b2206b3971365d0ec8133141b92d82b"
+      "sha": "3051e275095c54629fc5c21812ca1927dcf34c0b"
     },
     {
       "kind": "commit",
       "name": "MZS server replacement and endpoint preservation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "4ffc3ddb7ff68098dea771b59330904882b9070f"
+      "sha": "e1b06a7f4c82b4016b4e2580f04fea99af4df608"
     },
     {
       "kind": "commit",
       "name": "MZS ownership crash test lifecycle",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "d988f03996fbd4fc88fbba674aaff6731b265c25"
+      "sha": "4854327a8c1f0374c59e981d85aaa18c0eca06af"
     },
     {
       "kind": "commit",
       "name": "MZS isolate service launcher entrypoint",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "358ffb429a9beca9478a76966896d2761a3c0bc8"
+      "sha": "97c1aa0366d25a4795956d3babaf737b6da9fb3e"
     },
     {
       "kind": "commit",
       "name": "MZS native server update verification",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "999b8c43131d3787844c649aca0c5aeacb0d699a"
+      "sha": "1e9e4ec416e978962442bdc52f9a7faaa99d5256"
     },
     {
       "kind": "commit",
       "name": "MZS browser previews over T3 connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-browser-preview-overlay",
-      "sha": "438f9688d1f36205b6672d15fe9afe371c82ddaa"
+      "sha": "d0090490b71c1049f7f2dd28648ac87f2c7db7bc"
     },
     {
       "kind": "commit",
       "name": "MZS ownership test public startup API",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-browser-preview-overlay",
-      "sha": "3b75f712eadd433741c829821ac1d2c53c2edac2"
+      "sha": "946914dbdce6e2a3a0354fdaa80225f85f64fa17"
     }
   ],
   "tests": [
