@@ -126,6 +126,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-project-accent-settings",
       "sha": "0aaeb896eb67f28f3a391bef495b0511cb9c4fdc"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS project settings checkout identity",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fix/project-settings-checkout-context-fleet",
+      "sha": "178a774af27959e17c0997ac308e5028959576e6"
     }
   ],
   "tests": [
@@ -217,7 +224,8 @@
     "apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts",
     "apps/server/src/project/ProjectAccents.test.ts",
     "apps/server/src/orchestration/decider.projectScripts.test.ts",
-    "packages/shared/src/t3ProjectFile.test.ts"
+    "packages/shared/src/t3ProjectFile.test.ts",
+    "apps/web/src/projectSettingsNavigation.test.ts"
   ],
-  "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371]
+  "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371, 11406]
 }

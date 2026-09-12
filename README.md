@@ -7,11 +7,12 @@ The installation commands in the upstream README below install official T3 Code.
 
 ## What our version adds
 
-This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.41-nightly.20260911.1564.mzs.raed7159e2bab)
-compared with its official base, [nightly 1564](https://github.com/pingdotgg/t3code/releases/tag/v0.0.41-nightly.20260911.1564).
+This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.41-nightly.20260912.1576.mzs.r21d0e7326611)
+compared with its official base, [nightly 1576](https://github.com/pingdotgg/t3code/releases/tag/v0.0.41-nightly.20260912.1576).
 Newer upstream nightlies may already contain some of these changes.
 
-- Project sidebar colours and icons, plus colour previews inside code blocks.
+- Project sidebar colours and icons, with an accent editor in Project Settings.
+- Colour previews inside code blocks.
 - Upload, rename and delete files directly in the files view.
 - Usage totals that finish even when some connected devices are offline.
 - GitHub repository search when adding projects, with clearer empty results.
@@ -21,8 +22,10 @@ Newer upstream nightlies may already contain some of these changes.
   and keeps its connection details.
 - Full upstream and fork release notes in the desktop update prompt.
 
-Queued for a future build: edit sidebar accents from Project Settings.
-This is configured on `main` but is not in the published build linked above.
+Queued for a future build: Project Settings opens the checkout selected in the
+sidebar and shows its icon and accent. Group settings use the same representative
+checkout as the sidebar. Tracked in [upstream PR #11406](https://github.com/pingdotgg/t3code/pull/11406).
+This fix is configured on `main` but is not in the published build linked above.
 
 ## How our releases work
 
