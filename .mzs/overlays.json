@@ -112,6 +112,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-project-accent-settings",
       "sha": "88d7a9a59b55082a88aa69b29002f7b1522c4f12"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS project accent schema error check",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-project-accent-settings",
+      "sha": "105ff53405e331a78cd96c63958acbcc15877d7d"
     }
   ],
   "tests": [
