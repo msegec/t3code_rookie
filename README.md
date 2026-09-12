@@ -1,3 +1,49 @@
+# T3 Code Rookie, MZS fork
+
+Our maintained fork of [T3 Code](https://github.com/pingdotgg/t3code), built
+from official nightlies with our extra features and fixes applied on top.
+Get our builds from [MZS releases](https://github.com/msegec/t3code_rookie/releases).
+The installation commands in the upstream README below install official T3 Code.
+
+## What our version adds
+
+This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.41-nightly.20260911.1564.mzs.raed7159e2bab)
+compared with its official base, [nightly 1564](https://github.com/pingdotgg/t3code/releases/tag/v0.0.41-nightly.20260911.1564).
+Newer upstream nightlies may already contain some of these changes.
+
+- Project sidebar colours and icons, plus colour previews inside code blocks.
+- Upload, rename and delete files directly in the files view.
+- Usage totals that finish even when some connected devices are offline.
+- GitHub repository search when adding projects, with clearer empty results.
+- A visible context-window meter and Cursor/Grok subagent activity panels.
+- Browser previews carried over the existing T3 connection for remote work.
+- MZS desktop and server updates, with checks that the replacement server starts
+  and keeps its connection details.
+- Full upstream and fork release notes in the desktop update prompt.
+
+Queued for a future build: edit sidebar accents from Project Settings.
+This is configured on `main` but is not in the published build linked above.
+
+## How our releases work
+
+`/t3-fleet-release` takes an official nightly, reapplies our saved changes
+(called overlays), and checks that the combined app builds and passes its tests.
+If changes clash, we repair them before building. One paid build needs Mark's
+confirmation; it publishes downloads that clients pick up through their normal
+update flow.
+
+The [overlay list](.mzs/overlays.json) selects the changes for the next build.
+Each release records its exact nightly and applied changes in its release notes
+and `mzs-fleet.json` asset. Those records show what actually shipped.
+
+This README lives on the fork's `main` branch. Release builds use a separate
+checkout and do not overwrite it. When updating from upstream, preserve this
+fork introduction and refresh the upstream section below. The release skill
+reviews this list each run and updates the published comparison after a
+successful release, removing differences that the selected base already includes.
+
+## Upstream README
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
