@@ -43,6 +43,45 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
     }),
   );
 
+  it.effect("emits a project refresh event when no metadata fields change", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const projectId = asProjectId("project-refresh");
+      const readModel = yield* projectEvent(createEmptyReadModel(now), {
+        sequence: 1,
+        eventId: asEventId("evt-project-refresh-create"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        type: "project.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-project-refresh-create"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Refresh",
+          workspaceRoot: "/tmp/refresh",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "project.meta.update",
+          projectId,
+          commandId: CommandId.make("cmd-project-refresh"),
+        },
+      });
+      const event = Array.isArray(result) ? result[0] : result;
+      expect(event.type).toBe("project.meta-updated");
+      expect(event.payload).toEqual({ projectId, updatedAt: expect.any(String) });
+    }),
+  );
+
   it.effect("propagates scripts in project.meta.update payload", () =>
     Effect.gen(function* () {
       const now = "2026-01-01T00:00:00.000Z";
