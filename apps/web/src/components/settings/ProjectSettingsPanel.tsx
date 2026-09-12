@@ -40,7 +40,10 @@ import {
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectAccentSettingsRow } from "./ProjectAccentSettingsRow";
-import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import {
+  projectGroupTitleNeedsUpdate,
+  projectSettingsRepresentative,
+} from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -140,11 +143,12 @@ export function ProjectSettingsPanel({
         This checkout is no longer available in the selected project and environment.
       </p>
     );
+  const representative = projectSettingsRepresentative(selected, members);
   const scopedGroup = {
     ...selected,
     memberProjects: members,
-    environmentId: members[0]!.environmentId,
-    id: members[0]!.id,
+    environmentId: representative.environmentId,
+    id: representative.id,
   };
   return (
     <ProjectDetail
@@ -169,10 +173,7 @@ function ProjectDetail({
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
     [environments],
   );
-  const representative =
-    group.memberProjects.find(
-      (member) => environmentById.get(member.environmentId)?.serverConfig != null,
-    ) ?? group.memberProjects[0]!;
+  const representative = projectSettingsRepresentative(group);
   const threads = useThreadShells();
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
