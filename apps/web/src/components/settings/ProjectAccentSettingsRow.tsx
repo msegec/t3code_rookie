@@ -1,5 +1,6 @@
 import { ProjectReadFileError, T3_PROJECT_FILE_NAME, type ProjectAccent } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import * as Schema from "effect/Schema";
 import { useCallback } from "react";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { projectEnvironment } from "../../state/projects";
@@ -35,7 +36,7 @@ export function ProjectAccentSettingsRow({
           let contents: string | null = null;
           if (read._tag === "Failure") {
             const error = squashAtomCommandFailure(read);
-            if (!(error instanceof ProjectReadFileError && error.failure === "not_found"))
+            if (!(Schema.is(ProjectReadFileError)(error) && error.failure === "not_found"))
               throw error;
           } else {
             if (read.value.truncated) throw new Error("t3.json is too large to edit safely.");
