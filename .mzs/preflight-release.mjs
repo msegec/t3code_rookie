@@ -180,7 +180,6 @@ function preflight(root, manifestPath, version) {
     run(command, args, options);
   };
   step("install", "vp", ["i", "--frozen-lockfile"]);
-  step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
   step("typecheck", "vp", [
     "run",
     ...[
@@ -195,6 +194,7 @@ function preflight(root, manifestPath, version) {
     ].flatMap((name) => ["--filter", name]),
     "typecheck",
   ]);
+  step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
   step("version", process.execPath, ["scripts/update-release-package-versions.ts", version]);
   NodeFS.copyFileSync(NodePath.join(root, ".env.example"), NodePath.join(root, ".env"));
   step("build", "vp", ["run", "--filter", "t3", "build"]);

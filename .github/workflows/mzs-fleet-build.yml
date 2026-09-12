@@ -20,7 +20,11 @@ permissions: {}
 
 concurrency:
   group: mzs-t3-fleet-build
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+env:
+  FLEET_NODE_VERSION: 24.21.0
+  FLEET_VP_VERSION: 0.3.1
 
 jobs:
   build:
@@ -50,9 +54,14 @@ jobs:
             source
           controls_sha="$EXPECTED_CONTROLS_SHA"
           [[ "$controls_sha" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$(git -C source rev-parse HEAD)" == "$controls_sha" ]]
           [[ "$controls_sha" == "$GITHUB_SHA" ]]
-          node --test source/.mzs/preflight-release.test.mjs
+          git -C source fetch --no-tags origin "$controls_sha"
+          git -C source checkout --detach "$controls_sha"
+          [[ "$(git -C source rev-parse HEAD)" == "$controls_sha" ]]
+          node --test \
+            source/.mzs/preflight-release.test.mjs \
+            source/.mzs/fleet-workflow.test.mjs \
+            source/.mzs/publish-release.test.mjs
           cp source/.mzs/overlays.json "$RUNNER_TEMP/overlays.json"
           cp source/.mzs/preflight-release.mjs "$RUNNER_TEMP/preflight-release.mjs"
           cp source/.mzs/stage-server-package.mjs "$RUNNER_TEMP/stage-server-package.mjs"
@@ -187,9 +196,11 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
-          node-version-file: source/package.json
+          working-directory: source
+          version: ${{ env.FLEET_VP_VERSION }}
+          node-version: ${{ env.FLEET_NODE_VERSION }}
           cache: true
           run-install: false
 
@@ -254,8 +265,11 @@ jobs:
             --arg nightlyTag "${{ steps.compose.outputs.nightly_tag }}" \
             --arg baseSha "${{ steps.compose.outputs.base_sha }}" \
             --arg sourceSha "$source_sha" \
+            --arg controlsSha "$GITHUB_SHA" \
+            --arg nodeVersion "$FLEET_NODE_VERSION" \
+            --arg vpVersion "$FLEET_VP_VERSION" \
             --argjson overlays "$overlays" \
-            '{schemaVersion: $schemaVersion, version: $version, releaseTag: $releaseTag, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, overlays: $overlays}' \
+            '{schemaVersion: $schemaVersion, version: $version, releaseTag: $releaseTag, base: {tag: $nightlyTag, sha: $baseSha}, sourceSha: $sourceSha, controlsSha: $controlsSha, toolchain: {node: $nodeVersion, vp: $vpVersion}, overlays: $overlays}' \
             >apps/server/dist/mzs-fleet.json
           node "$RUNNER_TEMP/generate-release-notes.mjs" \
             apps/server/dist/mzs-fleet.json \
@@ -278,10 +292,10 @@ jobs:
           git bundle create "$bundle" HEAD
           cp apps/server/dist/mzs-fleet.json "$release_dir/mzs-fleet.json"
           cd "$release_dir"
-          sha256sum "$(basename "$artifact")" "$(basename "$bundle")" release-notes.md >SHA256SUMS
+          sha256sum "$(basename "$artifact")" "$(basename "$bundle")" release-notes.md mzs-fleet.json >SHA256SUMS
 
       - name: Upload verified release files
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: mzs-t3-fleet-server-${{ steps.compose.outputs.version }}
           path: ${{ runner.temp }}/fleet-release/*
@@ -305,7 +319,7 @@ jobs:
             rust_target: x86_64-apple-darwin
     steps:
       - name: Download composed source
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: mzs-t3-fleet-server-${{ needs.build.outputs.version }}
           path: fleet-input
@@ -314,6 +328,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          (cd fleet-input && shasum -a 256 --check SHA256SUMS)
           git clone \
             "fleet-input/t3-source-${{ needs.build.outputs.version }}.bundle" \
             source
@@ -321,15 +336,28 @@ jobs:
             "$(jq -r .sourceSha fleet-input/mzs-fleet.json)" ]]
 
       - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
-          node-version-file: source/package.json
+          working-directory: source
+          version: ${{ env.FLEET_VP_VERSION }}
+          node-version: ${{ env.FLEET_NODE_VERSION }}
           cache: true
           run-install: false
 
       - name: Install dependencies
         working-directory: source
         run: vp i --frozen-lockfile
+
+      - name: Cache desktop dependency downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ runner.temp }}/electron-cache
+            ${{ runner.temp }}/electron-builder-cache
+          key: desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ env.FLEET_NODE_VERSION }}-${{ env.FLEET_VP_VERSION }}-${{ hashFiles('source/pnpm-lock.yaml', 'source/native/resource-monitor/Cargo.lock') }}
 
       - name: Set up Rust targets
         working-directory: source
@@ -341,12 +369,23 @@ jobs:
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec/t3code_rookie
           VITE_MZS_FLEET_LABEL: MZS Fleet
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         shell: bash
         run: |
           set -euo pipefail
           cp .env.example .env
-          vp run build:desktop
-          cp ../fleet-input/mzs-fleet.json apps/server/dist/mzs-fleet.json
+          tar -xzf "../fleet-input/t3-${{ needs.build.outputs.version }}.tgz" \
+            -C apps/server \
+            --strip-components=1 \
+            --exclude=package/dist/resource-monitor \
+            package/dist
+          cmp ../fleet-input/mzs-fleet.json apps/server/dist/mzs-fleet.json
+          (
+            cd apps/desktop
+            node scripts/build-preview-annotation-css.mjs
+            vp pack
+          )
           vp run dist:desktop:artifact \
             --platform mac \
             --target dmg \
@@ -382,7 +421,7 @@ jobs:
           shasum -a 256 ./* >"SHA256SUMS.mac.${{ matrix.arch }}"
 
       - name: Upload verified macOS release files
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: mzs-t3-fleet-macos-${{ matrix.arch }}-${{ needs.build.outputs.version }}
           path: ${{ runner.temp }}/fleet-macos/*
@@ -398,7 +437,7 @@ jobs:
       contents: read
     steps:
       - name: Download composed source
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: mzs-t3-fleet-server-${{ needs.build.outputs.version }}
           path: fleet-input
@@ -407,6 +446,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          (cd fleet-input && shasum -a 256 --check SHA256SUMS)
           git clone \
             "fleet-input/t3-source-${{ needs.build.outputs.version }}.bundle" \
             source
@@ -414,15 +454,28 @@ jobs:
             "$(jq -r .sourceSha fleet-input/mzs-fleet.json)" ]]
 
       - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
-          node-version-file: source/package.json
+          working-directory: source
+          version: ${{ env.FLEET_VP_VERSION }}
+          node-version: ${{ env.FLEET_NODE_VERSION }}
           cache: true
           run-install: false
 
       - name: Install dependencies
         working-directory: source
         run: vp i --frozen-lockfile
+
+      - name: Cache desktop dependency downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ runner.temp }}/electron-cache
+            ${{ runner.temp }}/electron-builder-cache
+          key: desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-x64-${{ env.FLEET_NODE_VERSION }}-${{ env.FLEET_VP_VERSION }}-${{ hashFiles('source/pnpm-lock.yaml', 'source/native/resource-monitor/Cargo.lock') }}
 
       - name: Set up Linux build tools
         working-directory: source
@@ -441,12 +494,23 @@ jobs:
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec/t3code_rookie
           VITE_MZS_FLEET_LABEL: MZS Fleet
+          ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         shell: bash
         run: |
           set -euo pipefail
           cp .env.example .env
-          vp run build:desktop
-          cp ../fleet-input/mzs-fleet.json apps/server/dist/mzs-fleet.json
+          tar -xzf "../fleet-input/t3-${{ needs.build.outputs.version }}.tgz" \
+            -C apps/server \
+            --strip-components=1 \
+            --exclude=package/dist/resource-monitor \
+            package/dist
+          cmp ../fleet-input/mzs-fleet.json apps/server/dist/mzs-fleet.json
+          (
+            cd apps/desktop
+            node scripts/build-preview-annotation-css.mjs
+            vp pack
+          )
           vp run dist:desktop:artifact \
             --platform linux \
             --target AppImage \
@@ -485,7 +549,7 @@ jobs:
           sha256sum ./* >SHA256SUMS.linux.x64
 
       - name: Upload verified Linux release files
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: mzs-t3-fleet-linux-${{ needs.build.outputs.version }}
           path: ${{ runner.temp }}/fleet-linux/*
@@ -501,19 +565,21 @@ jobs:
       contents: write
     steps:
       - name: Checkout fleet controls
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
-          node-version-file: package.json
+          version: ${{ env.FLEET_VP_VERSION }}
+          node-version: ${{ env.FLEET_NODE_VERSION }}
           cache: true
           run-install: |
             args:
+              - --frozen-lockfile
               - --filter=@t3tools/scripts...
 
       - name: Download verified release files
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: mzs-t3-fleet-*-${{ needs.build.outputs.version }}
           merge-multiple: true
@@ -552,10 +618,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "${{ needs.build.outputs.release_tag }}" \
-            release/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "T3 Code Fleet ${{ needs.build.outputs.version }}" \
-            --notes-file release/release-notes.md
+          node .mzs/publish-release.mjs \
+            release \
+            "$GITHUB_REPOSITORY" \
+            "${{ needs.build.outputs.release_tag }}" \
+            "${{ needs.build.outputs.version }}" \
+            "$GITHUB_SHA"
