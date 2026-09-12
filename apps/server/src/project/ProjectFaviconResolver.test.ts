@@ -10,6 +10,7 @@ import { TestClock } from "effect/testing";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
+import * as ProjectAccents from "./ProjectAccents.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
 const TestLayer = Layer.empty.pipe(
@@ -51,6 +52,20 @@ const makeResolverWithFileSystem = (fileSystem: FileSystem.FileSystem) =>
 
 it.layer(TestLayer)("ProjectFaviconResolverLive", (it) => {
   describe("resolveAccent", () => {
+    it.effect("refreshes project payloads after changing and resetting file accents", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir;
+        const project = { id: "refresh", workspaceRoot: cwd, accent: "#ffffff" };
+        const advanced = { idle: "#071525", active: "#245181", selected: "#173b60" };
+        yield* writeTextFile(cwd, "t3.json", JSON.stringify({ accentColor: advanced }));
+        expect((yield* ProjectAccents.withProjectAccent(project)).accent).toEqual(advanced);
+        yield* writeTextFile(cwd, "t3.json", '{"accentColor":"#1688f0"}');
+        expect((yield* ProjectAccents.withProjectAccent(project)).accent).toBe("#1688f0");
+        yield* writeTextFile(cwd, "t3.json", "{}");
+        expect((yield* ProjectAccents.withProjectAccent(project)).accent).toBeNull();
+      }),
+    );
+
     it.effect("reads the validated t3.json accent color", () =>
       Effect.gen(function* () {
         const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
