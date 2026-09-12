@@ -7083,6 +7083,47 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("reports missing files and guarded write conflicts over websocket rpc", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-guard-" });
+      yield* buildAppUnderTest();
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const missing = yield* client[WS_METHODS.projectsReadFile]({
+              cwd: workspaceDir,
+              relativePath: "t3.json",
+            }).pipe(Effect.result);
+            if (missing._tag !== "Failure" || missing.failure._tag !== "ProjectReadFileError")
+              assert.fail("Expected a ProjectReadFileError");
+            assert.equal(missing.failure.failure, "not_found");
+            yield* client[WS_METHODS.projectsWriteFile]({
+              cwd: workspaceDir,
+              relativePath: "t3.json",
+              expectedContents: null,
+              contents: "{}",
+            });
+            const conflict = yield* client[WS_METHODS.projectsWriteFile]({
+              cwd: workspaceDir,
+              relativePath: "t3.json",
+              expectedContents: "stale",
+              contents: "replacement",
+            }).pipe(Effect.result);
+            if (conflict._tag !== "Failure" || conflict.failure._tag !== "ProjectWriteFileError")
+              assert.fail("Expected a ProjectWriteFileError");
+            assert.equal(conflict.failure.failure, "contents_changed");
+            assert.notProperty(conflict.failure, "expectedContents");
+            assert.notProperty(conflict.failure, "contents");
+            assert.equal(yield* fs.readFileString(path.join(workspaceDir, "t3.json")), "{}");
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc projects.writeFile", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

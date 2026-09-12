@@ -58,7 +58,14 @@ local work, resolve it yourself before automatic pulls can resume.
 
 ## Sidebar accent
 
-Add `accentColor` to `t3.json` to tint every sidebar thread row for the project. The tint is
+In Project Settings, use **Sidebar accent** below **Project icon**. Choose a preset, use the
+colour picker, or enter a six-digit hex colour, then select **Save accent**. Simple mode generates
+row tints from one colour. Advanced mode sets separate idle, active and selected colours.
+**Reset** removes the accent. Changes save to each selected checkout's `t3.json` and refresh
+connected web and desktop sidebars. If a checkout cannot be saved, the error names it; earlier
+checkouts may already have been updated.
+
+You can also add `accentColor` to `t3.json` directly. The tint is
 strongest at the right edge of the row and fades out toward the left. A single color generates
 restrained idle, active, and selected tints:
 
