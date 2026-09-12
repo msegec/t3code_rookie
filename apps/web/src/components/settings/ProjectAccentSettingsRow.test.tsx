@@ -8,7 +8,12 @@ import * as Cause from "effect/Cause";
 import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
+import {
+  buildSidebarProjectSnapshots,
+  type SidebarProjectGroupMember,
+} from "../../sidebarProjectGrouping";
+import { projectSettingsSearch } from "../../projectSettingsNavigation";
+import { projectSettingsRepresentative } from "./ProjectSettingsPanel.logic";
 
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),
@@ -89,6 +94,56 @@ afterEach(() => {
 });
 
 describe("ProjectAccentSettingsRow", () => {
+  it("opens the selected checkout's gold appearance and saves only that checkout", async () => {
+    const projects = [local, { ...remote, accent: "#F2A93B", faviconPath: "gold.png" }].map(
+      (project) => ({
+        ...project,
+        repositoryIdentity: {
+          canonicalKey: "github.com/example/repo",
+          locator: {
+            source: "git-remote" as const,
+            remoteName: "origin",
+            remoteUrl: "https://github.com/example/repo.git",
+          },
+          provider: "github",
+          owner: "example",
+          name: "repo",
+          displayName: "repo",
+        },
+      }),
+    );
+    const group = buildSidebarProjectSnapshots({
+      projects,
+      settings: { sidebarProjectGroupingMode: "repository", sidebarProjectGroupingOverrides: {} },
+      primaryEnvironmentId: local.environmentId,
+      resolveEnvironmentLabel: () => null,
+    })[0]!;
+    const search = projectSettingsSearch(group.projectKey, remote);
+    const members = group.memberProjects.filter(
+      (project) =>
+        (!search.machine || project.environmentId === search.machine) &&
+        (!search.checkout || project.physicalProjectKey === search.checkout),
+    );
+    const representative = projectSettingsRepresentative(group, members);
+    act(() => {
+      renderer = create(
+        <ProjectAccentSettingsRow members={members} representative={representative} />,
+      );
+    });
+    expect(representative.faviconPath).toBe("gold.png");
+    expect(renderer.root.findByType(ProjectAccentEditor).props.current).toBe("#F2A93B");
+    await save("#F2A93B");
+    expect(mocks.write).toHaveBeenCalledExactlyOnceWith({
+      environmentId: remote.environmentId,
+      input: {
+        cwd: remote.workspaceRoot,
+        relativePath: "t3.json",
+        expectedContents: "{}\n",
+        contents: expect.stringContaining('"accentColor": "#F2A93B"'),
+      },
+    });
+  });
+
   it("creates a missing file only for typed not_found and compares against absence", async () => {
     mount();
     mocks.read.mockResolvedValue(missing());
