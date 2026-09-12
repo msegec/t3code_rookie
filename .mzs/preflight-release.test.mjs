@@ -3,7 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
-import { smokeCli } from "./preflight-release.mjs";
+import { assertFleetUpdateRouting, fleetUpdateTests, smokeCli } from "./preflight-release.mjs";
 
 const version = "0.0.39-nightly.20260907.1325.mzs.r123456abcdef";
 function fixture(test, source) {
@@ -54,4 +54,39 @@ NodeTest.test("rejects wrong versions and missing help", (test) => {
       ),
     /help missing usage/,
   );
+});
+
+NodeTest.test("release preflight cannot omit fleet update behavior tests", () => {
+  const source = NodeFS.readFileSync(new URL("./preflight-release.mjs", import.meta.url), "utf8");
+  NodeAssert.match(source, /assertFleetUpdateRouting\(root\);/);
+  NodeAssert.match(source, /new Set\(\[\.\.\.manifest.tests, \.\.\.fleetUpdateTests\]\)/);
+  NodeAssert.ok(fleetUpdateTests.includes("apps/server/src/cloud/selfUpdate.test.ts"));
+  NodeAssert.ok(fleetUpdateTests.includes("apps/web/src/components/ServerUpdateAction.test.tsx"));
+});
+
+NodeTest.test("release rejects missing fleet routing before dependencies or builds", (test) => {
+  const root = NodePath.dirname(NodePath.dirname(NodePath.dirname(fixture(test, cli))));
+  NodeAssert.throws(() => assertFleetUpdateRouting(root), /ENOENT/);
+  const shared = NodePath.join(root, "packages/shared/src");
+  NodeFS.mkdirSync(shared, { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(shared, "fleetRelease.ts"),
+    'export const fleetReleaseTarballUrl = () => "https://registry.npmjs.org/t3";',
+  );
+  NodeAssert.throws(() => assertFleetUpdateRouting(root), /Fleet update routing missing/);
+});
+
+NodeTest.test("both desktop packages retain fork feed checks and depend on preflight", () => {
+  const source = NodeFS.readFileSync(
+    new URL("../.github/workflows/mzs-fleet-build.yml", import.meta.url),
+    "utf8",
+  );
+  NodeAssert.equal(
+    source.match(/T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec\/t3code_rookie/g)?.length,
+    2,
+  );
+  NodeAssert.equal(source.match(/owner: msegec/g)?.length, 2);
+  NodeAssert.equal(source.match(/repo: t3code_rookie/g)?.length, 2);
+  NodeAssert.match(source, /node "\$RUNNER_TEMP\/preflight-release.mjs" "\$PWD"/);
+  NodeAssert.equal(source.match(/needs: build/g)?.length, 2);
 });

@@ -4,6 +4,54 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
+export const fleetUpdateTests = [
+  "packages/shared/src/fleetRelease.test.ts",
+  "packages/ssh/src/command.test.ts",
+  "apps/server/src/cloud/pinnedRuntime.test.ts",
+  "apps/server/src/cloud/selfUpdate.test.ts",
+  "apps/server/src/cloud/bootService.test.ts",
+  "apps/web/src/components/ServerUpdateAction.test.tsx",
+  "apps/desktop/src/updates/updateChannels.test.ts",
+  "scripts/build-desktop-artifact.fleet.test.ts",
+];
+
+export function assertFleetUpdateRouting(root) {
+  const required = {
+    "packages/shared/src/fleetRelease.ts": [
+      "https://github.com/msegec/t3code_rookie/releases/download",
+      "fleetReleaseTarballUrl",
+    ],
+    "apps/server/src/cloud/pinnedRuntime.ts": [
+      "fleetReleaseTarballUrl(version)",
+      "pinnedRuntimePackageSpec(input.version)",
+    ],
+    "packages/ssh/src/command.ts": ["fleetReleaseTarballUrl(appVersion)"],
+    "apps/server/src/cloud/selfUpdate.ts": [
+      "ensurePinnedRuntimeInstalled({",
+      "launcher.requestUpdate({ targetVersion",
+    ],
+    "apps/web/src/components/ServerUpdateAction.tsx": ["serverEnvironment.updateServer"],
+    "apps/web/src/components/sidebar/SidebarUpdatePill.tsx": [
+      ".downloadUpdate()",
+      ".installUpdate()",
+      "DesktopUpdateStatusIcon",
+    ],
+    "scripts/build-desktop-artifact.ts": ["T3CODE_DESKTOP_UPDATE_REPOSITORY"],
+  };
+  for (const [file, tokens] of Object.entries(required)) {
+    const source = NodeFS.readFileSync(NodePath.join(root, file), "utf8");
+    for (const token of tokens) {
+      if (!source.includes(token))
+        throw new Error(`Fleet update routing missing: ${file}: ${token}`);
+    }
+  }
+  for (const file of fleetUpdateTests) {
+    if (!NodeFS.existsSync(NodePath.join(root, file))) {
+      throw new Error(`Fleet update regression missing: ${file}`);
+    }
+  }
+}
+
 function run(command, args, options) {
   const result = NodeChildProcess.spawnSync(command, args, {
     encoding: "utf8",
@@ -125,13 +173,14 @@ function preflight(root, manifestPath, version) {
   ) {
     throw new Error("Invalid release test selection");
   }
+  assertFleetUpdateRouting(root);
   const options = { cwd: root, env: { ...process.env, VITE_MZS_FLEET_LABEL: "MZS Fleet" } };
   const step = (name, command, args) => {
     process.stderr.write(`fleet_phase=preflight_${name}\n`);
     run(command, args, options);
   };
   step("install", "vp", ["i", "--frozen-lockfile"]);
-  step("tests", "vp", ["test", "run", ...manifest.tests]);
+  step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
   step("typecheck", "vp", [
     "run",
     ...[

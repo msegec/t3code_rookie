@@ -52,6 +52,7 @@ jobs:
           [[ "$controls_sha" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git -C source rev-parse HEAD)" == "$controls_sha" ]]
           [[ "$controls_sha" == "$GITHUB_SHA" ]]
+          node --test source/.mzs/preflight-release.test.mjs
           cp source/.mzs/overlays.json "$RUNNER_TEMP/overlays.json"
           cp source/.mzs/preflight-release.mjs "$RUNNER_TEMP/preflight-release.mjs"
           cp source/.mzs/stage-server-package.mjs "$RUNNER_TEMP/stage-server-package.mjs"
