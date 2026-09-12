@@ -39,6 +39,7 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
+import { ProjectAccentSettingsRow } from "./ProjectAccentSettingsRow";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
@@ -476,6 +477,10 @@ function ProjectDetail({
                 </Button>
               </div>
             }
+          />
+          <ProjectAccentSettingsRow
+            members={group.memberProjects}
+            representative={representative}
           />
         </SettingsSection>
         <ProjectActionsSettings />

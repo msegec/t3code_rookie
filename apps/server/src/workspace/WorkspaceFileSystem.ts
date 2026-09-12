@@ -105,11 +105,25 @@ export class WorkspaceBinaryFileError extends Schema.TaggedError<WorkspaceBinary
   }
 }
 
+export class WorkspaceFileContentsChangedError extends Schema.TaggedError<WorkspaceFileContentsChangedError>()(
+  "WorkspaceFileContentsChangedError",
+  {
+    workspaceRoot: Schema.String,
+    relativePath: Schema.String,
+    resolvedPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Workspace file '${this.relativePath}' changed since it was read. Reload it before saving.`;
+  }
+}
+
 export const WorkspaceFileSystemError = Schema.Union([
   WorkspaceFileSystemOperationError,
   WorkspaceFilePathEscapeError,
   WorkspacePathNotFileError,
   WorkspaceBinaryFileError,
+  WorkspaceFileContentsChangedError,
 ]);
 export type WorkspaceFileSystemError = typeof WorkspaceFileSystemError.Type;
 
@@ -351,6 +365,27 @@ export const make = Effect.gen(function* () {
       relativePath: input.relativePath,
     });
 
+    if (input.expectedContents !== undefined) {
+      const currentContents = yield* readFile(input).pipe(
+        Effect.map((file) => (file.truncated ? undefined : file.contents)),
+        Effect.catchTag("WorkspaceFileSystemOperationError", (error) =>
+          error.operation === "realpath-target" &&
+          error.cause instanceof Error &&
+          "code" in error.cause &&
+          error.cause.code === "ENOENT"
+            ? Effect.succeed(null)
+            : Effect.fail(error),
+        ),
+      );
+      if (currentContents !== input.expectedContents) {
+        return yield* new WorkspaceFileContentsChangedError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+          resolvedPath: target.absolutePath,
+        });
+      }
+    }
+
     yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(
       Effect.mapError(
         (cause) =>
@@ -364,19 +399,25 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    yield* fileSystem.writeFileString(target.absolutePath, input.contents).pipe(
-      Effect.mapError(
-        (cause) =>
-          new WorkspaceFileSystemOperationError({
-            workspaceRoot: input.cwd,
-            relativePath: input.relativePath,
-            resolvedPath: target.absolutePath,
-            operationPath: target.absolutePath,
-            operation: "write-file",
-            cause,
-          }),
-      ),
-    );
+    yield* fileSystem
+      .writeFileString(
+        target.absolutePath,
+        input.contents,
+        input.expectedContents === null ? { flag: "wx" } : {},
+      )
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: target.absolutePath,
+              operation: "write-file",
+              cause,
+            }),
+        ),
+      );
     yield* workspaceEntries.refresh(input.cwd);
     return { relativePath: target.relativePath };
   }, mutationLock.withPermits(1));
