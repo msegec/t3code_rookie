@@ -119,6 +119,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-project-accent-settings",
       "sha": "105ff53405e331a78cd96c63958acbcc15877d7d"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS favicon fixture schema encoding",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-project-accent-settings",
+      "sha": "fa9431ba41e6803a45b8de052038966b22b4c9a6"
     }
   ],
   "tests": [
