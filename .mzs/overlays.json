@@ -27,84 +27,77 @@
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "06a6cf145d5bcb0926e645e680a1ec81279b1d6b"
+      "sha": "378a74fb803093f42a6c6c397cd7de6c285c969b"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "378c1232ce78aa0471b48de524a906e1de1da90f"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS preserve drafts during compaction",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fix/preserve-draft-on-compact",
-      "sha": "9f8960ba7ccf2b1fce626679097d858cd301e8f2"
+      "sha": "1644f374fb078a6bee8c36424a033f78ff9b5d97"
     },
     {
       "kind": "commit",
       "name": "MZS ACP Cursor/Grok subagent panel",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "95c7cb026c73f81ad08b22b507351e2501d4c3de"
+      "sha": "8e2351de328a2d11ffe7f726da0a601b03309464"
     },
     {
       "kind": "commit",
       "name": "MZS ACP subagent lifecycle fixes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "6113ffd2d2b76e623c836241f6e047e008770b32"
+      "sha": "a2df59acf518b022dd976ca2650f1dac80a62791"
     },
     {
       "kind": "commit",
       "name": "MZS full fleet release notes",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "3051e275095c54629fc5c21812ca1927dcf34c0b"
+      "sha": "6acc6cccf479dec8a263d4117d0d9ca93b172d4c"
     },
     {
       "kind": "commit",
       "name": "MZS server replacement and endpoint preservation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "e1b06a7f4c82b4016b4e2580f04fea99af4df608"
+      "sha": "15ce262f6b293844e098a38b67258fa8c853f80b"
     },
     {
       "kind": "commit",
       "name": "MZS ownership crash test lifecycle",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "4854327a8c1f0374c59e981d85aaa18c0eca06af"
+      "sha": "3b75098d055964e998fd684b7cfe34c5ab7d5640"
     },
     {
       "kind": "commit",
       "name": "MZS isolate service launcher entrypoint",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "97c1aa0366d25a4795956d3babaf737b6da9fb3e"
+      "sha": "346dd5d8a202bc7a131772ff2dbfa278f5cf49a0"
     },
     {
       "kind": "commit",
       "name": "MZS native server update verification",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/pc-f/feature-overlay",
-      "sha": "1e9e4ec416e978962442bdc52f9a7faaa99d5256"
+      "sha": "cafa145ae2a5d98d64c1586fcd21f87f0b3f5141"
     },
     {
       "kind": "commit",
       "name": "MZS browser previews over T3 connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-browser-preview-overlay",
-      "sha": "7fcf547d0d81a87aa996911c34446d3a27b9d848"
+      "sha": "a8d154b33b99c10ffde4971afc4c1cbd3080e5b5"
     },
     {
       "kind": "commit",
       "name": "MZS ownership test public startup API",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-browser-preview-overlay",
-      "sha": "71394b2422284c6c6070be7a990ac9555a7715a0"
+      "sha": "f667e14016ee6c749b94bf427e2dcaa57cf9dc72"
     }
   ],
   "tests": [
@@ -119,6 +112,7 @@
     "apps/web/src/projectAccent.test.ts",
     "packages/contracts/src/t3ProjectFile.test.ts",
     "apps/web/src/lib/codeColorPreviews.test.ts",
+    "apps/web/src/lib/incrementalHighlighting.test.ts",
     "scripts/build-desktop-artifact.fleet.test.ts",
     "apps/server/src/workspace/WorkspaceUpload.test.ts",
     "apps/web/src/lib/workspaceUploadQueue.test.ts",
