@@ -98,6 +98,20 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet-browser-preview-overlay",
       "sha": "f667e14016ee6c749b94bf427e2dcaa57cf9dc72"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS project settings sidebar accent editor",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-project-accent-settings",
+      "sha": "329d03862808fa179fa13b5a1d29515a13cc09fd"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS desktop updater test declaration fix",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet-project-accent-settings",
+      "sha": "88d7a9a59b55082a88aa69b29002f7b1522c4f12"
     }
   ],
   "tests": [
@@ -182,7 +196,14 @@
     "packages/contracts/src/previewAutomationNavigation.test.ts",
     "apps/web/src/components/preview/openPreviewSession.test.ts",
     "apps/web/src/components/preview/previewAutomationOpenReadiness.test.ts",
-    "apps/web/src/components/preview/PreviewAutomationHosts.test.tsx"
+    "apps/web/src/components/preview/PreviewAutomationHosts.test.tsx",
+    "apps/web/src/components/settings/ProjectAccentEditor.test.tsx",
+    "apps/web/src/components/settings/ProjectAccentSettingsRow.test.tsx",
+    "apps/web/src/components/settings/projectAccentSettings.test.ts",
+    "apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts",
+    "apps/server/src/project/ProjectAccents.test.ts",
+    "apps/server/src/orchestration/decider.projectScripts.test.ts",
+    "packages/shared/src/t3ProjectFile.test.ts"
   ],
   "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371]
 }
