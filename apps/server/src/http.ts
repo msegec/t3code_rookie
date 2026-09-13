@@ -230,9 +230,24 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   return yield* HttpServerResponse.file(asset.path, { status, offset, bytesToRead, headers });
 });
 
-export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
-  global: true,
-});
+export const httpCompressionLayer = HttpRouter.middleware(
+  (app) =>
+    app.pipe(
+      Effect.map((response) => {
+        const body = response.body;
+        const contentType = response.headers["content-type"];
+        return body._tag === "Raw" && contentType !== undefined
+          ? HttpServerResponse.raw(body.body, {
+              ...response,
+              contentType,
+              contentLength: body.contentLength,
+            })
+          : response;
+      }),
+      HttpMiddleware.compression(),
+    ),
+  { global: true },
+);
 
 export const browserApiCorsLayer = Layer.unwrap(
   Effect.gen(function* () {
