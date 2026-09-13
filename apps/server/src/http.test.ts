@@ -1,3 +1,4 @@
+import * as NodeZlib from "node:zlib";
 import { expect, it } from "@effect/vitest";
 import { describe, vi } from "vite-plus/test";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
@@ -6,11 +7,12 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import { HttpServerResponse } from "effect/unstable/http";
+import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 import { openMediaFile } from "./assets/MediaFile.ts";
 
 import {
   assetResponseHeaders,
+  httpCompressionLayer,
   assetFileResponse,
   downloadContentDisposition,
   isLoopbackHostname,
@@ -468,4 +470,52 @@ describe("downloadContentDisposition", () => {
       `attachment; filename="bad_name.pdf"; filename*=UTF-8''bad%EF%BF%BDname.pdf`,
     );
   });
+});
+
+describe("HTTP compression", () => {
+  it.effect("preserves file content types through compression", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const file = path.join(root, "preview.html");
+      const body = "<h1>Preview</h1>".repeat(200);
+      yield* fs.writeFileString(file, body);
+      const app = HttpRouter.add("GET", "/preview", assetFileResponse({ path: file })).pipe(
+        Layer.provide(httpCompressionLayer),
+        Layer.provideMerge(fileResponseLayer),
+      );
+      const { handler } = yield* Effect.acquireRelease(
+        Effect.sync(() => HttpRouter.toWebHandler(app, { disableLogger: true })),
+        ({ dispose }) => Effect.promise(dispose),
+      );
+      for (const encoding of ["identity", "gzip", "br"]) {
+        const response = yield* Effect.promise(() =>
+          handler(
+            new Request("http://localhost/preview", {
+              headers: { "accept-encoding": encoding },
+            }),
+          ),
+        );
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+        expect(response.headers.get("content-encoding")).toBe(
+          encoding === "identity" ? null : encoding,
+        );
+        expect(response.headers.get("content-length")).toBe(
+          encoding === "identity" ? String(Buffer.byteLength(body)) : null,
+        );
+        expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+        const bytes = Buffer.from(yield* Effect.promise(() => response.arrayBuffer()));
+        expect(
+          (encoding === "br"
+            ? NodeZlib.brotliDecompressSync(bytes)
+            : encoding === "gzip"
+              ? NodeZlib.gunzipSync(bytes)
+              : bytes
+          ).toString(),
+        ).toBe(body);
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });
