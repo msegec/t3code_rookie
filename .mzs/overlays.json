@@ -133,6 +133,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fix/project-settings-checkout-context-fleet",
       "sha": "178a774af27959e17c0997ac308e5028959576e6"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS Cursor model discovery without sessions",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fix/cursor-model-discovery",
+      "sha": "e8f8d371b9d3be47cdf3d50280f4be9e9ddb5a00"
     }
   ],
   "tests": [
@@ -225,7 +232,8 @@
     "apps/server/src/project/ProjectAccents.test.ts",
     "apps/server/src/orchestration/decider.projectScripts.test.ts",
     "packages/shared/src/t3ProjectFile.test.ts",
-    "apps/web/src/projectSettingsNavigation.test.ts"
+    "apps/web/src/projectSettingsNavigation.test.ts",
+    "apps/server/src/provider/Layers/CursorProvider.test.ts"
   ],
   "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371, 11406]
 }
