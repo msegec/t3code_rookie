@@ -470,7 +470,11 @@ describe("checkCursorProviderStatus", () => {
       "gpt-5.4",
       "claude-opus-4-6",
     ]);
-    await expect(runNode(waitForFileContent(requestLogPath))).resolves.toContain("initialize");
+    const requestLog = await runNode(waitForFileContent(requestLogPath));
+    expect(requestLog).toContain('"method":"initialize"');
+    expect(requestLog).toContain('"method":"authenticate"');
+    expect(requestLog).toContain('"method":"cursor/list_available_models"');
+    expect(requestLog).not.toContain('"method":"session/new"');
   });
 });
 
