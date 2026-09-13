@@ -140,6 +140,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fix/cursor-model-discovery",
       "sha": "e8f8d371b9d3be47cdf3d50280f4be9e9ddb5a00"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS compressed workspace preview MIME",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fix/preview-compression-mime",
+      "sha": "b41143f43da7146f34b7abc5e0fe64121c92c72a"
     }
   ],
   "tests": [
@@ -233,7 +240,8 @@
     "apps/server/src/orchestration/decider.projectScripts.test.ts",
     "packages/shared/src/t3ProjectFile.test.ts",
     "apps/web/src/projectSettingsNavigation.test.ts",
-    "apps/server/src/provider/Layers/CursorProvider.test.ts"
+    "apps/server/src/provider/Layers/CursorProvider.test.ts",
+    "apps/server/src/http.test.ts"
   ],
   "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371, 11406]
 }
