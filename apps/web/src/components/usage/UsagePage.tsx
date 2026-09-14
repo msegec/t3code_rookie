@@ -368,6 +368,7 @@ export function UsagePage() {
                 <UsageCoverageNotice
                   environments={selectedEnvironments}
                   duplicateSources={merged.duplicateSources}
+                  incompleteSources={merged.incompleteSources}
                   staleEnvironments={merged.staleEnvironments}
                 />
                 <p className="py-16 text-center text-sm text-muted-foreground">
