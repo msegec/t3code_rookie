@@ -214,7 +214,7 @@ browser themselves; a compatible desktop must be connected to the environment.
 Externally managed OpenCode servers need their browser tools configured separately.
 ## Use desktop with remote environments only
 
-In **Settings → Connections → This environment**, turn off **Local environment**
+In **Settings → Connections → This desktop**, turn off **Local environment**
 and confirm the restart. The desktop app opens without a local server or agents,
 including desktop-managed WSL backends. Other devices can no longer connect to
 this computer's environment. Your local projects, history, and saved connections

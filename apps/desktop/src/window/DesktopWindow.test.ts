@@ -657,6 +657,11 @@ describe("DesktopWindow", () => {
           yield* Ref.set(mainWindow, Option.none());
           yield* desktopWindow.dispatchMenuAction("new-thread");
           assert.equal(yield* Ref.get(createCount), 3);
+          yield* Ref.set(mainWindow, Option.none());
+          yield* desktopWindow.dispatchSnapShotEvent({ type: "ready", id: captureOne });
+          assert.equal(yield* Ref.get(createCount), 3);
+          yield* desktopWindow.dispatchSnapShotEvent({ type: "started", id: captureOne });
+          assert.equal(yield* Ref.get(createCount), 4);
         }).pipe(Effect.provide(layer));
       }),
   );
