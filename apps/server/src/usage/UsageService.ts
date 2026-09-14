@@ -581,6 +581,8 @@ export const make = Effect.gen(function* () {
       const paths = yield* Effect.promise(() =>
         resolveOpenCodeDatabasePaths({
           environment,
+          fileSystem,
+          path,
           homeDir: NodeOS.homedir(),
           cwd: path.resolve("."),
         }),
@@ -595,7 +597,7 @@ export const make = Effect.gen(function* () {
     const databasePaths = [...openCodePaths].sort().slice(0, OPENCODE_MAX_DATABASES);
     for (const databasePath of databasePaths) {
       const result = yield* Effect.promise((signal) =>
-        readOpenCodeUsage(databasePath, {
+        readOpenCodeUsage(databasePath, fileSystem, {
           sinceTimeMs: hourlyWindow?.sinceTimeMs ?? windowStartMs,
           untilTimeMs:
             hourlyWindow?.untilTimeMs ??
