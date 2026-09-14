@@ -5,274 +5,274 @@
       "kind": "commit",
       "name": "MZS fleet runtime source",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "4d3d12f1dced42fff2b9940ac88676bdc0e9fe13"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "365560ade3f23eaa6aae595cc1e15c9ba7d6258d"
     },
     {
       "kind": "commit",
       "name": "MZS fleet runtime native verification",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "80a1c97a61df046a81fa573a2ba1e92b83dd378e"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "ea359425c70bd3132c9ca1a0f4c1929a962f3fba"
     },
     {
       "kind": "commit",
       "name": "MZS fleet runtime ssh package spec",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "f26da40cbbbe474fbdbebecabad1b002741634ad"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "3e862d1976f1b9e419bae0cf7e05ee577b42adef"
     },
     {
       "kind": "commit",
       "name": "PC-F feature overlay",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "7c1944dfb2a34008bfe51d51b848da46914effa0"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "3687e8577bac23c5ccc4f67d1ef931447e1ffa19"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "93bbd1fe1dd2392e6935b532d9e2cbf05d520651"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "68e08a429654c46dab2db38cb5c3f973d421b005"
     },
     {
       "kind": "commit",
       "name": "MZS ACP Cursor/Grok subagent panel",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "b7420628d873be9b0f5c05f1e8d73d1a5769d4e9"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "de8bbf25cc8253fc08024a6de746148641a6d649"
     },
     {
       "kind": "commit",
       "name": "MZS ACP subagent lifecycle fixes",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "6698e1139c31bd19e0874a7de23654079419df77"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "f0873d8ca746f62b20543a38ba9b89f9bd5789e2"
     },
     {
       "kind": "commit",
       "name": "MZS full fleet release notes",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "34b27c99a13ec6e2fa5776dfd747320089152825"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "09a258ea125c47254a03ae1c709cd2674ddc03e8"
     },
     {
       "kind": "commit",
       "name": "MZS server replacement and endpoint preservation",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "a65dad5c9a0f7b1e410b61894adb600391062094"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "48e2ab640b2e007ba0612fc1d61e059d41d4a455"
     },
     {
       "kind": "commit",
       "name": "MZS ownership crash test lifecycle",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "178798e15e60b8ac1aec5450c187dad0d1a466ea"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "86a6bd8dce1c16c57b0db1543f12cc53abe8a810"
     },
     {
       "kind": "commit",
       "name": "MZS isolate service launcher entrypoint",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "692a8a541e09dbd5e47c3824cab7e9ca30e844bf"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "8fc72f2cb694af9b9ef45346157fd61718e31acd"
     },
     {
       "kind": "commit",
       "name": "MZS native server update verification",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "d8c36a18bce0c172f1f016de884bf55c90fd9e23"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "76a46577b91cdbd0c4e4b5d1c716e5372138fc66"
     },
     {
       "kind": "commit",
       "name": "MZS browser previews over T3 connections",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "8dd84db0c2514603f1259a4611c24d6d3ec4f39e"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "9d95f2e92a5ea4720eb2d2d2651da80a98a1d8a2"
     },
     {
       "kind": "commit",
       "name": "MZS ownership test public startup API",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "c875e65fd3671f55340755906121ae8929c578c1"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "382596e33b9d9c4dd320193e7356d11855bc3c04"
     },
     {
       "kind": "commit",
       "name": "MZS project settings sidebar accent editor",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "eda8730e0e8fdce5cd6d66ac8bb13d5610079472"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "de7c64d9f8f59faa7487ff3401a753b5c516a75a"
     },
     {
       "kind": "commit",
       "name": "MZS desktop updater test declaration fix",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "6bcbca59734f9426f1e353402ecb817fa7672748"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "5d3499a0b073158c0686d92b2dd222ad654ccd88"
     },
     {
       "kind": "commit",
       "name": "MZS project accent schema error check",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "839ffbc1947ed42e6125ddc25c83eaf84949dd6e"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "ed9cabbe6170563afcd2e431d9fe92fb385f28c0"
     },
     {
       "kind": "commit",
       "name": "MZS favicon fixture schema encoding",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "377a94788336a3b36f9e82633931dc3ce62d7b64"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "78d19449c087a9043c08eda6364c7e7db007bc34"
     },
     {
       "kind": "commit",
       "name": "MZS project settings checkout identity",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "ffb830e81452aa1357b9d54683a539c3d0edf68d"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "649a31270b820736113e79990225a21d0e106389"
     },
     {
       "kind": "commit",
       "name": "MZS Cursor model discovery without sessions",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "d002f7ea9a9f0fbbc8587b687aa74701b68c5d2d"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "3ccf911bba792127914e1c040f5e781e1e859bb2"
     },
     {
       "kind": "commit",
       "name": "MZS compressed workspace preview MIME",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "e5a2d0d7009f51d681bac8697000bcb13c36b054"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "8fca725037e0a2b9766066c3337a696baab2e2bb"
     },
     {
       "kind": "commit",
       "name": "MZS label unknown subagent status",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "22760d48218bd1c3997a7fa06fbf7ab961ead6fa"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "6bdaf6d14e8af4c7d143cc100ddf5cfa4cc9572d"
     },
     {
       "kind": "commit",
       "name": "MZS format restacked file actions",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "341f3bd58adf82f6ddfe9270f3db2f9ee2212c43"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "80d0558d0d992c645a8d1c6f2cb2be3c297a015b"
     },
     {
       "kind": "commit",
       "name": "MZS align source control integration",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "3b1ae6c48ecee9221077094d74da25f74dd0e134"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "fe93c3ad8cca7e77b174b4ab78300bb86a200d8b"
     },
     {
       "kind": "commit",
       "name": "MZS allow disabling the local environment",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "84137b6d9450f52196348f258ad5d491c9482638"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "981f0a7ef7dece6e68ba5d1d6dbfee67812ddcab"
     },
     {
       "kind": "commit",
       "name": "MZS pad the local environment dialog error",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "f34199bb18baa05a9a687e9869ea15e281b55f01"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "3ef27f785ed8ce86e5a80fd033162160116f035a"
     },
     {
       "kind": "commit",
       "name": "MZS make the connect-an-environment screen desktop-ready",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "978506698e30b188939b7262f6e378ecf9aab851"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "d4715b21c83f68a785183cd6211327b7a1649bb3"
     },
     {
       "kind": "commit",
       "name": "MZS clarify local environment settings copy",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "13e79de07ae1d5745dda555c9b7202639e0b65ac"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "8549c08f241e20fd352c50a771fafb66e6eedc3c"
     },
     {
       "kind": "commit",
       "name": "MZS prove client-only recovery paths",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "58e20f04fdc0501a5927437cabb66bb4e0d35d03"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "20e3acf08f73f2c8a260a0728d1cc0381ed1cf5c"
     },
     {
       "kind": "commit",
       "name": "MZS explain background service reuse",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "29278ce89e1bf65e7149f9942fcecf4f12f48b97"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "eeb7f129d68a7a80ffa9eb079ee97bcefe1d51c4"
     },
     {
       "kind": "commit",
       "name": "MZS preserve disabled update recovery",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "8e0ab52de483e8f723544dba862a154377283928"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "33d6a6561df058b503a8a038ae0d8ebdc7f8a0c4"
     },
     {
       "kind": "commit",
       "name": "MZS reject dormant local activation",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "b4a86d061ee648599ad53bed11620d284b01c475"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "ef8f4426005b43438e9c0aa1699a2908f836f4f0"
     },
     {
       "kind": "commit",
       "name": "MZS read bounded OpenCode history",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "a46c0c478527ab667b4ff5bed2d93fb18d546ce7"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "ebc12ea60985bf07ec955e249eff98f29f985f41"
     },
     {
       "kind": "commit",
       "name": "MZS negotiate expanded source coverage",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "4ce9b54025b36aa1dc910b113bbffd75e8d3271c"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "eaad698f2b325edd9807833c32346908f0021776"
     },
     {
       "kind": "commit",
       "name": "MZS reuse local services for previews",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "3bd62d14de5a144fc2d3d30ac220c07881e65416"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "0015c36be9f8a997aea43f825a66df4c2458d996"
     },
     {
       "kind": "commit",
       "name": "MZS pass offline usage coverage details",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "56cfef2f9492b6fbb184265cf58f8712a5286a32"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "beec71e23a653851f96a3cde1d04e0b0eb3a5d13"
     },
     {
       "kind": "commit",
       "name": "MZS describe local service hosts",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "a8df154eacd5eeca9a7efe1fd9195f3e4394e5e6"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "a30a799280b35bac0158082fc62054590f722527"
     },
     {
       "kind": "commit",
       "name": "MZS use Effect platform services",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "1de1180517079c31a9ebe45027217fe6c7eff811"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "6038548f08d5d2aa5f1dda393a866395615bf098"
     },
     {
       "kind": "commit",
       "name": "MZS report transcript read failures",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service",
-      "sha": "62c383ad0ee427f3647dcfe3f36e3e7f1ce30c1c"
+      "ref": "refs/heads/fleet/provider-usage-service-1687",
+      "sha": "d6455021e94e80cc1a69dfd5402dd1d8ce74b7c6"
     }
   ],
   "tests": [
