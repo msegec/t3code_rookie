@@ -396,7 +396,7 @@ export default function FileBrowserPanel({
     );
     if (result._tag === "Success") {
       refresh();
-          if (query.trim()) pathSearch.refresh();
+      if (query.trim()) pathSearch.refresh();
       onEntryDeleted?.(relativePath);
       return;
     }
@@ -837,7 +837,7 @@ export default function FileBrowserPanel({
           onRenameFailed={() => onEntryMutationFailed?.(renameTarget)}
           onRenamed={(newRelativePath) => {
             refresh();
-          if (query.trim()) pathSearch.refresh();
+            if (query.trim()) pathSearch.refresh();
             onEntryRenamed?.(renameTarget, newRelativePath);
           }}
         />
