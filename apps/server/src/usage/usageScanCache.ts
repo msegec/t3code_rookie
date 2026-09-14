@@ -17,21 +17,19 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 
-import type { UsageProviderKind } from "@t3tools/contracts";
-
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
-import type { CodexScanState, UsageRecord } from "./usageTranscripts.ts";
+import type { CodexScanState, JsonlUsageProvider, UsageRecord } from "./usageTranscripts.ts";
 
 // v2: Codex fork-copy suppression changed what a file parses to, so v1
 // entries would keep serving double-counted records forever.
 // v3: entries carry the parse position and reducer state so a grown file
 // re-parses only its appended bytes instead of starting over.
-const USAGE_SCAN_CACHE_VERSION = 3 as const;
+const USAGE_SCAN_CACHE_VERSION = 4 as const;
 
 export interface CachedFile {
   readonly size: number;
   readonly mtimeMs: number;
-  readonly provider: UsageProviderKind;
+  readonly provider: JsonlUsageProvider;
   /** Records from newline-terminated lines, up to `position.resumeOffset`. */
   readonly records: readonly UsageRecord[];
   /**
@@ -61,12 +59,13 @@ type SerializedRecord = readonly [
   reasoningTokens: number,
   dedupeKey: string | null,
   reportedCostUsd: number | null,
+  partial: boolean,
 ];
 
 interface SerializedFile {
   readonly s: number;
   readonly m: number;
-  readonly p: UsageProviderKind;
+  readonly p: JsonlUsageProvider;
   readonly r: readonly SerializedRecord[];
   /** Tail records; see `CachedFile.tailRecords`. */
   readonly t: readonly SerializedRecord[];
@@ -112,6 +111,7 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
     record.totals.reasoningTokens,
     record.dedupeKey,
     record.reportedCostUsd,
+    record.partial === true,
   ];
 
   const files: Record<string, SerializedFile> = {};
@@ -164,11 +164,11 @@ export function decodeScanCache(document: unknown): ScanCache {
   // file would never be re-parsed, silently losing the dropped rows' usage.
   const decodeRecords = (
     rows: readonly unknown[],
-    provider: UsageProviderKind,
+    provider: JsonlUsageProvider,
   ): UsageRecord[] | null => {
     const records: UsageRecord[] = [];
     for (const row of rows) {
-      if (!isRecordArray(row) || row.length < 10) return null;
+      if (!isRecordArray(row) || row.length !== 11) return null;
       const [
         timestampMs,
         modelIndex,
@@ -180,6 +180,7 @@ export function decodeScanCache(document: unknown): ScanCache {
         reasoning,
         dedupeKey,
         reportedCostUsd,
+        partial,
       ] = row as SerializedRecord;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
@@ -191,6 +192,7 @@ export function decodeScanCache(document: unknown): ScanCache {
         !Number.isFinite(cached) ||
         !Number.isFinite(cacheCreation) ||
         !Number.isFinite(output) ||
+        typeof partial !== "boolean" ||
         !Number.isFinite(reasoning)
       ) {
         return null;
@@ -208,6 +210,7 @@ export function decodeScanCache(document: unknown): ScanCache {
           outputTokens: output,
           reasoningTokens: reasoning,
         },
+        ...(partial ? { partial: true } : {}),
         reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
         dedupeKey: typeof dedupeKey === "string" ? dedupeKey : null,
       });
@@ -242,7 +245,7 @@ export function decodeScanCache(document: unknown): ScanCache {
     const codexState = decodeCodexState(entry.cs);
     if (codexState === undefined) continue;
 
-    const provider: UsageProviderKind = entry.p;
+    const provider: JsonlUsageProvider = entry.p;
     const records = decodeRecords(entry.r, provider);
     const tailRecords = decodeRecords(entry.t, provider);
     if (records === null || tailRecords === null) continue;

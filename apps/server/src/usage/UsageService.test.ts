@@ -46,6 +46,7 @@ function claudeLine(id: number, outputTokens: number, model = "claude-fable-5"):
 }
 
 const WINDOW: UsageSummaryInput = {
+  maxContractVersion: 6,
   timeZone: "UTC",
   sinceDay: UsageDay.make("2026-07-31"),
   untilDay: UsageDay.make("2026-08-02"),
@@ -99,6 +100,7 @@ const serviceLayers = (input: {
     ),
     Layer.provideMerge(
       Layer.succeed(HostProcessEnvironment, {
+        OPENCODE_DB: NodePath.join(input.home, "opencode.db"),
         GROK_HOME: NodePath.join(input.home, "grok"),
         ...input.environment,
       }),
@@ -607,3 +609,101 @@ describe("UsageService", () => {
     }).pipe(Effect.scoped),
   );
 });
+
+it.live("shares the full scan across negotiated clients and attributes OpenCode sources", () =>
+  Effect.gen(function* () {
+    const { transcript, settings, home } = yield* setup;
+    yield* Effect.promise(async () => {
+      await NodeFSP.writeFile(transcript, claudeLine(1, 5));
+      const grokDir = NodePath.join(home, "grok", "sessions", "session");
+      await NodeFSP.mkdir(grokDir, { recursive: true });
+      await NodeFSP.writeFile(
+        NodePath.join(grokDir, "updates.jsonl"),
+        JSON.stringify({
+          timestamp: Date.parse("2026-08-01T10:00:00Z") / 1000,
+          params: {
+            sessionId: "grok-session",
+            update: {
+              sessionUpdate: "turn_completed",
+              prompt_id: "prompt",
+              usage: {
+                inputTokens: 4,
+                outputTokens: 5,
+                usageIsIncomplete: true,
+                costUsdTicks: 100,
+              },
+            },
+          },
+        }) + "\n",
+      );
+      const { DatabaseSync } = await import("node:sqlite");
+      const database = new DatabaseSync(NodePath.join(home, "opencode.db"));
+      try {
+        database.exec(
+          "CREATE TABLE session_message(id TEXT PRIMARY KEY, session_id TEXT, type TEXT, data TEXT)",
+        );
+        database.prepare("INSERT INTO session_message VALUES (?, ?, ?, ?)").run(
+          "message",
+          "session",
+          "assistant",
+          JSON.stringify({
+            model: { providerID: "openai", id: "unknown-model" },
+            time: { completed: Date.parse("2026-08-01T10:00:00Z") },
+            tokens: { input: 4, output: 5, reasoning: 9, cache: { read: 2, write: 1 } },
+            cost: 0,
+          }),
+        );
+      } finally {
+        database.close();
+      }
+    });
+    let ratesFetches = 0;
+    const service = yield* UsageService.make.pipe(
+      Effect.provide(
+        serviceLayers({
+          prefix: "usage-negotiation",
+          home,
+          settings,
+          onRatesFetch: () => {
+            ratesFetches++;
+          },
+        }),
+      ),
+    );
+    const { maxContractVersion: _version, ...legacyInput } = WINDOW;
+    const [legacy, modern] = yield* Effect.all(
+      [service.readSummary(legacyInput), service.readSummary(WINDOW)],
+      { concurrency: 2 },
+    );
+    assert.strictEqual(ratesFetches, 1);
+    assert.strictEqual(legacy.contractVersion, 4);
+    assert.strictEqual(
+      legacy.buckets.some((bucket) => bucket.provider === "opencode"),
+      false,
+    );
+    assert.strictEqual(modern.contractVersion, 6);
+    assert.strictEqual(
+      modern.sources.find((source) => source.fingerprint.provider === "grok")?.status,
+      "partial",
+    );
+    assert.strictEqual(
+      modern.buckets.find((bucket) => bucket.provider === "grok")?.costSource,
+      "unpriced",
+    );
+    const bucket = modern.buckets.find((bucket) => bucket.provider === "opencode");
+    assert.ok(bucket);
+    assert.strictEqual(bucket.totals.outputTokens, 14);
+    assert.strictEqual(bucket.totals.reasoningTokens, 9);
+    assert.strictEqual(bucket.costUsd, 0);
+    assert.strictEqual(bucket.costSource, "providerReported");
+    assert.ok(bucket.sourceIndex !== undefined);
+    assert.strictEqual(
+      modern.sources[bucket.sourceIndex]?.fingerprint.resolvedHomePath,
+      NodePath.join(home, "opencode.db"),
+    );
+    assert.strictEqual(
+      modern.providerCoverage?.find((coverage) => coverage.provider === "antigravity")?.status,
+      "unsupported",
+    );
+  }).pipe(Effect.scoped),
+);

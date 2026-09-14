@@ -2,12 +2,26 @@
 
 ## Understand your usage
 
-**Usage** combines Codex, Claude Code, and Grok Build session history from your connected
+**Usage** combines Codex, Claude Code, Grok Build, and OpenCode session history from your connected
 environments. It shows token use, cache savings, model breakdowns, and estimated API-equivalent
 cost. These estimates are not your subscription bill.
 
 Totals depend on the history available on each server. Grok turns without a saved completed-turn
-record are missing from the totals.
+record are missing from the totals. OpenCode reads completed messages from its local database,
+including configured database paths and channels. Scans have limits; the environment details show
+partial or unavailable sources. Missing history is not zero usage.
+
+Cursor history is unsupported because its ACP connection does not expose a supported local history
+source. Antigravity history remains unavailable until its stored usage format can be verified.
+These providers do not add empty chart series. History coverage is separate from subscription limits.
+
+Without a custom price override, reported USD costs, including explicit zero, take priority over
+model estimates. Partial Grok costs
+use model pricing when available. Reasoning tokens are included in output tokens and count once.
+
+Older clients retain compatible Codex and Claude history. Clients that negotiate the preceding
+usage version also retain Grok. Update the client to see OpenCode and detailed provider coverage.
+New clients can still include older server totals, with unknown coverage shown in environment details.
 
 Usage includes each configured account's history, including disabled accounts. Custom homes follow
 the account's home setting or its `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, or `GROK_HOME` environment

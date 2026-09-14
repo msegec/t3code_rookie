@@ -11,7 +11,7 @@ const PAGE_ROWS = 256;
 const MAX_ROWS = 100_000;
 const MAX_SCAN_MS = 2_000;
 const MAX_RECORD_BYTES = 1_048_576;
-const MAX_DATABASES = 32;
+export const OPENCODE_MAX_DATABASES = 32;
 const BUN_SQLITE_MODULE: string = "bun:sqlite";
 
 type SqlValue = string | number;
@@ -48,7 +48,7 @@ export async function resolveOpenCodeDatabasePaths({
       for await (const entry of directory) {
         if (/^opencode-[a-zA-Z0-9._-]+\.db$/.test(entry.name))
           paths.push(NodePath.join(dataDirectory, entry.name));
-        if (++examined >= 4096 || paths.length >= MAX_DATABASES) {
+        if (++examined >= 4096 || paths.length >= OPENCODE_MAX_DATABASES) {
           partial = true;
           break;
         }

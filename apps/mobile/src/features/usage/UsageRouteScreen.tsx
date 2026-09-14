@@ -5,6 +5,7 @@ import {
   isModelCostUnknown,
   type DailyTotals,
   type MergedUsage,
+  usageCoverageMessages,
 } from "@t3tools/shared/usageMerge";
 import {
   enumerateDays,
@@ -291,6 +292,11 @@ export function UsageRouteScreen() {
                   className="w-36"
                 />
               </View>
+              {merged.incompleteSources.length > 0 ? (
+                <Text className="text-sm text-foreground-muted">
+                  {merged.incompleteSources.join("; ")}
+                </Text>
+              ) : null}
               {merged.duplicateSources.length > 0 ? (
                 <Text className="text-sm text-foreground-muted">
                   Counted once across environments sharing a transcript directory:{" "}
@@ -668,5 +674,6 @@ function usageEnvironmentStatus(environment: EnvironmentUsageStatus): string {
     return environment.summary ? "Usage unavailable · showing saved totals" : "Usage unavailable";
   if (isUsageLoading(environment))
     return environment.summary ? "Updating usage…" : "Loading usage…";
-  return "Usage up to date";
+  const coverage = environment.summary === null ? [] : usageCoverageMessages(environment.summary);
+  return coverage.length === 0 ? "Usage up to date" : coverage.join("; ");
 }

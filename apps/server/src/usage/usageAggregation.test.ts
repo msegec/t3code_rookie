@@ -202,3 +202,27 @@ describe("UsageAggregator", () => {
     expect(result.buckets).toHaveLength(3);
   });
 });
+
+it("keeps source ownership and reported zero separate from estimated records", () => {
+  const aggregator = new UsageAggregator({
+    timeZone: "UTC",
+    sinceDay: "2026-08-01",
+    untilDay: "2026-08-31",
+    rates,
+  });
+  aggregator.add(record({ reportedCostUsd: 0 }), 0);
+  aggregator.add(record(), 0);
+  aggregator.add(record(), 1);
+  const { buckets } = aggregator.finish();
+  expect(buckets).toHaveLength(3);
+  expect(buckets.find((bucket) => bucket.costSource === "providerReported")).toMatchObject({
+    costUsd: 0,
+    records: 1,
+    sourceIndex: 0,
+  });
+  expect(
+    buckets
+      .filter((bucket) => bucket.costSource === "modelPriced")
+      .map((bucket) => bucket.sourceIndex),
+  ).toEqual([0, 1]);
+});

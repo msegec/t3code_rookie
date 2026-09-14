@@ -18,8 +18,6 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { UsageProviderKind } from "@t3tools/contracts";
-
 import {
   initialCodexScanState,
   mightCarryUsage,
@@ -28,6 +26,7 @@ import {
   parseGrokLine,
   type CodexScanState,
   type UsageRecord,
+  type JsonlUsageProvider,
 } from "./usageTranscripts.ts";
 
 export interface TranscriptFile {
@@ -192,7 +191,7 @@ async function guardMatches(
  */
 export async function readTranscriptRecords(
   filePath: string,
-  provider: UsageProviderKind,
+  provider: JsonlUsageProvider,
   resumeFrom?: TranscriptParsePosition,
 ): Promise<TranscriptParseResult | null> {
   let handle: NodeFSP.FileHandle;
