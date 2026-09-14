@@ -8,6 +8,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
+import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitHubGraphQlBudget from "../sourceControl/githubGraphQlBudget.ts";
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
@@ -202,6 +203,7 @@ it.effect(
       let activeToken = "broad-credential";
       const commands: VcsProcess.VcsProcessInput[] = [];
       const github = yield* GitHubCli.make.pipe(
+        Effect.provide(SourceControlRateLimit.layer),
         Effect.provideService(VcsProcess.VcsProcess, {
           run: (input) =>
             Effect.sync(() => {
