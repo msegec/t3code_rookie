@@ -344,7 +344,7 @@ export const make = Effect.gen(function* () {
     size: number,
     mtimeMs: number,
     provider: JsonlUsageProvider,
-  ): Effect.Effect<readonly UsageRecord[]> =>
+  ): Effect.Effect<readonly UsageRecord[] | null> =>
     Effect.gen(function* () {
       const cached = fileCache.get(filePath);
       // Provider is part of the identity: if both providers were ever pointed
@@ -372,7 +372,7 @@ export const make = Effect.gen(function* () {
       );
       // A read failure is not an empty transcript: caching it under this
       // (size, mtime) would silently drop the file's usage until it changes.
-      if (parsed === null) return [];
+      if (parsed === null) return null;
 
       // Stored already de-duplicated within the file, which is 99% of all
       // duplicates. The aggregator still runs the cross-file dedupe pass. One
@@ -400,10 +400,13 @@ export const make = Effect.gen(function* () {
     readonly provider: UsageProviderKind;
     readonly dir: string;
     readonly volumeId: string;
-    /** Parsed records per file, or `null` when the directory does not exist. */
-    readonly files:
-      | readonly { readonly path: string; readonly records: readonly UsageRecord[] }[]
-      | null;
+    readonly missing: boolean;
+    readonly failedDirectories: number;
+    readonly failedFiles: number;
+    readonly files: readonly {
+      readonly path: string;
+      readonly records: readonly UsageRecord[] | null;
+    }[];
   }
 
   const collectDirs = Effect.fn("UsageService.collectDirs")(function* (
@@ -418,22 +421,15 @@ export const make = Effect.gen(function* () {
     const scanned: ScannedDir[] = [];
     for (const { provider, dir, fileName } of dirs) {
       const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
-      const exists = yield* fileSystem
-        .exists(dir)
-        .pipe(Effect.catchCause(() => Effect.succeed(false)));
-      if (!exists) {
-        scanned.push({ provider, dir, volumeId, files: null });
-        continue;
-      }
-      const files = yield* Effect.promise(() =>
+      const listing = yield* Effect.promise(() =>
         listTranscriptFiles(dir, windowStartMs, fileName === undefined ? undefined : { fileName }),
       );
-      const parsedFiles: { path: string; records: readonly UsageRecord[] }[] = [];
-      for (const file of files) {
+      const parsedFiles: { path: string; records: readonly UsageRecord[] | null }[] = [];
+      for (const file of listing.files) {
         const records = yield* readFileRecords(file.path, file.size, file.mtimeMs, provider);
         parsedFiles.push({ path: file.path, records });
       }
-      scanned.push({ provider, dir, volumeId, files: parsedFiles });
+      scanned.push({ provider, dir, volumeId, ...listing, files: parsedFiles });
     }
     return scanned;
   });
@@ -517,9 +513,17 @@ export const make = Effect.gen(function* () {
     const walkedRoots: string[] = [];
 
     scannedDirs.sort((a, b) => a.provider.localeCompare(b.provider) || a.dir.localeCompare(b.dir));
-    for (const { provider, dir, volumeId, files } of scannedDirs) {
+    for (const {
+      provider,
+      dir,
+      volumeId,
+      files,
+      missing,
+      failedDirectories,
+      failedFiles,
+    } of scannedDirs) {
       const sourceIndex = sources.length;
-      if (files === null) {
+      if (missing) {
         sources.push({
           fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
           status: "missing",
@@ -532,16 +536,24 @@ export const make = Effect.gen(function* () {
         continue;
       }
 
-      walkedRoots.push(dir);
+      if (failedDirectories === 0 && failedFiles === 0) walkedRoots.push(dir);
+      let successfulReads = 0;
+      let readFailures = failedDirectories + failedFiles;
       let scannedFiles = 0;
       let partial = false;
-      let skippedFiles = 0;
+      let skippedFiles = failedFiles;
       // Distinct per directory. Buckets carry per-cell session counts, but a
       // session spans days and models, so clients total this figure instead.
       const sessionIds = new Set<string>();
 
       for (const file of files) {
         livePaths.add(file.path);
+        if (file.records === null) {
+          readFailures += 1;
+          skippedFiles += 1;
+          continue;
+        }
+        successfulReads += 1;
         if (file.records.length === 0) {
           skippedFiles += 1;
           continue;
@@ -559,12 +571,27 @@ export const make = Effect.gen(function* () {
 
       sources.push({
         fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
-        status: partial ? "partial" : "ok",
+        status:
+          readFailures > 0
+            ? successfulReads > 0
+              ? "partial"
+              : "failed"
+            : partial
+              ? "partial"
+              : "ok",
         scannedFiles,
         skippedFiles,
         malformedRecords: 0,
         distinctSessions: sessionIds.size,
-        message: partial ? "Provider marked saved usage or cost as incomplete." : null,
+        message:
+          [
+            readFailures > 0
+              ? "Some saved usage could not be read; totals may be incomplete."
+              : null,
+            partial ? "Provider marked saved usage or cost as incomplete." : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || null,
       });
     }
 

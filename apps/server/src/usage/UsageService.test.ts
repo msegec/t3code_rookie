@@ -5,6 +5,8 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import {
@@ -29,7 +31,12 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as UsageService from "./UsageService.ts";
 
+vi.mock("node:fs/promises", { spy: true });
+
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const decodeCacheFiles = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ files: Schema.Record(Schema.String, Schema.Unknown) })),
+);
 
 function claudeLine(id: number, outputTokens: number, model = "claude-fable-5"): string {
   return `${JSON.stringify({
@@ -410,8 +417,8 @@ describe("UsageService", () => {
         const service = yield* UsageService.make.pipe(
           Effect.provideService(FileSystem.FileSystem, {
             ...fileSystem,
-            exists: (path) =>
-              fileSystem.exists(path).pipe(
+            realPath: (path) =>
+              fileSystem.realPath(path).pipe(
                 Effect.tap(() => {
                   if (path !== NodePath.join(home, "claude", "projects")) return Effect.void;
                   homeProbes += 1;
@@ -705,5 +712,144 @@ it.live("shares the full scan across negotiated clients and attributes OpenCode 
       modern.providerCoverage?.find((coverage) => coverage.provider === "antigravity")?.status,
       "unsupported",
     );
+  }).pipe(Effect.scoped),
+);
+
+for (const scenario of [
+  "root-file",
+  "unreadable",
+  "mixed",
+  "empty-mixed",
+  "empty",
+  "nested",
+  "stat",
+] as const) {
+  it.live(`reports transcript read failures accurately: ${scenario}`, () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      const root = NodePath.join(home, "claude", "projects");
+      const blocked = NodePath.join(root, "blocked.jsonl");
+      yield* Effect.promise(async () => {
+        if (scenario === "root-file") {
+          await NodeFSP.rm(root, { recursive: true });
+          await NodeFSP.writeFile(root, "not a directory");
+        } else if (scenario !== "empty") {
+          if (scenario === "mixed" || scenario === "nested" || scenario === "stat") {
+            await NodeFSP.writeFile(transcript, claudeLine(1, 5));
+          } else if (scenario === "empty-mixed") {
+            await NodeFSP.writeFile(transcript, "");
+          }
+          if (scenario === "nested") await NodeFSP.mkdir(blocked);
+          else if (scenario === "stat")
+            await NodeFSP.symlink(NodePath.join(home, "absent"), blocked);
+          else await NodeFSP.writeFile(blocked, claudeLine(2, 7));
+        }
+      });
+      const original = yield* Effect.promise(() =>
+        vi.importActual<typeof NodeFSP>("node:fs/promises"),
+      );
+      const originalOpen = original.open;
+      const originalReaddir = original.readdir;
+      const openSpy = vi
+        .spyOn(NodeFSP, "open")
+        .mockImplementation((path, ...args) =>
+          String(path) === blocked
+            ? Promise.reject(new Error("read denied"))
+            : originalOpen(path, ...args),
+        );
+      const readdirSpy = vi.spyOn(NodeFSP, "readdir").mockImplementation((path, options) => {
+        if (String(path) === blocked) return Promise.reject(new Error("directory denied"));
+        return originalReaddir(path, options);
+      });
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          openSpy.mockRestore();
+          readdirSpy.mockRestore();
+        }),
+      );
+      const service = yield* UsageService.make.pipe(
+        Effect.provide(
+          serviceLayers({
+            prefix: `usage-read-failure-${scenario}-`,
+            home,
+            settings,
+          }),
+        ),
+      );
+      const summary = yield* service.readSummary(WINDOW);
+      const source = summary.sources.find((source) => source.fingerprint.provider === "claude");
+      assert.isDefined(source);
+      const hasUsage = scenario === "mixed" || scenario === "nested" || scenario === "stat";
+      assert.strictEqual(
+        source.status,
+        scenario === "empty" ? "ok" : hasUsage || scenario === "empty-mixed" ? "partial" : "failed",
+      );
+      assert.strictEqual(source.scannedFiles, hasUsage ? 1 : 0);
+      assert.strictEqual(
+        source.skippedFiles,
+        scenario === "empty-mixed" ? 2 : ["unreadable", "mixed", "stat"].includes(scenario) ? 1 : 0,
+      );
+      assert.strictEqual(totalOutputTokens(summary), hasUsage ? 5 : 0);
+      assert.strictEqual(source.message === null, scenario === "empty");
+      assert.strictEqual(
+        summary.sources.find((source) => source.fingerprint.provider === "codex")?.status,
+        "missing",
+      );
+    }).pipe(Effect.scoped),
+  );
+}
+
+it.live("preserves cached subtrees after incomplete discovery without serving stale totals", () =>
+  Effect.gen(function* () {
+    const { transcript, settings, home } = yield* setup;
+    const sibling = NodePath.join(home, "claude", "projects", "sibling.jsonl");
+    yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
+    yield* Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const service = yield* UsageService.make;
+      assert.strictEqual(totalOutputTokens(yield* service.readSummary(WINDOW)), 5);
+      const original = yield* Effect.promise(() =>
+        vi.importActual<typeof NodeFSP>("node:fs/promises"),
+      );
+      const readdirSpy = vi
+        .spyOn(NodeFSP, "readdir")
+        .mockImplementation((path, options) =>
+          String(path) === NodePath.dirname(transcript)
+            ? Promise.reject(new Error("directory denied"))
+            : original.readdir(path, options),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => readdirSpy.mockRestore()));
+      yield* Effect.promise(() => NodeFSP.writeFile(sibling, claudeLine(2, 7)));
+      const incomplete = yield* service.readSummary(WINDOW);
+      assert.strictEqual(totalOutputTokens(incomplete), 7);
+      assert.strictEqual(
+        incomplete.sources.find((source) => source.fingerprint.provider === "claude")?.status,
+        "partial",
+      );
+      const cache = yield* Effect.promise(() =>
+        NodeFSP.readFile(NodePath.join(config.stateDir, "usage-scan-cache.json"), "utf8"),
+      );
+      const document = decodeCacheFiles(cache);
+      assert.isTrue(Object.hasOwn(document.files, transcript));
+      readdirSpy.mockRestore();
+      assert.strictEqual(totalOutputTokens(yield* service.readSummary(WINDOW)), 12);
+      yield* Effect.promise(() => NodeFSP.appendFile(transcript, claudeLine(3, 11)));
+      const openSpy = vi
+        .spyOn(NodeFSP, "open")
+        .mockImplementation((path, ...args) =>
+          String(path) === transcript
+            ? Promise.reject(new Error("read denied"))
+            : original.open(path, ...args),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => openSpy.mockRestore()));
+      const unreadable = yield* service.readSummary(WINDOW);
+      assert.strictEqual(totalOutputTokens(unreadable), 7);
+      assert.strictEqual(
+        unreadable.sources.find((source) => source.fingerprint.provider === "claude")?.status,
+        "partial",
+      );
+      openSpy.mockRestore();
+      assert.strictEqual(totalOutputTokens(yield* service.readSummary(WINDOW)), 23);
+    }).pipe(Effect.provide(serviceLayers({ prefix: "usage-cache-discovery-", home, settings })));
   }).pipe(Effect.scoped),
 );
