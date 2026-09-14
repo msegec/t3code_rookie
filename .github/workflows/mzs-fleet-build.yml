@@ -25,6 +25,8 @@ concurrency:
 env:
   FLEET_NODE_VERSION: 24.21.0
   FLEET_VP_VERSION: 0.3.1
+  FLEET_CONTROLS_SHA: ${{ inputs.controls_sha }}
+  FLEET_RELEASE_TAG: ${{ inputs.release_tag }}
 
 jobs:
   build:
@@ -32,12 +34,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      contents: read
+      contents: write
     outputs:
       base_version: ${{ steps.compose.outputs.base_version }}
       version: ${{ steps.compose.outputs.version }}
       release_tag: ${{ steps.compose.outputs.release_tag }}
       nightly_tag: ${{ steps.compose.outputs.nightly_tag }}
+      staging_id: ${{ steps.transport.outputs.staging_id }}
+      build_attempt: ${{ steps.transport.outputs.build_attempt }}
+      inventory: ${{ steps.transport.outputs.inventory }}
     steps:
       - name: Clone fleet controls without credentials
         env:
@@ -61,7 +66,9 @@ jobs:
           node --test \
             source/.mzs/preflight-release.test.mjs \
             source/.mzs/fleet-workflow.test.mjs \
-            source/.mzs/publish-release.test.mjs
+            source/.mzs/publish-release.test.mjs \
+            source/.mzs/release-transport.test.mjs
+          cp source/.mzs/release-transport.mjs "$RUNNER_TEMP/release-transport.mjs"
           cp source/.mzs/overlays.json "$RUNNER_TEMP/overlays.json"
           cp source/.mzs/preflight-release.mjs "$RUNNER_TEMP/preflight-release.mjs"
           cp source/.mzs/stage-server-package.mjs "$RUNNER_TEMP/stage-server-package.mjs"
@@ -180,8 +187,11 @@ jobs:
           version="${base_version}.mzs.r${revision}"
           release_tag="v${version}"
           [[ "$release_tag" == "$EXPECTED_RELEASE_TAG" ]]
-          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>"$RUNNER_TEMP/release-lookup-error"; then
             printf 'Fleet release already exists: %s\n' "$release_tag" >&2
+            exit 1
+          elif [[ "$(cat "$RUNNER_TEMP/release-lookup-error")" != 'release not found' ]]; then
+            cat "$RUNNER_TEMP/release-lookup-error" >&2
             exit 1
           fi
 
@@ -201,7 +211,7 @@ jobs:
           working-directory: source
           version: ${{ env.FLEET_VP_VERSION }}
           node-version: ${{ env.FLEET_NODE_VERSION }}
-          cache: true
+          cache: false
           run-install: false
 
       - name: Verify composed release locally and in CI
@@ -248,8 +258,6 @@ jobs:
           file apps/server/dist/resource-monitor/darwin-x64/t3-resource-monitor | grep -Eq 'x86_64|x86-64'
 
       - name: Package and smoke test
-        env:
-          GH_TOKEN: ${{ github.token }}
         working-directory: source
         shell: bash
         run: |
@@ -294,13 +302,12 @@ jobs:
           cd "$release_dir"
           sha256sum "$(basename "$artifact")" "$(basename "$bundle")" release-notes.md mzs-fleet.json >SHA256SUMS
 
-      - name: Upload verified release files
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: mzs-t3-fleet-server-${{ steps.compose.outputs.version }}
-          path: ${{ runner.temp }}/fleet-release/*
-          if-no-files-found: error
-          retention-days: 7
+      - name: Stage verified release files
+        id: transport
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLEET_BUILD_ATTEMPT: ${{ github.run_attempt }}
+        run: node "$RUNNER_TEMP/release-transport.mjs" create "$RUNNER_TEMP/fleet-release"
 
   build_macos:
     name: Build macOS desktop (${{ matrix.arch }})
@@ -308,21 +315,40 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
+    outputs:
+      mac_arm64: ${{ steps.transport.outputs.mac_arm64 }}
+      mac_x64: ${{ steps.transport.outputs.mac_x64 }}
+    env:
+      FLEET_STAGING_ID: ${{ needs.build.outputs.staging_id }}
+      FLEET_BUILD_ATTEMPT: ${{ needs.build.outputs.build_attempt }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: arm64
             rust_target: aarch64-apple-darwin
+            inventory_key: mac_arm64
           - arch: x64
             rust_target: x86_64-apple-darwin
+            inventory_key: mac_x64
     steps:
-      - name: Download composed source
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - name: Checkout approved transport controls
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          name: mzs-t3-fleet-server-${{ needs.build.outputs.version }}
-          path: fleet-input
+          ref: ${{ inputs.controls_sha }}
+          path: controls
+          persist-credentials: false
+
+      - name: Download composed source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLEET_INVENTORIES: "[${{ needs.build.outputs.inventory }}]"
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C controls rev-parse HEAD)" == "$FLEET_CONTROLS_SHA" ]]
+          node controls/.mzs/release-transport.mjs download fleet-input
 
       - name: Restore composed source
         shell: bash
@@ -334,6 +360,10 @@ jobs:
             source
           [[ "$(git -C source rev-parse HEAD)" == \
             "$(jq -r .sourceSha fleet-input/mzs-fleet.json)" ]]
+          jq -e --arg controls "$FLEET_CONTROLS_SHA" --arg tag "$FLEET_RELEASE_TAG" \
+            --arg version "${{ needs.build.outputs.version }}" \
+            '.controlsSha == $controls and .releaseTag == $tag and .version == $version' \
+            fleet-input/mzs-fleet.json >/dev/null
 
       - name: Set up Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
@@ -341,23 +371,12 @@ jobs:
           working-directory: source
           version: ${{ env.FLEET_VP_VERSION }}
           node-version: ${{ env.FLEET_NODE_VERSION }}
-          cache: true
+          cache: false
           run-install: false
 
       - name: Install dependencies
         working-directory: source
         run: vp i --frozen-lockfile
-
-      - name: Cache desktop dependency downloads
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ${{ runner.temp }}/electron-cache
-            ${{ runner.temp }}/electron-builder-cache
-          key: desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ env.FLEET_NODE_VERSION }}-${{ env.FLEET_VP_VERSION }}-${{ hashFiles('source/pnpm-lock.yaml', 'source/native/resource-monitor/Cargo.lock') }}
 
       - name: Set up Rust targets
         working-directory: source
@@ -420,13 +439,11 @@ jobs:
           cd "$release_dir"
           shasum -a 256 ./* >"SHA256SUMS.mac.${{ matrix.arch }}"
 
-      - name: Upload verified macOS release files
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: mzs-t3-fleet-macos-${{ matrix.arch }}-${{ needs.build.outputs.version }}
-          path: ${{ runner.temp }}/fleet-macos/*
-          if-no-files-found: error
-          retention-days: 7
+      - name: Stage verified macOS release files
+        id: transport
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node controls/.mzs/release-transport.mjs upload "$RUNNER_TEMP/fleet-macos" ${{ matrix.inventory_key }}
 
   build_linux:
     name: Build Linux desktop (x64)
@@ -434,13 +451,29 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
-      contents: read
+      contents: write
+    outputs:
+      inventory: ${{ steps.transport.outputs.inventory }}
+    env:
+      FLEET_STAGING_ID: ${{ needs.build.outputs.staging_id }}
+      FLEET_BUILD_ATTEMPT: ${{ needs.build.outputs.build_attempt }}
     steps:
-      - name: Download composed source
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - name: Checkout approved transport controls
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          name: mzs-t3-fleet-server-${{ needs.build.outputs.version }}
-          path: fleet-input
+          ref: ${{ inputs.controls_sha }}
+          path: controls
+          persist-credentials: false
+
+      - name: Download composed source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLEET_INVENTORIES: "[${{ needs.build.outputs.inventory }}]"
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C controls rev-parse HEAD)" == "$FLEET_CONTROLS_SHA" ]]
+          node controls/.mzs/release-transport.mjs download fleet-input
 
       - name: Restore composed source
         shell: bash
@@ -452,6 +485,10 @@ jobs:
             source
           [[ "$(git -C source rev-parse HEAD)" == \
             "$(jq -r .sourceSha fleet-input/mzs-fleet.json)" ]]
+          jq -e --arg controls "$FLEET_CONTROLS_SHA" --arg tag "$FLEET_RELEASE_TAG" \
+            --arg version "${{ needs.build.outputs.version }}" \
+            '.controlsSha == $controls and .releaseTag == $tag and .version == $version' \
+            fleet-input/mzs-fleet.json >/dev/null
 
       - name: Set up Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
@@ -459,23 +496,12 @@ jobs:
           working-directory: source
           version: ${{ env.FLEET_VP_VERSION }}
           node-version: ${{ env.FLEET_NODE_VERSION }}
-          cache: true
+          cache: false
           run-install: false
 
       - name: Install dependencies
         working-directory: source
         run: vp i --frozen-lockfile
-
-      - name: Cache desktop dependency downloads
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ${{ runner.temp }}/electron-cache
-            ${{ runner.temp }}/electron-builder-cache
-          key: desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-x64-${{ env.FLEET_NODE_VERSION }}-${{ env.FLEET_VP_VERSION }}-${{ hashFiles('source/pnpm-lock.yaml', 'source/native/resource-monitor/Cargo.lock') }}
 
       - name: Set up Linux build tools
         working-directory: source
@@ -548,13 +574,11 @@ jobs:
           cd "$release_dir"
           sha256sum ./* >SHA256SUMS.linux.x64
 
-      - name: Upload verified Linux release files
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: mzs-t3-fleet-linux-${{ needs.build.outputs.version }}
-          path: ${{ runner.temp }}/fleet-linux/*
-          if-no-files-found: error
-          retention-days: 7
+      - name: Stage verified Linux release files
+        id: transport
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node controls/.mzs/release-transport.mjs upload "$RUNNER_TEMP/fleet-linux" inventory
 
   publish:
     name: Publish fleet release
@@ -563,27 +587,36 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+    env:
+      FLEET_STAGING_ID: ${{ needs.build.outputs.staging_id }}
+      FLEET_BUILD_ATTEMPT: ${{ needs.build.outputs.build_attempt }}
     steps:
       - name: Checkout fleet controls
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.controls_sha }}
+          persist-credentials: false
+
+      - name: Verify approved publisher controls
+        shell: bash
+        run: '[[ "$(git rev-parse HEAD)" == "$FLEET_CONTROLS_SHA" ]]'
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
           version: ${{ env.FLEET_VP_VERSION }}
           node-version: ${{ env.FLEET_NODE_VERSION }}
-          cache: true
+          cache: false
           run-install: |
             args:
               - --frozen-lockfile
               - --filter=@t3tools/scripts...
 
       - name: Download verified release files
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          pattern: mzs-t3-fleet-*-${{ needs.build.outputs.version }}
-          merge-multiple: true
-          path: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLEET_INVENTORIES: "[${{ needs.build.outputs.inventory }},${{ needs.build_macos.outputs.mac_arm64 }},${{ needs.build_macos.outputs.mac_x64 }},${{ needs.build_linux.outputs.inventory }}]"
+        run: node .mzs/release-transport.mjs collect release
 
       - name: Merge macOS updater manifests
         run: |
@@ -624,3 +657,13 @@ jobs:
             "${{ needs.build.outputs.release_tag }}" \
             "${{ needs.build.outputs.version }}" \
             "$GITHUB_SHA"
+
+      - name: Remove owned staging draft after verified publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if ! node .mzs/release-transport.mjs cleanup release; then
+            echo "::warning::Final release was published; staging draft $FLEET_STAGING_ID remains for reviewed cleanup."
+            echo "Final release published; staging draft $FLEET_STAGING_ID cleanup failed." >>"$GITHUB_STEP_SUMMARY"
+          fi

@@ -9,7 +9,7 @@ const workflow = NodeFS.readFileSync(
 
 NodeTest.test("release jobs use immutable actions and the tested toolchain", () => {
   const actions = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
-  NodeAssert.equal(actions.length, 13);
+  NodeAssert.equal(actions.length, 7);
   for (const action of actions) NodeAssert.match(action, /@[a-f0-9]{40}$/);
   NodeAssert.match(workflow, /FLEET_NODE_VERSION: 24\.21\.0/);
   NodeAssert.match(workflow, /FLEET_VP_VERSION: 0\.3\.1/);
@@ -37,24 +37,41 @@ NodeTest.test(
   },
 );
 
+NodeTest.test("release jobs write no Actions artifacts or caches", () => {
+  NodeAssert.doesNotMatch(
+    workflow,
+    /actions\/(?:cache|upload-artifact|download-artifact)@|cache: true|retention-days:|actions\/(?:artifacts|caches)/,
+  );
+  NodeAssert.equal([...workflow.matchAll(/cache: false/g)].length, 4);
+  NodeAssert.deepEqual(
+    [...workflow.matchAll(/runs-on: (.+)/g)].map((match) => match[1]),
+    ["ubuntu-24.04", "macos-15", "ubuntu-24.04", "ubuntu-24.04"],
+  );
+  NodeAssert.match(workflow, /on:\n  workflow_dispatch:/);
+  NodeAssert.doesNotMatch(workflow, /^  (push|pull_request|schedule):/m);
+});
+
 NodeTest.test(
-  "desktop caches retain downloads only and isolate platform and dependency inputs",
+  "staging uses approved controls, separated producer outputs and success-only cleanup",
   () => {
-    const caches = [
-      ...workflow.matchAll(/name: Cache desktop dependency downloads[\s\S]*?key: ([^\n]+)/g),
-    ];
-    NodeAssert.equal(caches.length, 2);
-    for (const cache of caches) {
-      NodeAssert.match(cache[1], /runner.os/);
-      NodeAssert.match(cache[1], /runner.arch/);
-      NodeAssert.match(cache[1], /FLEET_NODE_VERSION/);
-      NodeAssert.match(cache[1], /FLEET_VP_VERSION/);
-      NodeAssert.match(cache[1], /source\/pnpm-lock.yaml/);
-      NodeAssert.match(cache[1], /source\/native\/resource-monitor\/Cargo.lock/);
-      NodeAssert.doesNotMatch(cache[0], /restore-keys:|\/target|node_modules|\/dist/);
-    }
-    NodeAssert.match(caches[0][1], /matrix.arch/);
-    NodeAssert.match(caches[1][1], /-x64-/);
+    NodeAssert.equal([...workflow.matchAll(/persist-credentials: false/g)].length, 3);
+    NodeAssert.equal([...workflow.matchAll(/ref: \$\{\{ inputs.controls_sha \}\}/g)].length, 3);
+    NodeAssert.equal([...workflow.matchAll(/contents: write/g)].length, 4);
+    NodeAssert.match(workflow, /mac_arm64: \$\{\{ steps.transport.outputs.mac_arm64 \}\}/);
+    NodeAssert.match(workflow, /mac_x64: \$\{\{ steps.transport.outputs.mac_x64 \}\}/);
+    NodeAssert.match(workflow, /inventory_key: mac_arm64/);
+    NodeAssert.match(workflow, /inventory_key: mac_x64/);
+    NodeAssert.match(
+      workflow,
+      /FLEET_BUILD_ATTEMPT: \$\{\{ needs.build.outputs.build_attempt \}\}/,
+    );
+    const publication = workflow.indexOf("node .mzs/publish-release.mjs");
+    NodeAssert.ok(
+      publication > 0 && publication < workflow.indexOf("release-transport.mjs cleanup"),
+    );
+    NodeAssert.doesNotMatch(workflow, /always\(\)|--clobber|--cleanup-tag/);
+    NodeAssert.match(workflow, /Final release was published; staging draft/);
+    NodeAssert.match(workflow, /git rev-parse HEAD/);
   },
 );
 
@@ -74,6 +91,12 @@ NodeTest.test("desktop jobs verify and reuse the composed server before building
     NodeAssert.match(body, /node scripts\/build-preview-annotation-css.mjs\n            vp pack/);
     NodeAssert.doesNotMatch(body, /vp run build:desktop|T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR/);
     NodeAssert.match(body, /vp run dist:desktop:artifact/);
+    NodeAssert.match(
+      body,
+      /\.controlsSha == \$controls and \.releaseTag == \$tag and \.version == \$version/,
+    );
+    NodeAssert.ok(body.indexOf("release-transport.mjs download") < body.indexOf("git clone"));
+    NodeAssert.ok(body.indexOf(".controlsSha ==") < body.indexOf("vp i --frozen-lockfile"));
   }
 });
 
