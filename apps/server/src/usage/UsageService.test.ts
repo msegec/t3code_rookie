@@ -619,7 +619,7 @@ it.live("shares the full scan across negotiated clients and attributes OpenCode 
       await NodeFSP.mkdir(grokDir, { recursive: true });
       await NodeFSP.writeFile(
         NodePath.join(grokDir, "updates.jsonl"),
-        JSON.stringify({
+        encodeUnknownJsonString({
           timestamp: Date.parse("2026-08-01T10:00:00Z") / 1000,
           params: {
             sessionId: "grok-session",
@@ -646,7 +646,7 @@ it.live("shares the full scan across negotiated clients and attributes OpenCode 
           "message",
           "session",
           "assistant",
-          JSON.stringify({
+          encodeUnknownJsonString({
             model: { providerID: "openai", id: "unknown-model" },
             time: { completed: Date.parse("2026-08-01T10:00:00Z") },
             tokens: { input: 4, output: 5, reasoning: 9, cache: { read: 2, write: 1 } },

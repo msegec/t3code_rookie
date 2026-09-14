@@ -1,5 +1,6 @@
-import * as NodeFSP from "node:fs/promises";
-import * as NodePath from "node:path";
+import { Effect, Result } from "effect";
+import type * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
 
 import type { UsageRecord } from "./usageTranscripts.ts";
 
@@ -24,44 +25,54 @@ export async function resolveOpenCodeDatabasePaths({
   environment,
   homeDir,
   cwd,
+  fileSystem,
+  path,
 }: {
   environment: Readonly<Record<string, string | undefined>>;
   homeDir: string;
   cwd: string;
+  fileSystem: FileSystem.FileSystem;
+  path: Path.Path;
 }): Promise<{ paths: readonly string[]; partial: boolean }> {
-  const dataDirectory = NodePath.resolve(
+  const dataDirectory = path.resolve(
     cwd,
-    environment.XDG_DATA_HOME || NodePath.join(homeDir, ".local/share"),
+    environment.XDG_DATA_HOME || path.join(homeDir, ".local/share"),
     "opencode",
   );
   const override = environment.OPENCODE_DB?.trim();
   if (override === ":memory:") return { paths: [], partial: true };
   let partial = false;
-  let paths = [NodePath.resolve(dataDirectory, override || "opencode.db")];
+  let paths = [path.resolve(dataDirectory, override || "opencode.db")];
   if (
     !override &&
     !["1", "true"].includes(environment.OPENCODE_DISABLE_CHANNEL_DB?.trim().toLowerCase() ?? "")
   ) {
-    try {
-      const directory = await NodeFSP.opendir(dataDirectory);
+    const directory = await Effect.runPromise(
+      Effect.result(fileSystem.readDirectory(dataDirectory)),
+    );
+    if (Result.isSuccess(directory)) {
       let examined = 0;
-      for await (const entry of directory) {
-        if (/^opencode-[a-zA-Z0-9._-]+\.db$/.test(entry.name))
-          paths.push(NodePath.join(dataDirectory, entry.name));
+      for (const entry of directory.success) {
+        if (/^opencode-[a-zA-Z0-9._-]+\.db$/.test(entry))
+          paths.push(path.join(dataDirectory, entry));
         if (++examined >= 4096 || paths.length >= OPENCODE_MAX_DATABASES) {
           partial = true;
           break;
         }
       }
-    } catch (error) {
-      partial = object(error)?.code !== "ENOENT";
-      paths = [NodePath.join(dataDirectory, "opencode.db")];
+    } else {
+      partial = directory.failure.reason._tag !== "NotFound";
+      paths = [path.join(dataDirectory, "opencode.db")];
     }
   }
   return {
     paths: [
       ...new Set(
-        await Promise.all(paths.map(async (file) => NodeFSP.realpath(file).catch(() => file))),
+        await Promise.all(
+          paths.map(async (file) =>
+            Effect.runPromise(fileSystem.realPath(file).pipe(Effect.orElseSucceed(() => file))),
+          ),
+        ),
       ),
     ].sort(),
     partial,
@@ -157,6 +168,7 @@ async function openDatabase(databasePath: string): Promise<Database> {
 
 export async function readOpenCodeUsage(
   databasePath: string,
+  fileSystem: FileSystem.FileSystem,
   options: {
     sinceTimeMs: number;
     untilTimeMs: number;
@@ -189,7 +201,8 @@ export async function readOpenCodeUsage(
           : null;
   try {
     if (databasePath === ":memory:") throw new Error("OpenCode in-memory history is unavailable.");
-    await NodeFSP.stat(databasePath);
+    const metadata = await Effect.runPromise(Effect.result(fileSystem.stat(databasePath)));
+    if (Result.isFailure(metadata)) throw metadata.failure;
     database = await openDatabase(databasePath);
     const tables = database
       .prepare(
@@ -304,7 +317,13 @@ export async function readOpenCodeUsage(
       message = "OpenCode history contains malformed or oversized records in the examined rows.";
     }
   } catch (error) {
-    const code = object(error)?.code;
+    const reason = object(object(error)?.reason)?._tag;
+    const code =
+      reason === "NotFound"
+        ? "ENOENT"
+        : reason === "PermissionDenied"
+          ? "EACCES"
+          : object(error)?.code;
     status = code === "ENOENT" ? "missing" : records.size ? "partial" : "failed";
     message =
       code === "ENOENT"
