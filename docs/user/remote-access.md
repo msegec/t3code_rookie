@@ -226,5 +226,11 @@ To use an existing background service, save its pairing URL through **Add enviro
 → Remote link**. The desktop then connects to that service without starting its own
 server.
 
+Dynamic application previews require a connected local Node-based T3 service
+over a direct HTTP connection. Keep one local service connected to host previews
+for remote projects; multiple possible hosts are reported as ambiguous. SSH and
+relay connections cannot supply the local preview host. Workspace-file previews
+remain available through the project environment connection.
+
 Turn **Local environment** back on in the same place to restart with your saved
 local settings.

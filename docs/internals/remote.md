@@ -74,7 +74,11 @@ flow. The server owns thread-to-worktree resolution and path validation. Navigat
 is negotiated separately from operation support, so an older host can reject a workspace-file
 target without attempting to interpret it as a port.
 
-Dynamic HTTP previews use the desktop's existing local T3 listener as a browser origin. A scoped
+Dynamic HTTP previews use a prepared local T3 connection as their browser origin. The primary
+connection takes precedence, followed by the project's direct loopback HTTP connection, then the
+only eligible connected local service. SSH and relay connections cannot supply this listener.
+Multiple fallback candidates are rejected; the selected connection owns route cleanup and cache
+identity. Its advertised preview port must match the saved service endpoint. A scoped
 `t3-preview-*.localhost` host routes through the environment's existing HTTP endpoint to its
 loopback application port. The same transport streams HTTP and WebSocket upgrades; it adds no
 listener, process, dependency, HTML rewriting or application port exposure. Relay and SSH
@@ -93,7 +97,9 @@ desktop-local; a different desktop must reopen the logical application target.
 The desktop setting `localEnvironmentEnabled` defaults to true. Turning it off
 restarts the app without deleting local state. Startup skips port selection,
 server exposure, and the primary and WSL backends, then opens the window directly.
-The desktop control socket remains available in this mode.
+The desktop control socket remains available in this mode. Local project-open
+requests focus the window and return `renderer-unavailable` immediately while
+local execution is disabled.
 
 The renderer reads `desktopBridge.getLocalEnvironmentEnabled()` and has no
 primary target when local execution is disabled. Primary authentication and
