@@ -1,3 +1,4 @@
+import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   acquirePreviewGateway,
@@ -6,6 +7,7 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 
+import { environmentCatalog } from "~/connection/catalog";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { isPreviewSupportedInRuntime, previewStateAtom } from "~/previewStateStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -52,6 +54,40 @@ export function releaseUnusedPreviewGateway(url: string): void {
   }
 }
 
+function isLocalGatewayConnection(
+  connection: PreparedConnection | null,
+): connection is PreparedConnection {
+  if (connection?.target._tag !== "BearerConnectionTarget") return false;
+  const url = new URL(connection.httpBaseUrl);
+  return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+}
+
+function readPreviewGatewayHost(connection: PreparedConnection): PreparedConnection {
+  const primaryId = appAtomRegistry.get(primaryEnvironmentIdAtom);
+  const primary = primaryId ? readPreparedConnection(primaryId) : null;
+  if (primary) return primary;
+  if (isLocalGatewayConnection(connection)) return connection;
+  let host: PreparedConnection | null = null;
+  for (const environmentId of appAtomRegistry
+    .get(environmentCatalog.catalogValueAtom)
+    .entries.keys()) {
+    const candidate = readPreparedConnection(environmentId);
+    if (!isLocalGatewayConnection(candidate)) continue;
+    if (host) {
+      throw new Error(
+        "Dynamic previews found multiple connected local T3 services. Enable the desktop Local environment or open a project on the intended local service.",
+      );
+    }
+    host = candidate;
+  }
+  if (!host) {
+    throw new Error(
+      "Dynamic previews need a connected local HTTP T3 service. Enable the desktop Local environment or connect a local Node T3 service.",
+    );
+  }
+  return host;
+}
+
 export async function resolvePreviewGateway(
   threadRef: ScopedThreadRef,
   port: number,
@@ -59,20 +95,18 @@ export async function resolvePreviewGateway(
   if (!isPreviewSupportedInRuntime()) {
     throw new Error("Dynamic previews require a connected T3 desktop browser host.");
   }
-  const primaryId = appAtomRegistry.get(primaryEnvironmentIdAtom);
-  const primary = primaryId ? readPreparedConnection(primaryId) : null;
   const connection = readPreparedConnection(threadRef.environmentId);
-  if (!connection || !primary || !primaryId) {
-    throw new Error(
-      "Dynamic previews need both the project environment and local desktop backend connected.",
-    );
+  if (!connection) {
+    throw new Error("Dynamic previews need the project environment connected.");
   }
+  const host = readPreviewGatewayHost(connection);
   const key = JSON.stringify([
     threadRef.environmentId,
     threadRef.threadId,
     port,
     connection.httpBaseUrl,
-    primary.httpBaseUrl,
+    host.environmentId,
+    host.httpBaseUrl,
   ]);
   const existing = routes.get(key);
   if (existing && existing.expiresAt > Date.now() + 30_000) return existing.origin;
@@ -90,7 +124,7 @@ export async function resolvePreviewGateway(
       threadRef,
       port,
       httpBaseUrl: connection.httpBaseUrl,
-      primary: { environmentId: primaryId, httpBaseUrl: primary.httpBaseUrl },
+      primary: host,
       issue: async (input) => {
         const result = await gateway.issue.run(appAtomRegistry, {
           environmentId: threadRef.environmentId,
@@ -101,7 +135,7 @@ export async function resolvePreviewGateway(
       },
       register: async (input) => {
         const result = await gateway.register.run(appAtomRegistry, {
-          environmentId: primaryId,
+          environmentId: host.environmentId,
           input,
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -118,13 +152,22 @@ export async function resolvePreviewGateway(
       for (const unsubscribe of unsubscribers) unsubscribe();
       if (revoke)
         void gateway.revoke.run(appAtomRegistry, {
-          environmentId: primaryId,
+          environmentId: host.environmentId,
           input: { origin: lease.origin },
         });
     };
+    if (
+      host.target._tag === "BearerConnectionTarget" &&
+      new URL(lease.origin).port !== new URL(host.httpBaseUrl).port
+    ) {
+      dispose();
+      throw new Error(
+        "The local T3 service returned a preview port that does not match its connected endpoint. Connect directly to the local service and try again.",
+      );
+    }
     const isCurrent = () =>
       readPreparedConnection(threadRef.environmentId) === connection &&
-      readPreparedConnection(primaryId) === primary;
+      readPreparedConnection(host.environmentId) === host;
     if (!isCurrent()) {
       dispose();
       throw new Error(
@@ -140,7 +183,7 @@ export async function resolvePreviewGateway(
       );
     observed = inUse();
     routes.set(key, { ...lease, port, threadRef, inUse, dispose });
-    for (const environmentId of new Set([primaryId, threadRef.environmentId])) {
+    for (const environmentId of new Set([host.environmentId, threadRef.environmentId])) {
       unsubscribers.push(
         appAtomRegistry.subscribe(
           environmentSession.preparedConnectionValueAtom(environmentId),

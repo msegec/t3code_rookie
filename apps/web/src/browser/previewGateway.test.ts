@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   register: vi.fn(),
   revoke: vi.fn(),
 }));
+vi.mock("~/connection/catalog", () => ({ environmentCatalog: { catalogValueAtom: "catalog" } }));
 vi.mock("~/connection/runtime", () => ({ connectionAtomRuntime: {} }));
 vi.mock("~/state/primaryEnvironment", () => ({ primaryEnvironmentIdAtom: "primary" }));
 vi.mock("~/previewStateStore", () => ({
@@ -53,8 +54,17 @@ beforeEach(() => {
   mocks.connections.clear();
   mocks.values.clear();
   mocks.subscribers.clear();
-  mocks.connections.set("local", { httpBaseUrl: "http://127.0.0.1:3773" });
-  mocks.connections.set("remote", { httpBaseUrl: "https://remote.relay.t3.codes" });
+  mocks.connections.set("local", {
+    environmentId: "local",
+    target: { _tag: "PrimaryConnectionTarget" },
+    httpBaseUrl: "http://127.0.0.1:3773",
+  });
+  mocks.connections.set("remote", {
+    environmentId: "remote",
+    target: { _tag: "RelayConnectionTarget" },
+    httpBaseUrl: "https://remote.relay.t3.codes",
+  });
+  mocks.values.set("catalog", { entries: mocks.connections });
   mocks.values.set("primary", EnvironmentId.make("local"));
   mocks.values.set("preview", { sessions: {} });
   mocks.issue.mockReset().mockResolvedValue({
@@ -153,5 +163,148 @@ describe("preview gateway lease lifecycle", () => {
         input: expect.objectContaining({ gatewayUrl: "http://127.0.0.1:48219/api/preview/cap/" }),
       }),
     );
+  });
+});
+
+describe("preview gateway host selection", () => {
+  function addService(
+    id = "service",
+    httpBaseUrl = "http://localhost:3773",
+    tag = "BearerConnectionTarget",
+  ) {
+    mocks.connections.set(id, { environmentId: id, httpBaseUrl, target: { _tag: tag } });
+  }
+
+  it("prefers the embedded primary over the current local service", async () => {
+    addService("remote");
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await resolvePreviewGateway(threadRef, 5173);
+    expect(mocks.register).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ environmentId: "local" }),
+    );
+  });
+
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "uses the current direct %s service despite other candidates",
+    async (hostname) => {
+      mocks.values.set("primary", null);
+      addService("remote", `http://${hostname}:3773`);
+      addService();
+      const { resolvePreviewGateway } = await import("./previewGateway");
+      await resolvePreviewGateway(threadRef, 5173);
+      expect(mocks.register).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ environmentId: "remote" }),
+      );
+    },
+  );
+
+  it("routes a remote project through the sole local service and releases it on disconnect", async () => {
+    mocks.values.set("primary", null);
+    addService();
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await resolvePreviewGateway(threadRef, 5173);
+    expect(mocks.issue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ environmentId: "remote" }),
+    );
+    expect(mocks.register).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        environmentId: "service",
+        input: expect.objectContaining({
+          gatewayUrl: "https://remote.relay.t3.codes/api/preview/cap/",
+        }),
+      }),
+    );
+    mocks.connections.delete("service");
+    publish("service", null);
+    expect(mocks.revoke).toHaveBeenCalledWith(expect.anything(), {
+      environmentId: "service",
+      input: { origin },
+    });
+    expect([...mocks.subscribers.values()].every((set) => set.size === 0)).toBe(true);
+  });
+
+  it("does not reuse a cached route when the selected host identity changes", async () => {
+    mocks.values.set("primary", null);
+    addService();
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await resolvePreviewGateway(threadRef, 5173);
+    mocks.connections.delete("service");
+    addService("replacement");
+    await resolvePreviewGateway(threadRef, 5173);
+    expect(mocks.issue).toHaveBeenCalledTimes(2);
+    expect(mocks.register).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ environmentId: "replacement" }),
+    );
+  });
+
+  it("uses the sole local service while the primary is unprepared", async () => {
+    mocks.connections.delete("local");
+    addService();
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await resolvePreviewGateway(threadRef, 5173);
+    expect(mocks.register).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ environmentId: "service" }),
+    );
+  });
+
+  it("rejects ambiguous local services before issuing a route", async () => {
+    mocks.values.set("primary", null);
+    addService();
+    addService("other");
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await expect(resolvePreviewGateway(threadRef, 5173)).rejects.toThrow(
+      "multiple connected local T3 services",
+    );
+    expect(mocks.issue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["SshConnectionTarget", "http://127.0.0.1:3773"],
+    ["RelayConnectionTarget", "http://localhost:3773"],
+    ["BearerConnectionTarget", "https://localhost:3773"],
+    ["BearerConnectionTarget", "http://remote.example:3773"],
+  ])("excludes %s at %s", async (tag, url) => {
+    mocks.values.set("primary", null);
+    addService("remote", url, tag);
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await expect(resolvePreviewGateway(threadRef, 5173)).rejects.toThrow(
+      "need a connected local HTTP T3 service",
+    );
+    expect(mocks.issue).not.toHaveBeenCalled();
+  });
+
+  it("rejects and releases a saved service route returned on a different local port", async () => {
+    mocks.values.set("primary", null);
+    addService("service", "http://localhost:48219");
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await expect(resolvePreviewGateway(threadRef, 5173)).rejects.toThrow(
+      "preview port that does not match",
+    );
+    expect(mocks.revoke).toHaveBeenCalledWith(expect.anything(), {
+      environmentId: "service",
+      input: { origin },
+    });
+    expect(mocks.subscribers.size).toBe(0);
+  });
+
+  it("revokes an acquisition if its selected service changes before registration finishes", async () => {
+    mocks.values.set("primary", null);
+    addService();
+    mocks.register.mockImplementation(async () => {
+      addService();
+      return { _tag: "Success", value: { origin, expiresAt: Date.now() + 900_000 } };
+    });
+    const { resolvePreviewGateway } = await import("./previewGateway");
+    await expect(resolvePreviewGateway(threadRef, 5173)).rejects.toThrow("connection changed");
+    expect(mocks.revoke).toHaveBeenCalledWith(expect.anything(), {
+      environmentId: "service",
+      input: { origin },
+    });
   });
 });
