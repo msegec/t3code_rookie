@@ -49,6 +49,21 @@ NodeTest.test("release jobs write no Actions artifacts or caches", () => {
   );
   NodeAssert.match(workflow, /on:\n  workflow_dispatch:/);
   NodeAssert.doesNotMatch(workflow, /^  (push|pull_request|schedule):/m);
+  const jobs = [...workflow.matchAll(/^  (\w+):\n((?:    .*\n|\n)+)/gm)].filter(
+    ([, , body]) => body.includes("    runs-on:"),
+  );
+  NodeAssert.deepEqual(
+    jobs.map(([, name]) => name),
+    ["build", "build_macos", "build_linux", "publish"],
+  );
+  NodeAssert.match(
+    jobs[0][2],
+    /^    if: \$\{\{ github\.event\.repository\.visibility == 'public' \}\}$/m,
+  );
+  for (const [, , body] of jobs.slice(1)) {
+    NodeAssert.match(body, /^    needs: (?:build|\[build, build_macos, build_linux\])$/m);
+    NodeAssert.doesNotMatch(body, /^    if:/m);
+  }
 });
 
 NodeTest.test(
