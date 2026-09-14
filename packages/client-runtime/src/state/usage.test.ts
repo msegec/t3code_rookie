@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentPresentation } from "../connection/presentation.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
-import { refreshUsage } from "./usage.ts";
+import { refreshUsage, usageSummaryInput } from "./usage.ts";
 
 const input = {
   sinceDay: UsageDay.make("2026-09-05"),
@@ -63,8 +63,16 @@ function harness(ids = ["a"]) {
     environmentIds: environments.map((entry) => entry.environmentId),
     input,
     server: {
-      usageSummary: ({ environmentId }: { environmentId: EnvironmentId }) =>
-        get(environmentId).query,
+      usageSummary: ({
+        environmentId,
+        input: request,
+      }: {
+        environmentId: EnvironmentId;
+        input: Parameters<typeof usageSummaryInput>[0];
+      }) => {
+        expect(request.maxContractVersion).toBe(USAGE_CONTRACT_VERSION);
+        return get(environmentId).query;
+      },
       refreshUsageRates: {
         label: "test:rates",
         run: (
@@ -181,4 +189,12 @@ describe("manual usage refresh", () => {
     expect(reads).toBe(2);
     unmount();
   });
+});
+
+it("negotiates the current summary format for initial and refreshed window keys", () => {
+  expect(usageSummaryInput(input)).toEqual({
+    ...input,
+    maxContractVersion: USAGE_CONTRACT_VERSION,
+  });
+  expect(usageSummaryInput({ ...input, maxContractVersion: 4 })).toEqual(usageSummaryInput(input));
 });

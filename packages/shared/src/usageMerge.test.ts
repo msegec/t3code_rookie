@@ -155,11 +155,7 @@ describe("mergeUsage", () => {
         ),
         environment(
           "env-b",
-          summary(
-            [bucket()],
-            [{ provider: "claude", hostId: "linux", homePath: "/b" }],
-            USAGE_CONTRACT_VERSION - 2,
-          ),
+          summary([bucket()], [{ provider: "claude", hostId: "linux", homePath: "/b" }], 3),
         ),
       ],
       USAGE_CONTRACT_VERSION,
@@ -371,3 +367,89 @@ describe("mergeUsage", () => {
     expect(merged.daily[0]?.costUsd).toBe(10);
   });
 });
+
+it("owns exact sources when environments partially overlap", () => {
+  const a = summary(
+    [bucket({ sourceIndex: 0 })],
+    [{ provider: "claude", hostId: "host", homePath: "/a" }],
+  );
+  const b = summary(
+    [bucket({ sourceIndex: 0 }), bucket({ sourceIndex: 1, costUsd: 4 })],
+    [
+      { provider: "claude", hostId: "host", homePath: "/a" },
+      { provider: "claude", hostId: "host", homePath: "/b" },
+    ],
+  );
+  expect(mergeUsage([environment("a", a), environment("b", b)], 6).costUsd).toBe(14);
+  const legacy = { ...b, buckets: b.buckets.map(({ sourceIndex: _index, ...item }) => item) };
+  const merged = mergeUsage([environment("a", a), environment("b", legacy)], 6);
+  expect(merged.costUsd).toBe(10);
+  expect(merged.incompleteSources).toHaveLength(1);
+});
+
+it("prefers a healthy and then fresher physical-source snapshot", () => {
+  const base = summary(
+    [bucket({ sourceIndex: 0 })],
+    [{ provider: "claude", hostId: "host", homePath: "/a" }],
+  );
+  const failed = {
+    ...base,
+    sources: base.sources.map((source) => ({ ...source, status: "failed" as const })),
+  };
+  expect(mergeUsage([environment("a", failed), environment("z", base)], 6).costUsd).toBe(10);
+  const newer = {
+    ...base,
+    readAt: "2026-08-08T00:00:00.000Z",
+    buckets: [bucket({ sourceIndex: 0, costUsd: 20 })],
+  };
+  expect(mergeUsage([environment("a", base), environment("z", newer)], 6).costUsd).toBe(20);
+});
+
+it("rejects invalid source attribution without provider fallback", () => {
+  const invalid = summary(
+    [bucket({ sourceIndex: 4 }), bucket({ sourceIndex: 0, provider: "codex" })],
+    [{ provider: "claude", hostId: "host", homePath: "/a" }],
+  );
+  const merged = mergeUsage([environment("a", invalid)], 6);
+  expect(merged.records).toBe(0);
+  expect(merged.incompleteSources).toHaveLength(2);
+});
+
+it("a corrupt newer attribution cannot hide a healthy shared source", () => {
+  const base = summary(
+    [bucket({ sourceIndex: 0 })],
+    [{ provider: "claude", hostId: "host", homePath: "/a" }],
+  );
+  const corrupt = {
+    ...base,
+    readAt: "2026-08-08T00:00:00.000Z",
+    buckets: [bucket({ sourceIndex: 100, costUsd: 20 })],
+  };
+  const merged = mergeUsage([environment("a", corrupt), environment("z", base)], 6);
+  expect(merged.costUsd).toBe(10);
+  expect(merged.sessions).toBe(1);
+  expect(merged.incompleteSources).toHaveLength(1);
+});
+
+it.each(["missing", "failed"] as const)(
+  "a %s account does not exclude healthy legacy provider totals",
+  (status) => {
+    const base = summary(
+      [bucket()],
+      [
+        { provider: "claude", hostId: "host", homePath: "/a" },
+        { provider: "claude", hostId: "host", homePath: "/b" },
+      ],
+    );
+    const mixed = {
+      ...base,
+      sources: base.sources.map((source, index) =>
+        index === 1 ? { ...source, status, distinctSessions: 0 } : source,
+      ),
+    };
+    const merged = mergeUsage([environment("a", mixed)], 6);
+    expect(merged.costUsd).toBe(10);
+    expect(merged.sessions).toBe(1);
+    expect(merged.incompleteSources).toHaveLength(0);
+  },
+);

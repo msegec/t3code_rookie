@@ -1,0 +1,85 @@
+import * as Schema from "effect/Schema";
+import { NonNegativeInt, TrimmedNonEmptyString } from "@t3tools/contracts";
+export const USAGE_CONTRACT_VERSION = 4 as const;
+export const UsageProviderKind = Schema.Literals(["claude", "codex"]);
+export type UsageProviderKind = typeof UsageProviderKind.Type;
+const USAGE_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const UsageDay = TrimmedNonEmptyString.check(Schema.isPattern(USAGE_DAY_PATTERN)).pipe(
+  Schema.brand("UsageDay"),
+);
+export type UsageDay = typeof UsageDay.Type;
+export const UsageResolution = Schema.Literals(["day", "hour"]);
+export type UsageResolution = typeof UsageResolution.Type;
+export const UsageCostSource = Schema.Literals(["providerReported", "modelPriced", "unpriced"]);
+export type UsageCostSource = typeof UsageCostSource.Type;
+export const UsageTokenTotals = Schema.Struct({
+  uncachedInputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningTokens: NonNegativeInt,
+});
+export type UsageTokenTotals = typeof UsageTokenTotals.Type;
+export const UsageBucket = Schema.Struct({
+  day: UsageDay,
+  hourStart: Schema.optional(TrimmedNonEmptyString),
+  provider: UsageProviderKind,
+  model: TrimmedNonEmptyString,
+  totals: UsageTokenTotals,
+  costUsd: Schema.Number,
+  cacheSavingsUsd: Schema.Number,
+  costSource: UsageCostSource,
+  records: NonNegativeInt,
+  unpricedRecords: NonNegativeInt,
+  sessions: NonNegativeInt,
+});
+export type UsageBucket = typeof UsageBucket.Type;
+export const UsageSourceFingerprint = Schema.Struct({
+  hostId: TrimmedNonEmptyString,
+  provider: UsageProviderKind,
+  resolvedHomePath: TrimmedNonEmptyString,
+  volumeId: Schema.String,
+});
+export type UsageSourceFingerprint = typeof UsageSourceFingerprint.Type;
+export const UsageSourceStatus = Schema.Literals(["ok", "missing", "partial", "failed"]);
+export type UsageSourceStatus = typeof UsageSourceStatus.Type;
+export const UsageSource = Schema.Struct({
+  fingerprint: UsageSourceFingerprint,
+  status: UsageSourceStatus,
+  scannedFiles: NonNegativeInt,
+  skippedFiles: NonNegativeInt,
+  malformedRecords: NonNegativeInt,
+  distinctSessions: NonNegativeInt,
+  message: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type UsageSource = typeof UsageSource.Type;
+export const UsagePricingStatus = Schema.Literals(["fresh", "cached", "unavailable"]);
+export type UsagePricingStatus = typeof UsagePricingStatus.Type;
+export const UsagePricing = Schema.Struct({
+  status: UsagePricingStatus,
+  source: TrimmedNonEmptyString,
+  fetchedAt: Schema.NullOr(Schema.String),
+  knownModels: NonNegativeInt,
+});
+export type UsagePricing = typeof UsagePricing.Type;
+export const UsageSummaryInput = Schema.Struct({
+  sinceDay: UsageDay,
+  untilDay: UsageDay,
+  timeZone: TrimmedNonEmptyString,
+  resolution: Schema.optional(UsageResolution),
+  sinceTime: Schema.optional(TrimmedNonEmptyString),
+  untilTime: Schema.optional(TrimmedNonEmptyString),
+});
+export type UsageSummaryInput = typeof UsageSummaryInput.Type;
+export const UsageSummary = Schema.Struct({
+  contractVersion: Schema.Number,
+  readAt: Schema.String,
+  timeZone: TrimmedNonEmptyString,
+  sinceDay: UsageDay,
+  untilDay: UsageDay,
+  buckets: Schema.Array(UsageBucket),
+  sources: Schema.Array(UsageSource),
+  pricing: UsagePricing,
+  scanDurationMs: NonNegativeInt,
+});
+export type UsageSummary = typeof UsageSummary.Type;
