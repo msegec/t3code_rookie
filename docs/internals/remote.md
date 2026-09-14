@@ -87,6 +87,7 @@ Routes stay in bounded memory, expire after 15 minutes idle, retain active trans
 revocation. Existing session-removal events revoke owned routes without polling. The client releases
 unused routes on tab closure, failed loads and connection changes. Physical preview URLs remain
 desktop-local; a different desktop must reopen the logical application target.
+
 ## Desktop without a local environment
 
 The desktop setting `localEnvironmentEnabled` defaults to true. Turning it off
