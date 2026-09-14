@@ -3837,6 +3837,7 @@ const AgentSpawnRow = memo(function AgentSpawnRow(props: {
 });
 
 const AGENT_MEMBER_STATUS_LABEL: Record<RuntimeSubagent["status"], string> = {
+  unknown: "Status unknown",
   pending: "Working",
   running: "Working",
   waiting: "Working",
