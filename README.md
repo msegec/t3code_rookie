@@ -22,18 +22,29 @@ Newer upstream nightlies may already contain some of these changes.
   and keeps its connection details.
 - Full upstream and fork release notes in the desktop update prompt.
 
-Queued for a future build: Project Settings opens the checkout selected in the
-sidebar and shows its icon and accent. Group settings use the same representative
-checkout as the sidebar. Tracked in [upstream PR #11406](https://github.com/pingdotgg/t3code/pull/11406).
-This fix is configured on `main` but is not in the published build linked above.
+Queued for a future build:
+
+- Project Settings opens the checkout selected in the sidebar and shows its icon
+  and accent. Group settings use the same representative checkout as the sidebar.
+  Tracked in [upstream PR #11406](https://github.com/pingdotgg/t3code/pull/11406).
+- Cursor model discovery avoids creating disposable chats.
+- Compressed file previews keep their content type so HTML previews render correctly.
+- OpenCode usage history, source-specific totals, and explicit provider coverage.
+  Cursor and Antigravity history remain unavailable.
+- Desktop can connect to an existing background service with its local server
+  disabled. Browser previews can reuse a connected local service.
+
+These fixes are configured on `main` but are not in the published build linked above.
 
 ## How our releases work
 
 `/t3-fleet-release` takes an official nightly, reapplies our saved changes
 (called overlays), and checks that the combined app builds and passes its tests.
-If changes clash, we repair them before building. One paid build needs Mark's
-confirmation; it publishes downloads that clients pick up through their normal
-update flow.
+If changes clash, we repair them before building. Publication needs Mark's
+confirmation and a verified build cost. Standard public GitHub runners build the
+release, with temporary files kept in a separate draft Release instead of Actions
+artifacts or caches. Published downloads reach clients through their normal update
+flow.
 
 The [overlay list](.mzs/overlays.json) selects the changes for the next build.
 Each release records its exact nightly and applied changes in its release notes
