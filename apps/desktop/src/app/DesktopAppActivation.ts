@@ -22,6 +22,7 @@ import type * as Electron from "electron";
 
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL } from "../ipc/channels.ts";
+import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import { DesktopAppActivationBroker } from "./DesktopAppActivationBroker.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -217,6 +218,7 @@ const { logWarning } = makeComponentLogger("desktop-app-activation");
 export const make = Effect.gen(function* () {
   const desktopEnvironment = yield* DesktopEnvironment.DesktopEnvironment;
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
+  const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const path = yield* Path.Path;
   const userId = yield* HostProcessUserId;
@@ -256,7 +258,28 @@ export const make = Effect.gen(function* () {
           startDesktopAppControlServer({
             ...address,
             userId,
-            handle: (request) => broker.request(request),
+            handle: (request) =>
+              runPromise(
+                Effect.gen(function* () {
+                  const settings = yield* desktopSettings.get;
+                  if (!settings.localEnvironmentEnabled) {
+                    yield* desktopWindow.activate.pipe(
+                      Effect.catchCause((cause) =>
+                        logWarning("failed to focus the desktop window", { cause }),
+                      ),
+                    );
+                    return {
+                      version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
+                      requestId: request.requestId,
+                      ok: false as const,
+                      code: "renderer-unavailable" as const,
+                      message:
+                        "The local environment is turned off. Enable it in Settings > Connections to open a local project.",
+                    };
+                  }
+                  return yield* Effect.promise(() => broker.request(request));
+                }),
+              ),
             cancel: (requestId) => broker.cancel(requestId),
           }),
         catch: (cause) => new DesktopAppActivationStartError({ address: address.address, cause }),
