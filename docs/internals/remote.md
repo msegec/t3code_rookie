@@ -64,9 +64,44 @@ Desktop normally launches its own primary server, but the desktop setting `local
 (`apps/desktop/src/settings/DesktopAppSettings.ts`) turns that off. Changing it relaunches the app;
 no local state is deleted. On the next start the main process skips port selection, server exposure,
 and the primary and WSL backends, and opens the window right away. The desktop control socket
-remains available. The renderer sees this through
+remains available. Local project-open requests focus the window and return
+`renderer-unavailable` immediately while local execution is disabled. The renderer sees this through
 `desktopBridge.getLocalEnvironmentEnabled()`: `readPrimaryEnvironmentTarget` returns null, so primary
 auth and platform-managed discovery are skipped and only saved environments (pairing, relay, SSH)
 connect. This is possible because the desktop renderer is not served by the backend: the `t3code://`
 scheme serves the bundled client from disk (Vite in development) and API traffic always goes to the
 environment's own URL.
+
+## Collaborative browser context
+
+Providers receive one shared browser instruction block from
+[`T3BrowserInstructions.ts`](../../apps/server/src/provider/T3BrowserInstructions.ts). Codex and
+Claude use their instruction channels; OpenCode uses request system context. Cursor and Grok receive
+the block with the first successfully submitted prompt of each new or resumed ACP runtime because
+ACP has no system instruction field. The existing prompt semaphore owns delivery and retry state.
+Tool schemas own operation details. Current environment and browser-host facts
+appear only in `preview_status`, not in injected prompts or every navigation result.
+
+The automation broker keeps each provider session on its selected desktop host. That host resolves
+workspace files against its own prepared environment connection using the existing asset capability
+flow. The server owns thread-to-worktree resolution and path validation. Navigation target support
+is negotiated separately from operation support, so an older host can reject a workspace-file
+target without attempting to interpret it as a port.
+
+Dynamic HTTP previews use a prepared local T3 connection as their browser origin. The primary
+connection takes precedence, followed by the project's direct loopback HTTP connection, then the
+only eligible connected local service. SSH and relay connections cannot supply this listener.
+Multiple fallback candidates are rejected; the selected connection owns route cleanup and cache
+identity. Its advertised preview port must match the saved service endpoint. A scoped
+`t3-preview-*.localhost` host routes through the environment's existing HTTP endpoint to its
+loopback application port. The same transport streams HTTP and WebSocket upgrades; it adds no
+listener, process, dependency, HTML rewriting or application port exposure. Relay and SSH
+connections reuse their prepared endpoint. The initial transport requires Node on both T3 servers
+and HTTP at the application, although the environment endpoint may use HTTPS.
+
+Authenticated RPCs issue and register routes scoped to an environment, thread and application port.
+The environment validates the execution thread; the desktop validates its local backend connection.
+Routes stay in bounded memory, expire after 15 minutes idle, retain active transfers and close on
+revocation. Existing session-removal events revoke owned routes without polling. The client releases
+unused routes on tab closure, failed loads and connection changes. Physical preview URLs remain
+desktop-local; a different desktop must reopen the logical application target.
