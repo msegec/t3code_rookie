@@ -111,10 +111,15 @@ export function UsagePage() {
     useState<ReadonlySet<EnvironmentId> | null>(null);
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, selectedEnvironments, isPending, isPartial, refresh } = useUsage(
-    window,
-    selectedEnvironmentIds,
-  );
+  const {
+    merged,
+    environments,
+    selectedEnvironments,
+    isPending,
+    isPartial,
+    isUnreachable,
+    refresh,
+  } = useUsage(window, selectedEnvironmentIds);
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
@@ -356,6 +361,17 @@ export function UsagePage() {
               <UsageLimitsSection selectedEnvironmentIds={selectedEnvironmentIds} now={limitsNow} />
             ) : isPending ? (
               <UsageSkeleton />
+            ) : isUnreachable ? (
+              <>
+                <UsageCoverageNotice
+                  environments={selectedEnvironments}
+                  duplicateSources={merged.duplicateSources}
+                  staleEnvironments={merged.staleEnvironments}
+                />
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  No device reported usage. Reconnect a device or refresh to scan again.
+                </p>
+              </>
             ) : (
               <>
                 <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
@@ -644,10 +660,18 @@ function UsageCoverageNotice({
   readonly staleEnvironments: readonly string[];
 }) {
   const failed = environments.filter((environment) => environment.error !== null);
+  const offline = environments.filter(
+    (environment) => environment.offline && environment.summary === null,
+  );
   const stale = environments.filter((environment) =>
     staleEnvironments.includes(environment.environmentId),
   );
-  if (failed.length === 0 && stale.length === 0 && duplicateSources.length === 0) {
+  if (
+    failed.length === 0 &&
+    offline.length === 0 &&
+    stale.length === 0 &&
+    duplicateSources.length === 0
+  ) {
     return null;
   }
 
@@ -655,6 +679,11 @@ function UsageCoverageNotice({
     <div className="flex flex-col gap-1 border-t border-border px-2 py-2 text-xs text-muted-foreground">
       {failed.map((environment) => (
         <span key={environment.label}>{environment.label} could not report usage.</span>
+      ))}
+      {offline.map((environment) => (
+        <span key={environment.label}>
+          {environment.label} is offline and excluded from totals.
+        </span>
       ))}
       {stale.map((environment) => (
         <span key={environment.label}>
@@ -700,11 +729,15 @@ function UsageEnvironmentFilter({
       : `${selectedEnvironments.length} environments`;
   const pendingCount = selectedEnvironments.filter(
     (environment) =>
-      environment.error === null && (environment.isPending || environment.summary === null),
+      environment.error === null &&
+      !environment.offline &&
+      (environment.isPending || environment.summary === null),
   ).length;
   const hasIssue =
-    selectedEnvironments.some((environment) => environment.error !== null) ||
-    staleEnvironments.length > 0;
+    selectedEnvironments.some(
+      (environment) =>
+        environment.error !== null || (environment.offline && environment.summary === null),
+    ) || staleEnvironments.length > 0;
 
   return (
     <>

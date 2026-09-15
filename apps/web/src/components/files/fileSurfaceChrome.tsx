@@ -59,6 +59,40 @@ export const FILE_LINK_REVEAL_UNSAFE_CSS = `
     ) !important;
     color: var(--diffs-selection-number-fg) !important;
   }
+
+  [data-code-color-preview] {
+    position: relative;
+    white-space: nowrap;
+  }
+
+  [data-code-color-preview]::after {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset-block-start: 50%;
+    inset-inline-start: 100%;
+    width: 0;
+    height: 0;
+    --code-color-preview-border: color-mix(
+      in srgb,
+      var(--code-foreground) 35%,
+      transparent
+    );
+    pointer-events: none;
+    transform: translateY(-50%);
+    visibility: hidden;
+    transition:
+      box-shadow 0s,
+      visibility 0s;
+  }
+
+  [data-code-color-preview]:hover::after {
+    box-shadow:
+      0.68em 0 0 0.36em var(--code-color-preview),
+      0.68em 0 0 calc(0.36em + 1px) var(--code-color-preview-border);
+    visibility: visible;
+    transition-delay: 150ms;
+  }
 `;
 
 /**
