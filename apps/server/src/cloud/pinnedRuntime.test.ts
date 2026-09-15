@@ -97,6 +97,36 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     }),
   );
 
+  it.effect("downloads fleet runtime archives and checksums by default", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-fleet-" });
+      const fleetVersion = "0.0.41-nightly.20260916.1780.mzs.r1234abcdef56";
+      const fleetArchive = `t3-${fleetVersion}-linux-x64.tar.gz`;
+      const requests: string[] = [];
+      yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version: fleetVersion,
+        fs,
+        path,
+        platform: "linux",
+        arch: "x64",
+        httpClient: releaseHttpClient(
+          `${yield* archiveHex(archiveBytes)}  ${fleetArchive}\n`,
+          requests,
+        ),
+        runner: extractingRunner(fs, path),
+        validate: () => Effect.void,
+      });
+      const baseUrl = `https://github.com/msegec/t3code_rookie/releases/download/v${fleetVersion}`;
+      assert.deepEqual(requests, [
+        `${baseUrl}/SHA256SUMS`,
+        `${baseUrl}/${fleetArchive}`,
+      ]);
+    }),
+  );
+
   it.effect("refuses an archive whose checksum does not match the release", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

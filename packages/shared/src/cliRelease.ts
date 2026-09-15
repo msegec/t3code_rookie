@@ -1,3 +1,5 @@
+import { FLEET_RELEASE_BASE_URL, FLEET_RELEASE_REPOSITORY, isFleetVersion } from "./fleetRelease.ts";
+
 /**
  * Naming shared by the release workflow, the runtime installers, and
  * install scripts for the per-platform CLI archives attached to GitHub
@@ -59,9 +61,10 @@ const CLI_RELEASE_DEFAULT_BASE_URL = `https://github.com/${CLI_RELEASE_REPOSITOR
 /** Directory that `releases/download/<tag>/<asset>` lives under. */
 export function cliReleaseDownloadBaseUrl(
   version: string,
-  baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
+  baseUrl?: string,
 ): string {
-  return `${(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL).replace(/\/+$/, "")}/v${version}`;
+  const defaultBaseUrl = isFleetVersion(version) ? FLEET_RELEASE_BASE_URL : CLI_RELEASE_DEFAULT_BASE_URL;
+  return `${(baseUrl?.trim() || defaultBaseUrl).replace(/\/+$/, "")}/v${version}`;
 }
 
 /**
@@ -88,6 +91,7 @@ export const CLI_RELEASE_CHANNELS: ReadonlyArray<CliReleaseChannel> = [
 
 /** The release train a version was published on, derived from its prerelease tag. */
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
+  if (isFleetVersion(version)) return "nightly";
   const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";
 }
@@ -97,8 +101,9 @@ export function cliReleaseChannelOf(version: string): CliReleaseChannel {
  * until a channel match turns up; a busy nightly train can push the newest
  * preview or stable release past any single page.
  */
-export function cliReleaseIndexPageUrl(page: number): string {
-  return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases?per_page=100&page=${page}`;
+export function cliReleaseIndexPageUrl(page: number, currentVersion = ""): string {
+  const repository = isFleetVersion(currentVersion) ? FLEET_RELEASE_REPOSITORY : CLI_RELEASE_REPOSITORY;
+  return `https://api.github.com/repos/${repository}/releases?per_page=100&page=${page}`;
 }
 
 /**

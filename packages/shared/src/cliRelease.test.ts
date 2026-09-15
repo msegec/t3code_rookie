@@ -40,6 +40,24 @@ describe("cliRelease", () => {
     );
   });
 
+  it("keeps fleet downloads, channels and release discovery on the fleet", () => {
+    const version = "0.0.41-nightly.20260916.1780.mzs.r1234abcdef56";
+    expect(cliReleaseDownloadBaseUrl(version)).toBe(
+      `https://github.com/msegec/t3code_rookie/releases/download/v${version}`,
+    );
+    expect(cliReleaseDownloadBaseUrl(version, "https://mirror.example/t3/")).toBe(
+      `https://mirror.example/t3/v${version}`,
+    );
+    expect(cliReleaseDownloadBaseUrl(version, " ")).toBe(
+      `https://github.com/msegec/t3code_rookie/releases/download/v${version}`,
+    );
+    expect(cliReleaseChannelOf(version)).toBe("nightly");
+    expect(cliReleaseIndexPageUrl(2, version)).toBe(
+      "https://api.github.com/repos/msegec/t3code_rookie/releases?per_page=100&page=2",
+    );
+    expect(newestCliReleaseVersion([{ tag_name: `v${version}` }], "nightly")).toBe(version);
+  });
+
   it("parses sha256sum output including binary-mode markers", () => {
     const checksums = parseChecksums(
       [
