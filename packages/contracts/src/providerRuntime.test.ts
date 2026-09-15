@@ -6,6 +6,24 @@ import { classifyTaskAgentKind, ProviderRuntimeEvent } from "./providerRuntime.t
 const decodeRuntimeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
 
 describe("ProviderRuntimeEvent", () => {
+  it("preserves an unobservable background task status across the runtime contract", () => {
+    const event = decodeRuntimeEvent({
+      type: "task.progress",
+      eventId: "event-background",
+      provider: "cursor",
+      createdAt: "2026-09-07T00:00:00.000Z",
+      threadId: "thread-1",
+      payload: {
+        taskId: "background-task",
+        taskType: "subagent",
+        description: "Audit files",
+        status: "unknown",
+        summary: "Cursor does not report background task completion.",
+      },
+    });
+    expect(event.payload).toMatchObject({ status: "unknown", description: "Audit files" });
+  });
+
   it("requires input and output totals for complete turn usage", () => {
     const completeEvent = {
       type: "turn.completed",
