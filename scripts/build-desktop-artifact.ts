@@ -35,7 +35,11 @@ import {
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
-import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  resolveCatalogDependencies,
+  resolveLockedDependencies,
+  WorkspaceLock,
+} from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -358,7 +362,6 @@ const MAC_DESKTOP_BUILD_PREREQUISITES = [
   { id: "clang", description: "Xcode Command Line Tools (clang)" },
   { id: "make", description: "Xcode Command Line Tools (make)" },
   { id: "sips", description: "macOS image tool (sips)" },
-  { id: "iconutil", description: "macOS icon tool (iconutil)" },
   { id: "lipo", description: "Xcode universal-binary tool (lipo)" },
 ] as const;
 
@@ -1775,10 +1778,6 @@ export const preflightMacDesktopBuild = Effect.fn("preflightMacDesktopBuild")(fu
       clang: desktopBuildProbeSucceeds(ChildProcess.make("clang", ["--version"]), "clang"),
       make: desktopBuildProbeSucceeds(ChildProcess.make("make", ["--version"]), "make"),
       sips: desktopBuildProbeSucceeds(ChildProcess.make("sips", ["--help"]), "sips"),
-      iconutil: desktopBuildProbeSucceeds(
-        ChildProcess.make("xcrun", ["--find", "iconutil"]),
-        "iconutil",
-      ),
       lipo:
         arch === "universal"
           ? desktopBuildProbeSucceeds(ChildProcess.make("lipo", ["-version"]), "lipo")
@@ -2288,11 +2287,18 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
     return yield* new LinuxBrowserSecretHostError({ hostPlatform });
   }
   const path = yield* Path.Path;
+  const prebuilt = yield* Config.string("T3CODE_DESKTOP_BROWSER_SECRET").pipe(Config.option);
+  const digest = yield* Config.string("T3CODE_DESKTOP_BROWSER_SECRET_SHA256").pipe(Config.option);
   yield* runCommand(
     ChildProcess.make(
       "node",
       [
         path.join(input.repoRoot, "apps/desktop/scripts/build-browser-secret.mjs"),
+        ...Option.match(prebuilt, { onNone: () => [], onSome: (value) => ["--prebuilt", value] }),
+        ...Option.match(digest, {
+          onNone: () => [],
+          onSome: (value) => ["--prebuilt-sha256", value],
+        }),
         "--arch",
         input.arch === "arm64" ? "arm64" : "x64",
         "--output",
@@ -2304,67 +2310,14 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   );
 });
 
-function generateMacIconSet(
-  sourcePng: string,
-  targetIcns: string,
-  tmpRoot: string,
-  path: Path.Path,
-  verbose: boolean,
-) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const iconsetDir = path.join(tmpRoot, "icon.iconset");
-    yield* fs.makeDirectory(iconsetDir, { recursive: true });
-
-    const iconSizes = [16, 32, 128, 256, 512] as const;
-    for (const size of iconSizes) {
-      yield* runCommand(
-        ChildProcess.make(
-          {},
-        )`sips -z ${size} ${size} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}.png`)}`,
-        { label: `sips icon ${size}x${size}`, verbose },
-      );
-
-      const retinaSize = size * 2;
-      yield* runCommand(
-        ChildProcess.make(
-          {},
-        )`sips -z ${retinaSize} ${retinaSize} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}@2x.png`)}`,
-        { label: `sips icon ${size}x${size}@2x`, verbose },
-      );
-    }
-
-    yield* runCommand(ChildProcess.make({})`iconutil -c icns ${iconsetDir} -o ${targetIcns}`, {
-      label: "iconutil icns",
-      verbose,
-    });
-  });
-}
-
-function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: boolean) {
+export function stageMacIcons(stageResourcesDir: string, sourcePng: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     if (!(yield* fs.exists(sourcePng))) {
-      return yield* new DesktopIconSourceMissingError({
-        platform: "mac",
-        sourcePath: sourcePng,
-      });
+      return yield* new DesktopIconSourceMissingError({ platform: "mac", sourcePath: sourcePng });
     }
-
-    const tmpRoot = yield* fs.makeTempDirectoryScoped({
-      prefix: "t3code-icon-build-",
-    });
-
-    const iconPngPath = path.join(stageResourcesDir, "icon.png");
-    const iconIcnsPath = path.join(stageResourcesDir, "icon.icns");
-
-    yield* runCommand(ChildProcess.make({})`sips -z 512 512 ${sourcePng} --out ${iconPngPath}`, {
-      label: "sips mac icon",
-      verbose,
-    });
-
-    yield* generateMacIconSet(sourcePng, iconIcnsPath, tmpRoot, path, verbose);
+    yield* fs.copyFile(sourcePng, path.join(stageResourcesDir, "icon.png"));
   });
 }
 
@@ -2685,9 +2638,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
+    const hostPlatform = yield* HostProcessPlatform;
+    if (hostPlatform !== "darwin" && !signed) {
+      buildConfig.afterPack = path.join(repoRoot, "scripts/sign-macos-adhoc.ts");
+    }
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
-      icon: "icon.icns",
+      icon: "icon.png",
       category: "public.app-category.developer-tools",
       extendInfo: {
         NSScreenCaptureUsageDescription:
@@ -2784,7 +2741,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   verbose: boolean,
 ) {
   if (platform === "mac") {
-    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
+    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng);
     return;
   }
 
@@ -3352,6 +3309,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
   const workspaceConfig = yield* readWorkspaceConfig();
+  const workspaceLock = yield* Schema.decodeEffect(fromYaml(WorkspaceLock))(
+    yield* fs.readFileString(path.join(repoRoot, "pnpm-lock.yaml")),
+  );
   const workspaceCatalog = workspaceConfig.catalog ?? {};
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
@@ -3384,7 +3344,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   });
 
   const resolvedServerDependencies = yield* Effect.try({
-    try: () => resolveCatalogDependencies(serverDependencies, workspaceCatalog, "apps/server"),
+    try: () =>
+      resolveLockedDependencies(
+        selectCliRuntimeExternalDependencies(
+          resolveCatalogDependencies(serverDependencies, workspaceCatalog, "apps/server"),
+        ),
+        workspaceLock,
+        "apps/server",
+      ),
     catch: (cause) =>
       new DesktopBuildDependencyResolutionError({
         kind: "server-production",
@@ -3396,7 +3363,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     resolvedServerDependencies,
   );
   const resolvedDesktopRuntimeDependencies = yield* Effect.try({
-    try: () => resolveDesktopRuntimeDependencies(desktopPackageJson.dependencies, workspaceCatalog),
+    try: () =>
+      resolveLockedDependencies(
+        resolveDesktopRuntimeDependencies(desktopPackageJson.dependencies, workspaceCatalog),
+        workspaceLock,
+        "apps/desktop",
+      ),
     catch: (cause) =>
       new DesktopBuildDependencyResolutionError({
         kind: "desktop-runtime",
@@ -3405,6 +3377,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       }),
   });
 
+  const fffNodeVersion = resolvedServerDependencies["@ff-labs/fff-node"];
+  if (fffNodeVersion === undefined) {
+    return yield* new MissingServerProductionDependenciesError({ manifestPath: "pnpm-lock.yaml" });
+  }
   const appVersion = options.version ?? serverPackageJson.version;
   const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
@@ -3633,7 +3609,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
           serverDependencies: resolvedServerDependencies,
           desktopDependencies: resolvedDesktopRuntimeDependencies,
           arch: options.arch,
-          fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+          fffNodeVersion,
         });
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
@@ -3716,7 +3692,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       arch: options.arch,
       appVersion,
       runtimeExternalDependencies: resolvedServerRuntimeExternalDependencies,
-      fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+      fffNodeVersion,
       allowBuilds: workspaceAllowBuilds,
       patchedDependencies: workspacePatchedDependencies,
       overrides: resolvedOverrides,

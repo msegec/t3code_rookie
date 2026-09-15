@@ -65,6 +65,44 @@ const runExecutable = Effect.fn("runExecutable")(function* (
   return { stdout, stderr, exitCode };
 });
 
+export const smokeArchivePty = Effect.fn("smokeArchivePty")(function* (contentDir: string) {
+  const marker = "t3-cli-pty-smoke";
+  const result = yield* runExecutable(
+    process.execPath,
+    [
+      "--input-type=commonjs",
+      "-e",
+      `const requireArchive = require("node:module").createRequire(process.cwd() + "/package.json");
+const pty = requireArchive("./node_modules/node-pty");
+const terminal = pty.spawn(process.execPath, ["-e", "process.stdout.write('${marker}')"], {
+  cwd: process.cwd(), env: process.env, cols: 80, rows: 24,
+});
+const timer = setTimeout(() => {
+  terminal.kill();
+  console.error("PTY did not exit within 5s");
+  process.exit(1);
+}, 5000);
+terminal.onData(data => process.stdout.write(data));
+terminal.onExit(({ exitCode, signal }) => {
+  clearTimeout(timer);
+  process.exitCode = exitCode === 0 && !signal ? 0 : 1;
+});`,
+    ],
+    contentDir,
+  ).pipe(
+    Effect.timeout(Duration.seconds(10)),
+    Effect.mapError(
+      (error) => new CliArchiveSmokeError({ step: "spawning a PTY", detail: String(error) }),
+    ),
+  );
+  if (result.exitCode !== 0 || !result.stdout.includes(marker)) {
+    return yield* new CliArchiveSmokeError({
+      step: "spawning a PTY",
+      detail: `exit ${String(result.exitCode)}\n${result.stdout}${result.stderr}`,
+    });
+  }
+});
+
 const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   readonly archive: string;
   readonly expectVersion: string;
@@ -112,6 +150,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
       detail: `exit ${String(version.exitCode)}\n${version.stdout}${version.stderr}`,
     });
   }
+  yield* smokeArchivePty(contentDir);
 
   // Starting the server is what actually opens sqlite, loads the terminal
   // and search stacks (node-pty, fff, msgpackr-extract), and serves the
@@ -171,7 +210,9 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
       detail: `no 200 from / within 30s\n${stdout}${stderr}`,
     });
   }
-  yield* Effect.log(`[cli-smoke] ${root}: --version passed and serve answered on ${String(port)}.`);
+  yield* Effect.log(
+    `[cli-smoke] ${root}: --version and PTY spawn passed; serve answered on ${String(port)}.`,
+  );
 });
 
 const command = Command.make(
