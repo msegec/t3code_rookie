@@ -5,39 +5,78 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
+import { inventory, jobPlan, targets, signing } from "./local-build.mjs";
+const version = "0.0.41-nightly.20260916.1780.mzs.r123456abcdef";
 
 function fixture(t) {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "publish-test-"));
   t.after(() => NodeFS.rmSync(root, { recursive: true, force: true }));
   const release = NodePath.join(root, "release");
   NodeFS.mkdirSync(release);
-  const files = [
-    "release-notes.md",
-    "t3-1.0.tgz",
-    "t3-source-1.0.bundle",
-    "nightly-mac.yml",
-    "nightly-mac-arm64.yml",
-    "nightly-mac-x64.yml",
-    "test.dmg",
-    "test.zip",
-    "test.AppImage",
-    "nightly-linux.yml",
-  ];
-  for (const file of files) NodeFS.writeFileSync(NodePath.join(release, file), `content ${file}`);
+  const fleet = {
+    schemaVersion: 1,
+    version,
+    releaseTag: `v${version}`,
+    sourceSha: "b".repeat(40),
+    controlsSha: "a".repeat(40),
+    base: { tag: "v0.0.41-nightly.20260916.1780", sha: "c".repeat(40) },
+    overlays: [],
+    toolchain: { node: "24.21.0", vp: "0.3.1", rust: "1.93.0", seaNode: "26.8.2" },
+  };
+  const plan = {
+    schemaVersion: 1,
+    identity: NodeCrypto.createHash("sha256")
+      .update(JSON.stringify({ fleet, nativeInputs: null }))
+      .digest("hex"),
+    sourceTree: "d".repeat(40),
+    lockfileSha256: "e".repeat(64),
+    fleet,
+    targets,
+    signing,
+  };
+  const receipts = targets.map((target) => {
+    const [platform, arch] = target.split("-");
+    const job = jobPlan("", root, plan, platform, arch);
+    const extension = { linux: "AppImage", mac: "zip", win: "exe" }[platform];
+    const feed = {
+      "mac-arm64": "nightly-mac.yml",
+      "mac-x64": "nightly-mac-x64.yml",
+      "linux-x64": "nightly-linux.yml",
+      "linux-arm64": "nightly-linux-arm64.yml",
+      "win-x64": "nightly-win-x64.yml",
+      "win-arm64": "nightly-win-arm64.yml",
+    }[target];
+    const names = [
+      `T3-Code-${version}-${arch}.${extension}`,
+      feed,
+      ...(job.archive ? [job.archive] : []),
+    ];
+    for (const name of names) NodeFS.writeFileSync(NodePath.join(release, name), `asset ${name}`);
+    return {
+      schemaVersion: 1,
+      identity: plan.identity,
+      sourceTree: plan.sourceTree,
+      lockfileSha256: plan.lockfileSha256,
+      target,
+      host: "linux-x64",
+      signing: signing[platform],
+      smoke: { status: "not-run", reason: "Fixture" },
+      assets: inventory(release).filter((asset) => names.includes(asset.name)),
+    };
+  });
+  NodeFS.writeFileSync(NodePath.join(release, "mzs-fleet.json"), JSON.stringify(fleet));
+  for (const name of ["nightly.yml", "release-notes.md", `t3-source-${version}.bundle`])
+    NodeFS.writeFileSync(NodePath.join(release, name), `content ${name}\n`);
   NodeFS.writeFileSync(
-    NodePath.join(release, "mzs-fleet.json"),
-    JSON.stringify({ version: "1.0", releaseTag: "fleet-1.0" }),
+    NodePath.join(release, "build-provenance.json"),
+    JSON.stringify({ plan, receipts, assets: inventory(release) }),
   );
-  const checksum = NodeCrypto.createHash("sha256")
-    .update(NodeFS.readFileSync(NodePath.join(release, files[0])))
-    .digest("hex");
-  for (const file of [
-    "SHA256SUMS",
-    "SHA256SUMS.mac.arm64",
-    "SHA256SUMS.mac.x64",
-    "SHA256SUMS.linux.x64",
-  ])
-    NodeFS.writeFileSync(NodePath.join(release, file), `${checksum}  ${files[0]}\n`);
+  NodeFS.writeFileSync(
+    NodePath.join(release, "SHA256SUMS"),
+    inventory(release)
+      .map((asset) => `${asset.sha256}  ${asset.name}\n`)
+      .join(""),
+  );
   const state = NodePath.join(root, "state.json");
   NodeFS.writeFileSync(state, JSON.stringify({ release: null, writes: [] }));
   const mock = NodePath.join(root, "gh");
@@ -89,16 +128,17 @@ if(args[0] === 'release' && args[1] === 'view') {
     release,
     get: () => JSON.parse(NodeFS.readFileSync(state)),
     set: (value) => NodeFS.writeFileSync(state, JSON.stringify(value)),
-    run: (env = {}) =>
+    run: (env = {}, publish = true) =>
       NodeChildProcess.spawnSync(
         process.execPath,
         [
           new URL("./publish-release.mjs", import.meta.url).pathname,
           release,
           "test/repo",
-          "fleet-1.0",
-          "1.0",
+          `v${version}`,
+          version,
           "a".repeat(40),
+          ...(publish ? ["--publish"] : []),
         ],
         {
           encoding: "utf8",
@@ -148,7 +188,7 @@ NodeTest.test(
     NodeAssert.notEqual(f.run().status, 0);
     NodeAssert.deepEqual(f.get(), state);
     NodeFS.writeFileSync(NodePath.join(f.release, "nightly-mac.yml"), "changed");
-    NodeAssert.match(f.run().stderr, /Remote digest mismatch/);
+    NodeAssert.match(f.run().stderr, /Collected assets changed/);
     NodeAssert.deepEqual(f.get(), state);
   },
 );
@@ -166,7 +206,7 @@ NodeTest.test("verifies downloads when GitHub omits asset digests", (t) => {
 NodeTest.test("rejects damaged input before creating a release", (t) => {
   const f = fixture(t);
   NodeFS.writeFileSync(NodePath.join(f.release, "release-notes.md"), "damaged");
-  NodeAssert.match(f.run().stderr, /Invalid checksum/);
+  NodeAssert.match(f.run().stderr, /Collected assets changed/);
   NodeAssert.deepEqual(f.get().writes, []);
 });
 
@@ -216,8 +256,8 @@ NodeTest.test("refuses changed draft identity before recovering starter assets",
   NodeAssert.notEqual(f.run({ FAIL_ASSET: "nightly-mac.yml" }).status, 0);
   const state = f.get();
   state.release.assets.push({ id: 99, name: "nightly-mac.yml", size: 0, state: "starter" });
+  state.release.body = "changed draft identity";
   f.set(state);
-  NodeFS.writeFileSync(NodePath.join(f.release, "nightly-mac.yml"), "changed");
   NodeAssert.match(f.run().stderr, /incompatible immutable identity/);
   NodeAssert.deepEqual(f.get(), state);
 });
@@ -236,3 +276,22 @@ for (const asset of [
     NodeAssert.deepEqual(f.get(), state);
   });
 }
+
+NodeTest.test(
+  "default upload stays a draft until explicit publication and resumes without duplicate uploads",
+  (t) => {
+    const f = fixture(t);
+    let result = f.run({}, false);
+    NodeAssert.equal(result.status, 0, result.stderr);
+    NodeAssert.equal(f.get().release.draft, true);
+    NodeAssert.equal(f.get().writes.includes("publish"), false);
+    const uploads = f.get().writes.filter((write) => write.startsWith("upload:")).length;
+    result = f.run({}, false);
+    NodeAssert.equal(result.status, 0, result.stderr);
+    NodeAssert.equal(f.get().writes.filter((write) => write.startsWith("upload:")).length, uploads);
+    result = f.run();
+    NodeAssert.equal(result.status, 0, result.stderr);
+    NodeAssert.equal(f.get().release.draft, false);
+    NodeAssert.equal(f.get().writes.filter((write) => write.startsWith("upload:")).length, uploads);
+  },
+);

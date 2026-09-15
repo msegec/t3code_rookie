@@ -73,24 +73,9 @@ NodeTest.test("release rejects missing fleet routing before dependencies or buil
   NodeFS.mkdirSync(shared, { recursive: true });
   NodeFS.writeFileSync(
     NodePath.join(shared, "fleetRelease.ts"),
-    'export const fleetReleaseTarballUrl = () => "https://registry.npmjs.org/t3";',
+    'export const cliReleaseDownloadBaseUrl = () => "https://registry.npmjs.org/t3";',
   );
   NodeAssert.throws(() => assertFleetUpdateRouting(root), /Fleet update routing missing/);
-});
-
-NodeTest.test("both desktop packages retain fork feed checks and depend on preflight", () => {
-  const source = NodeFS.readFileSync(
-    new URL("../.github/workflows/mzs-fleet-build.yml", import.meta.url),
-    "utf8",
-  );
-  NodeAssert.equal(
-    source.match(/T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec\/t3code_rookie/g)?.length,
-    2,
-  );
-  NodeAssert.equal(source.match(/owner: msegec/g)?.length, 2);
-  NodeAssert.equal(source.match(/repo: t3code_rookie/g)?.length, 2);
-  NodeAssert.match(source, /node "\$RUNNER_TEMP\/preflight-release.mjs" "\$PWD"/);
-  NodeAssert.equal(source.match(/needs: build/g)?.length, 2);
 });
 
 for (const failedStage of ["typecheck", "tests"]) {
@@ -98,11 +83,11 @@ for (const failedStage of ["typecheck", "tests"]) {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-preflight-order-"));
     test.after(() => NodeFS.rmSync(root, { recursive: true, force: true }));
     const files = {
-      "packages/shared/src/fleetRelease.ts":
-        "https://github.com/msegec/t3code_rookie/releases/download fleetReleaseTarballUrl",
-      "apps/server/src/cloud/pinnedRuntime.ts":
-        "fleetReleaseTarballUrl(version) pinnedRuntimePackageSpec(input.version)",
-      "packages/ssh/src/command.ts": "fleetReleaseTarballUrl(appVersion)",
+      "packages/shared/src/fleetRelease.ts": "msegec/t3code_rookie",
+      "packages/shared/src/cliRelease.ts":
+        "FLEET_RELEASE_BASE_URL FLEET_RELEASE_REPOSITORY cliReleaseDownloadBaseUrl",
+      "apps/server/src/cloud/pinnedRuntime.ts": "cliReleaseDownloadBaseUrl",
+      "packages/ssh/src/tunnel.ts": "cliReleaseDownloadBaseUrl",
       "apps/server/src/cloud/selfUpdate.ts":
         "ensurePinnedRuntimeInstalled({ launcher.requestUpdate({ targetVersion",
       "apps/web/src/components/ServerUpdateAction.tsx": "serverEnvironment.updateServer",
@@ -148,11 +133,11 @@ if (${JSON.stringify(failedStage)} === "typecheck" ? args.includes("typecheck") 
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    NodeAssert.equal(commands.length, failedStage === "typecheck" ? 2 : 3);
-    NodeAssert.deepEqual(commands[0], ["i", "--frozen-lockfile"]);
-    NodeAssert.equal(commands[1].at(-1), "typecheck");
+    NodeAssert.equal(commands.length, failedStage === "typecheck" ? 3 : 4);
+    NodeAssert.deepEqual(commands[0], ["i", "--frozen-lockfile", "--ignore-scripts"]);
+    NodeAssert.equal(commands[2].at(-1), "typecheck");
     if (failedStage === "tests") {
-      NodeAssert.deepEqual(commands[2], ["test", "run", "selected.test.ts", ...fleetUpdateTests]);
+      NodeAssert.deepEqual(commands[3], ["test", "run", "selected.test.ts", ...fleetUpdateTests]);
     }
     NodeAssert.doesNotMatch(result.stderr, /fleet_phase=preflight_(version|build|cli|package)/);
     NodeAssert.doesNotMatch(result.stderr, /fleet_preflight=passed/);

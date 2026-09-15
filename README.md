@@ -40,11 +40,18 @@ These fixes are configured on `main` but are not in the published build linked a
 
 `/t3-fleet-release` takes an official nightly, reapplies our saved changes
 (called overlays), and checks that the combined app builds and passes its tests.
-If changes clash, we repair them before building. Publication needs Mark's
-confirmation and a verified build cost. Standard public GitHub runners build the
-release, with temporary files kept in a separate draft Release instead of Actions
-artifacts or caches. Published downloads reach clients through their normal update
-flow.
+If changes clash, we repair them before building. `build-local` reuses the exact
+source and verified artifacts between attempts, builds locally, then checks every
+file before an authorised GitHub upload. It uses no GitHub Actions build minutes.
+Uploads remain drafts until the separate publish step verifies the complete set.
+Published downloads reach clients through their normal update flow.
+
+Cross-built downloads record their build host, source, tool pins, checksums and
+whether their executable smoke test ran in `build-provenance.json`. Local macOS
+builds are ad hoc signed ZIPs, without notarisation or a DMG. The pinned Node
+runtime cannot produce a macOS Intel CLI archive; the Intel desktop is included.
+A cross-built file is not evidence that it ran on that operating system. The
+legacy hosted workflow is unavailable at the current controls revision.
 
 The [overlay list](.mzs/overlays.json) selects the changes for the next build.
 Each release records its exact nightly and applied changes in its release notes

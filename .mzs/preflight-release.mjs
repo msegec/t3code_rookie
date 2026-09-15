@@ -5,8 +5,9 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 export const fleetUpdateTests = [
-  "packages/shared/src/fleetRelease.test.ts",
+  "packages/shared/src/cliRelease.test.ts",
   "packages/ssh/src/command.test.ts",
+  "packages/ssh/src/tunnel.test.ts",
   "apps/server/src/cloud/pinnedRuntime.test.ts",
   "apps/server/src/cloud/selfUpdate.test.ts",
   "apps/server/src/cloud/bootService.test.ts",
@@ -17,15 +18,14 @@ export const fleetUpdateTests = [
 
 export function assertFleetUpdateRouting(root) {
   const required = {
-    "packages/shared/src/fleetRelease.ts": [
-      "https://github.com/msegec/t3code_rookie/releases/download",
-      "fleetReleaseTarballUrl",
+    "packages/shared/src/fleetRelease.ts": ["msegec/t3code_rookie"],
+    "packages/shared/src/cliRelease.ts": [
+      "FLEET_RELEASE_BASE_URL",
+      "FLEET_RELEASE_REPOSITORY",
+      "cliReleaseDownloadBaseUrl",
     ],
-    "apps/server/src/cloud/pinnedRuntime.ts": [
-      "fleetReleaseTarballUrl(version)",
-      "pinnedRuntimePackageSpec(input.version)",
-    ],
-    "packages/ssh/src/command.ts": ["fleetReleaseTarballUrl(appVersion)"],
+    "apps/server/src/cloud/pinnedRuntime.ts": ["cliReleaseDownloadBaseUrl"],
+    "packages/ssh/src/tunnel.ts": ["cliReleaseDownloadBaseUrl"],
     "apps/server/src/cloud/selfUpdate.ts": [
       "ensurePinnedRuntimeInstalled({",
       "launcher.requestUpdate({ targetVersion",
@@ -106,57 +106,6 @@ export function smokeCli(entrypoint, version) {
   }
 }
 
-export function packageServer(root, output, version) {
-  const temporary = NodeFS.mkdtempSync(
-    NodePath.join(NodePath.dirname(output), "t3-package-smoke-"),
-  );
-  try {
-    const staged = NodePath.join(temporary, "package");
-    const installed = NodePath.join(temporary, "installed");
-    run(process.execPath, [
-      NodeURL.fileURLToPath(new URL("./stage-server-package.mjs", import.meta.url)),
-      root,
-      staged,
-      version,
-    ]);
-    NodeFS.mkdirSync(output, { recursive: true });
-    run("npm", ["pack", "--ignore-scripts", "--pack-destination", output], { cwd: staged });
-    const artifact = NodePath.join(output, `t3-${version}.tgz`);
-    run(
-      "npm",
-      ["install", "--prefix", installed, "--ignore-scripts", "--no-fund", "--no-audit", artifact],
-      { cwd: temporary },
-    );
-    run("npm", ["rebuild", "node-pty", "--prefix", installed, "--no-fund", "--no-audit"], {
-      cwd: temporary,
-    });
-    run(
-      process.execPath,
-      [
-        "--input-type=commonjs",
-        "-e",
-        `
-      const pty = require("node-pty").spawn(process.execPath, [
-        "-e", "process.stdout.write('t3-pty-smoke')",
-      ], { cwd: process.cwd(), env: { PATH: process.env.PATH } });
-      let output = "";
-      pty.onData((data) => { output += data; });
-      pty.onExit(({ exitCode }) => {
-        if (exitCode !== 0 || output !== "t3-pty-smoke") {
-          throw new Error("Installed terminal smoke failed: " + JSON.stringify({ exitCode, output }));
-        }
-      });
-    `,
-      ],
-      { cwd: NodePath.join(installed, "node_modules/t3"), timeout: 15_000 },
-    );
-    smokeCli(NodePath.join(installed, "node_modules/t3/dist/bin.mjs"), version);
-    return artifact;
-  } finally {
-    NodeFS.rmSync(temporary, { recursive: true, force: true });
-  }
-}
-
 function preflight(root, manifestPath, version) {
   const manifest = JSON.parse(NodeFS.readFileSync(manifestPath, "utf8"));
   if (
@@ -179,7 +128,8 @@ function preflight(root, manifestPath, version) {
     process.stderr.write(`fleet_phase=preflight_${name}\n`);
     run(command, args, options);
   };
-  step("install", "vp", ["i", "--frozen-lockfile"]);
+  step("install", "vp", ["i", "--frozen-lockfile", "--ignore-scripts"]);
+  step("effect_compiler", "vp", ["exec", "effect-tsgo", "patch"]);
   step("typecheck", "vp", [
     "run",
     ...[
@@ -195,27 +145,21 @@ function preflight(root, manifestPath, version) {
     "typecheck",
   ]);
   step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
-  step("version", process.execPath, ["scripts/update-release-package-versions.ts", version]);
-  NodeFS.copyFileSync(NodePath.join(root, ".env.example"), NodePath.join(root, ".env"));
-  step("build", "vp", ["run", "--filter", "t3", "build"]);
+  step("build", "vp", ["run", "build:desktop"]);
   process.stderr.write("fleet_phase=preflight_cli\n");
   smokeCli(NodePath.join(root, "apps/server/dist/bin.mjs"), version);
-  process.stderr.write("fleet_phase=preflight_package\n");
-  const output = NodeFS.mkdtempSync(NodePath.join(root, ".fleet-package-"));
-  try {
-    packageServer(root, output, version);
-  } finally {
-    NodeFS.rmSync(output, { recursive: true, force: true });
-  }
   process.stderr.write("fleet_preflight=passed\n");
 }
 
 if (
   process.argv[1] &&
-  NodeURL.pathToFileURL(NodePath.resolve(process.argv[1])).href === import.meta.url
+  NodeURL.pathToFileURL(NodeFS.realpathSync(process.argv[1])).href === import.meta.url
 ) {
-  const packageOnly = process.argv[2] === "--package";
-  const [root, manifest, version, ...extra] = process.argv.slice(packageOnly ? 3 : 2);
+  if (process.argv[2] === "--package")
+    throw new Error(
+      "Standalone CLI releases use local-build.mjs; npm package transport is obsolete",
+    );
+  const [root, manifest, version, ...extra] = process.argv.slice(2);
   if (
     !root ||
     !manifest ||
@@ -223,12 +167,8 @@ if (
     extra.length
   ) {
     throw new Error(
-      "Usage: preflight-release.mjs [--package] <composed-root> <manifest-path|output-dir> <release-version>",
+      "Usage: preflight-release.mjs <composed-root> <manifest-path> <release-version>",
     );
   }
-  (packageOnly ? packageServer : preflight)(
-    NodePath.resolve(root),
-    NodePath.resolve(manifest),
-    version,
-  );
+  preflight(NodePath.resolve(root), NodePath.resolve(manifest), version);
 }

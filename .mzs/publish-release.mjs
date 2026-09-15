@@ -4,8 +4,13 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-const [directory, repository, tag, version, target] = process.argv.slice(2);
+import { fileHash as hash, verifyCollected } from "./local-build.mjs";
+
+const [directory, repository, tag, version, target, mode, ...extra] = process.argv.slice(2);
+const publish = mode === "--publish";
 if (
+  extra.length ||
+  (mode !== undefined && !publish) ||
   !directory ||
   !/^[\w.-]+\/[\w.-]+$/.test(repository ?? "") ||
   !/^[\w.-]+$/.test(tag ?? "") ||
@@ -13,67 +18,21 @@ if (
   !/^[a-f0-9]{40}$/.test(target ?? "")
 ) {
   throw new Error(
-    "Usage: publish-release.mjs <release-dir> <owner/repo> <tag> <version> <controls-sha>",
+    "Usage: publish-release.mjs <release-dir> <owner/repo> <tag> <version> <controls-sha> [--publish]",
   );
 }
 const root = NodePath.resolve(directory);
-const hash = (file) => {
-  const digest = NodeCrypto.createHash("sha256");
-  const descriptor = NodeFS.openSync(file, "r");
-  const buffer = Buffer.alloc(1024 * 1024);
-  try {
-    let size;
-    while ((size = NodeFS.readSync(descriptor, buffer)) > 0)
-      digest.update(buffer.subarray(0, size));
-    return digest.digest("hex");
-  } finally {
-    NodeFS.closeSync(descriptor);
-  }
-};
-const names = NodeFS.readdirSync(root).sort();
+const verified = verifyCollected(root);
 if (
-  names.length > 100 ||
-  names.some(
-    (name) => !/^[\w.-]+$/.test(name) || !NodeFS.statSync(NodePath.join(root, name)).isFile(),
-  )
-) {
-  throw new Error("Release must contain at most 100 plainly named files");
-}
-for (const name of [
-  "mzs-fleet.json",
-  "release-notes.md",
-  `t3-${version}.tgz`,
-  `t3-source-${version}.bundle`,
-  "SHA256SUMS",
-  "SHA256SUMS.mac.arm64",
-  "SHA256SUMS.mac.x64",
-  "SHA256SUMS.linux.x64",
-  "nightly-mac.yml",
-  "nightly-mac-arm64.yml",
-  "nightly-mac-x64.yml",
-]) {
-  if (!names.includes(name)) throw new Error(`Missing release asset: ${name}`);
-}
-for (const extension of [".dmg", ".zip", ".AppImage", "-linux.yml"]) {
-  if (!names.some((name) => name.endsWith(extension)))
-    throw new Error(`Missing release asset: *${extension}`);
-}
-const fleet = JSON.parse(NodeFS.readFileSync(NodePath.join(root, "mzs-fleet.json"), "utf8"));
-if (fleet.version !== version || fleet.releaseTag !== tag)
+  verified.plan.fleet.version !== version ||
+  verified.plan.fleet.releaseTag !== tag ||
+  verified.plan.fleet.controlsSha !== target
+)
   throw new Error("Fleet metadata identity mismatch");
-for (const name of names.filter((name) => name.startsWith("SHA256SUMS"))) {
-  const lines = NodeFS.readFileSync(NodePath.join(root, name), "utf8").trim().split("\n");
-  for (const line of lines) {
-    const match = /^([a-f0-9]{64}) [ *](?:\.\/)?([\w.-]+)$/.exec(line);
-    if (!match || !names.includes(match[2]) || hash(NodePath.join(root, match[2])) !== match[1]) {
-      throw new Error(`Invalid checksum in ${name}`);
-    }
-  }
-}
-const assets = names.map((name) => ({
+const assets = verified.assets.map(({ name, size, sha256 }) => ({
   name,
-  size: NodeFS.statSync(NodePath.join(root, name)).size,
-  digest: `sha256:${hash(NodePath.join(root, name))}`,
+  size,
+  digest: `sha256:${sha256}`,
 }));
 const identity = NodeCrypto.createHash("sha256")
   .update(JSON.stringify({ repository, tag, version, target, assets }))
@@ -218,23 +177,26 @@ try {
     if (!release.draft) throw new Error("Release was published concurrently; refusing mutation");
     verifyAssets(release, true);
     verifyTag(false);
-    gh(
-      "release",
-      "edit",
-      tag,
-      "--repo",
-      repository,
-      "--notes-file",
-      NodePath.join(root, "release-notes.md"),
-      "--draft=false",
-    );
+    if (publish)
+      gh(
+        "release",
+        "edit",
+        tag,
+        "--repo",
+        repository,
+        "--notes-file",
+        NodePath.join(root, "release-notes.md"),
+        "--draft=false",
+      );
     release = getRelease();
     assertIdentity(release);
-    if (release.draft) throw new Error("Release is still a draft");
+    if (publish && release.draft) throw new Error("Release is still a draft");
     verifyAssets(release, true);
   }
-  verifyTag(true);
-  process.stdout.write(`Verified published release ${repository}@${tag}\n`);
+  verifyTag(!release.draft);
+  process.stdout.write(
+    `Verified ${release.draft ? "draft" : "published"} release ${repository}@${tag}\n`,
+  );
 } finally {
   NodeFS.rmSync(temporary, { recursive: true, force: true });
 }
