@@ -498,7 +498,7 @@ function filesystemBrowseFailureContext(error: WorkspaceEntries.WorkspaceEntries
   }
 }
 
-function projectFileFailureContext(
+export function projectFileFailureContext(
   error:
     | WorkspaceFileSystem.WorkspaceFileSystemError
     | WorkspacePaths.WorkspacePathOutsideRootError,
@@ -514,7 +514,13 @@ function projectFileFailureContext(
       return { failure: "workspace_path_outside_root" };
     case "WorkspaceFileSystemOperationError":
       return {
-        failure: "operation_failed",
+        failure:
+          error.operation === "realpath-target" &&
+          error.cause instanceof Error &&
+          "code" in error.cause &&
+          error.cause.code === "ENOENT"
+            ? "not_found"
+            : "operation_failed",
         resolvedPath: error.resolvedPath,
         operation: error.operation,
         operationPath: error.operationPath,
@@ -529,6 +535,8 @@ function projectFileFailureContext(
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
       return { failure: "binary_file", resolvedPath: error.resolvedPath };
+    case "WorkspaceFileContentsChangedError":
+      return { failure: "contents_changed", resolvedPath: error.resolvedPath };
     default:
       return unexpectedCompatibilityError(error);
   }

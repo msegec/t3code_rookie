@@ -105,6 +105,13 @@ describe("planProjectCommand", () => {
     );
   });
 
+  it("emits a refresh event when no metadata fields change", () => {
+    assert.deepEqual(payloadOf(update({})), {
+      projectId,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
   it("carries every edited field and omits the rest", () => {
     const scripts = [script("lint")];
     const payload = payloadOf(
