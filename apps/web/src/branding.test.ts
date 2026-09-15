@@ -81,6 +81,15 @@ describe("branding logic", () => {
     ).toBe("Nightly");
   });
 
+  it("returns Nightly for MZS fleet server versions", () => {
+    expect(
+      resolveServerBackedAppStageLabel({
+        primaryServerVersion: "0.0.34-nightly.20260824.1172.mzs.r1234abcdef56",
+        fallbackStageLabel: "Alpha",
+      }),
+    ).toBe("Nightly");
+  });
+
   it("updates the display name for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
