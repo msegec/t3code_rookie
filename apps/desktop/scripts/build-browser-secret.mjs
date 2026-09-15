@@ -1,4 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -10,7 +11,12 @@ const hostArch = process.arch;
 const hostPlatform = process.platform;
 
 const { values } = NodeUtil.parseArgs({
-  options: { output: { type: "string" }, arch: { type: "string", default: hostArch } },
+  options: {
+    output: { type: "string" },
+    arch: { type: "string", default: hostArch },
+    prebuilt: { type: "string" },
+    "prebuilt-sha256": { type: "string" },
+  },
 });
 
 if (hostPlatform === "linux") {
@@ -21,8 +27,30 @@ if (hostPlatform === "linux") {
   const output = values.output ?? NodePath.resolve(root, "build", values.arch, "t3-browser-secret");
   const matchesArchitecture = (file) => {
     const header = NodeFS.readFileSync(file).subarray(0, 20);
-    return header.toString("hex", 0, 6) === "7f454c460201" && header.readUInt16LE(18) === machine;
+    return (
+      header.length === 20 &&
+      header.toString("hex", 0, 6) === "7f454c460201" &&
+      header.readUInt16LE(18) === machine
+    );
   };
+  if (values.prebuilt !== undefined || values["prebuilt-sha256"] !== undefined) {
+    if (!values.prebuilt || !/^[a-f0-9]{64}$/.test(values["prebuilt-sha256"] ?? "")) {
+      throw new Error("Prebuilt browser secret requires a path and SHA256 digest.");
+    }
+    const contents = NodeFS.readFileSync(values.prebuilt);
+    if (
+      NodeCrypto.createHash("sha256").update(contents).digest("hex") !== values["prebuilt-sha256"]
+    ) {
+      throw new Error("Prebuilt browser secret SHA256 mismatch.");
+    }
+    if (!matchesArchitecture(values.prebuilt)) {
+      throw new Error(`Prebuilt browser secret is not Linux ${values.arch}.`);
+    }
+    NodeFS.mkdirSync(NodePath.dirname(output), { recursive: true });
+    NodeFS.writeFileSync(output, contents, { mode: 0o755 });
+    NodeFS.chmodSync(output, 0o755);
+    process.exit(0);
+  }
   let current = false;
   try {
     current =
