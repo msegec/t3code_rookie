@@ -1,5 +1,8 @@
+import * as DesktopConfig from "../../app/DesktopConfig.ts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 import * as Layer from "effect/Layer";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
@@ -17,10 +20,22 @@ import { getLocalEnvironmentEnabled, setLocalEnvironmentEnabled } from "./localE
 const unusedLifecycleRuntimeLayer = Layer.mergeAll(
   DesktopShutdown.layer,
   DesktopState.layer,
-  Layer.succeed(
-    DesktopEnvironment.DesktopEnvironment,
-    DesktopEnvironment.DesktopEnvironment.of(
-      {} as DesktopEnvironment.DesktopEnvironment["Service"],
+  DesktopEnvironment.layer({
+    dirname: "/repo/apps/desktop/src",
+    homeDirectory: "/disposable",
+    platform: "darwin",
+    processArch: "x64",
+    appVersion: "0.0.17",
+    appPath: "/repo",
+    isPackaged: true,
+    resourcesPath: "/missing/resources",
+    runningUnderArm64Translation: false,
+  }).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        DesktopConfig.layerTest({ T3CODE_HOME: "/disposable", T3CODE_PORT: "3773" }),
+      ),
     ),
   ),
   Layer.mock(DesktopWindow.DesktopWindow, {}),
@@ -58,6 +73,34 @@ describe("local environment IPC", () => {
         "localEnvironmentEnabled=false",
         "localEnvironmentEnabled=true",
       ]);
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect("preserves the setting and does not relaunch when persistence fails", () => {
+    let relaunched = false;
+    const failure = new DesktopAppSettings.DesktopSettingsWriteError({
+      operation: "replace-settings-file",
+      path: "/disposable/desktop-settings.json",
+      cause: new Error("permission denied"),
+    });
+    const layer = Layer.mergeAll(
+      Layer.mock(DesktopAppSettings.DesktopAppSettings, {
+        get: Effect.succeed(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS),
+        setLocalEnvironmentEnabled: () => Effect.fail(failure),
+      }),
+      Layer.mock(DesktopLifecycle.DesktopLifecycle, {
+        relaunch: () =>
+          Effect.sync(() => {
+            relaunched = true;
+          }),
+      }),
+      unusedLifecycleRuntimeLayer,
+    );
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(setLocalEnvironmentEnabled.handler(false));
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) assert.strictEqual(result.failure, failure);
+      assert.isTrue(yield* getLocalEnvironmentEnabled.handler());
+      assert.isFalse(relaunched);
     }).pipe(Effect.provide(layer));
   });
 });

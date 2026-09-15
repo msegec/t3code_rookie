@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -91,6 +92,22 @@ function writeSettingsPatch(patch: typeof DesktopSettingsPatch.Type) {
 }
 
 describe("DesktopSettings", () => {
+  it.effect("keeps local execution enabled when replacing the settings file fails", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        yield* fileSystem.makeDirectory(environment.desktopSettingsPath, { recursive: true });
+        const result = yield* Effect.result(settings.setLocalEnvironmentEnabled(false));
+        assert.isTrue(Result.isFailure(result));
+        if (Result.isFailure(result))
+          assert.equal(result.failure.operation, "replace-settings-file");
+        assert.isTrue((yield* settings.get).localEnvironmentEnabled);
+      }),
+    ),
+  );
+
   it.effect(
     "persists disabling and re-enabling local execution without clearing backend settings",
     () =>
