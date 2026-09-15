@@ -89,6 +89,9 @@ describe("buildPeriodColumns", () => {
       { provider: "codex", value: 10 },
       { provider: "claude", value: 20 },
       { provider: "grok", value: 0 },
+      { provider: "opencode", value: 0 },
+      { provider: "antigravity", value: 0 },
+      { provider: "cursor", value: 0 },
     ]);
   });
 
@@ -106,8 +109,11 @@ describe("providersWithUsage", () => {
       providersWithUsage([
         { provider: "codex", costUsd: 0, totalTokens: 0 },
         { provider: "claude", costUsd: 0, totalTokens: 200 },
+        { provider: "opencode", costUsd: 0, totalTokens: 5 },
+        { provider: "antigravity", costUsd: 0, totalTokens: 0 },
+        { provider: "cursor", costUsd: 0, totalTokens: 0 },
       ]),
-    ).toEqual(["claude"]);
+    ).toEqual(["claude", "opencode"]);
   });
 });
 

@@ -1,6 +1,14 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 
-import { ClaudeAI, GrokIcon, type Icon, OpenAI } from "../Icons";
+import {
+  ClaudeAI,
+  GrokIcon,
+  OpenCodeIcon,
+  AntigravityIcon,
+  CursorIcon,
+  type Icon,
+  OpenAI,
+} from "../Icons";
 
 type UsageProviderPresentation = {
   readonly label: string;
@@ -30,6 +38,9 @@ export const PROVIDER_PRESENTATION = {
     color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
     mark: GrokIcon,
   },
+  opencode: { label: "OpenCode", color: "#7c8cf8", mark: OpenCodeIcon },
+  antigravity: { label: "Antigravity", color: "#8b5cf6", mark: AntigravityIcon },
+  cursor: { label: "Cursor", color: "#14b8a6", mark: CursorIcon },
 } satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 
 /** Stable provider reading order across charts, summaries, tables, and hover rows. */

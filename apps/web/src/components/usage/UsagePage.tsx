@@ -19,6 +19,7 @@ import {
   isModelCostUnknown,
   type DailyTotals,
   type HourlyTotals,
+  usageCoverageMessages,
 } from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
@@ -254,6 +255,7 @@ export function UsagePage() {
             showUsageStatus={!showingLimits}
             isPartial={isPartial}
             duplicateSources={merged.duplicateSources}
+            incompleteSources={merged.incompleteSources}
             staleEnvironments={merged.staleEnvironments}
           />
         </WorkspaceBreadcrumbItem>
@@ -394,6 +396,7 @@ export function UsagePage() {
                 <UsageCoverageNotice
                   environments={selectedEnvironments}
                   duplicateSources={merged.duplicateSources}
+                  incompleteSources={merged.incompleteSources}
                   staleEnvironments={merged.staleEnvironments}
                 />
                 <p className="py-16 text-center text-sm text-muted-foreground">
@@ -681,10 +684,12 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
 function UsageCoverageNotice({
   environments,
   duplicateSources,
+  incompleteSources,
   staleEnvironments,
 }: {
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly duplicateSources: readonly string[];
+  readonly incompleteSources: readonly string[];
   readonly staleEnvironments: readonly string[];
 }) {
   const failed = environments.filter((environment) => environment.error !== null);
@@ -694,17 +699,29 @@ function UsageCoverageNotice({
   const stale = environments.filter((environment) =>
     staleEnvironments.includes(environment.environmentId),
   );
+  const coverage = environments.flatMap((environment) =>
+    environment.summary === null
+      ? []
+      : usageCoverageMessages(environment.summary).map(
+          (message) => `${environment.label}: ${message}`,
+        ),
+  );
+  coverage.push(...incompleteSources);
   if (
     failed.length === 0 &&
     offline.length === 0 &&
     stale.length === 0 &&
-    duplicateSources.length === 0
+    duplicateSources.length === 0 &&
+    coverage.length === 0
   ) {
     return null;
   }
 
   return (
     <div className="flex flex-col gap-1 border-t border-border px-2 py-2 text-xs text-muted-foreground">
+      {coverage.map((message) => (
+        <span key={message}>{message}</span>
+      ))}
       {failed.map((environment) => (
         <span key={environment.label}>{environment.label} could not report usage.</span>
       ))}
@@ -737,6 +754,7 @@ function UsageEnvironmentFilter({
   showUsageStatus,
   isPartial,
   duplicateSources,
+  incompleteSources,
   staleEnvironments,
 }: {
   readonly environments: readonly EnvironmentUsageStatus[];
@@ -746,6 +764,7 @@ function UsageEnvironmentFilter({
   readonly showUsageStatus: boolean;
   readonly isPartial: boolean;
   readonly duplicateSources: readonly string[];
+  readonly incompleteSources: readonly string[];
   readonly staleEnvironments: readonly string[];
 }) {
   const [modelPricesOpen, setModelPricesOpen] = useState(false);
@@ -863,6 +882,7 @@ function UsageEnvironmentFilter({
             <UsageCoverageNotice
               environments={selectedEnvironments}
               duplicateSources={duplicateSources}
+              incompleteSources={incompleteSources}
               staleEnvironments={staleEnvironments}
             />
           ) : null}
