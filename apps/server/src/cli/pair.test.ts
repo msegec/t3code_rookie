@@ -151,7 +151,12 @@ describe("t3 pair", () => {
         yield* persistServerRuntimeState({
           path: statePath,
           state: yield* makePersistedServerRuntimeState({
-            config: { host: "127.0.0.1", devUrl: undefined },
+            config: {
+              tailscaleServeEnabled: false,
+              tailscaleServePort: 443,
+              host: "127.0.0.1",
+              devUrl: undefined,
+            },
             port,
           }),
         });
@@ -202,7 +207,12 @@ describe("t3 pair", () => {
         yield* persistServerRuntimeState({
           path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
           state: yield* makePersistedServerRuntimeState({
-            config: { host: "127.0.0.1", devUrl: undefined },
+            config: {
+              tailscaleServeEnabled: false,
+              tailscaleServePort: 443,
+              host: "127.0.0.1",
+              devUrl: undefined,
+            },
             port: Number(new URL(origin).port),
           }),
         });
@@ -241,7 +251,12 @@ describe("t3 pair", () => {
         yield* persistServerRuntimeState({
           path: statePath,
           state: yield* makePersistedServerRuntimeState({
-            config: { host: undefined, devUrl: new URL("http://localhost:5733") },
+            config: {
+              tailscaleServeEnabled: false,
+              tailscaleServePort: 443,
+              host: undefined,
+              devUrl: new URL("http://localhost:5733"),
+            },
             port,
           }),
         });
@@ -276,7 +291,12 @@ describe("t3 pair", () => {
         const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-pid-test-"));
         const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
         const state = yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", devUrl: undefined },
+          config: {
+            tailscaleServeEnabled: false,
+            tailscaleServePort: 443,
+            host: "127.0.0.1",
+            devUrl: undefined,
+          },
           port: Number(new URL(origin).port),
         });
         yield* persistServerRuntimeState({
@@ -303,7 +323,12 @@ describe("t3 pair", () => {
       yield* persistServerRuntimeState({
         path: statePath,
         state: yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", devUrl: undefined },
+          config: {
+            tailscaleServeEnabled: false,
+            tailscaleServePort: 443,
+            host: "127.0.0.1",
+            devUrl: undefined,
+          },
           port: 1,
         }),
       });
