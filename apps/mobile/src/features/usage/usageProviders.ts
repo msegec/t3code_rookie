@@ -5,12 +5,22 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
  * Series and table order. The chart stacks providers from the bottom in this
  * order, so it also fixes which band sits on top of the bars.
  */
-export const PROVIDER_ORDER: readonly UsageProviderKind[] = ["codex", "claude", "grok"];
+export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
+  "codex",
+  "claude",
+  "grok",
+  "opencode",
+  "antigravity",
+  "cursor",
+];
 
 export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok Build",
+  opencode: "OpenCode",
+  antigravity: "Antigravity",
+  cursor: "Cursor",
 };
 
 /**
@@ -21,6 +31,9 @@ export function useProviderColors(): Record<UsageProviderKind, string> {
   const { themeAppearance: scheme } = useAppearancePreferences();
   return {
     claude: "#d97757",
+    opencode: "#7c8cf8",
+    antigravity: "#8b5cf6",
+    cursor: "#14b8a6",
     codex: scheme === "dark" ? "#e6e6e6" : "#3c3c43",
     grok: scheme === "dark" ? "#a1a1aa" : "#52525b",
   };

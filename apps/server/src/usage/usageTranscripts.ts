@@ -8,6 +8,8 @@
  */
 import type { UsageProviderKind, UsageTokenTotals } from "@t3tools/contracts";
 
+export type JsonlUsageProvider = "claude" | "codex" | "grok";
+
 export interface UsageRecord {
   readonly provider: UsageProviderKind;
   readonly timestampMs: number;
@@ -15,6 +17,7 @@ export interface UsageRecord {
   readonly sessionId: string;
   readonly totals: UsageTokenTotals;
   readonly reportedCostUsd: number | null;
+  readonly partial?: boolean;
   /**
    * Key for cross-file de-duplication, or `null` when the record is inherently
    * unique and needs no dedup.
@@ -67,7 +70,7 @@ export function totalTokens(totals: UsageTokenTotals): number {
  * a 30-day window this skips roughly half the lines outright and is worth about
  * an order of magnitude.
  */
-export function mightCarryUsage(line: string, provider: UsageProviderKind): boolean {
+export function mightCarryUsage(line: string, provider: JsonlUsageProvider): boolean {
   if (provider === "claude") return line.includes('"usage"');
   if (provider === "grok") return line.includes('"turn_completed"');
   return line.includes('"token_count"');
@@ -321,19 +324,25 @@ interface GrokUsageTotals {
   readonly cacheCreationTokens: number;
   readonly reasoningTokens: number;
   readonly costUsdTicks: number | null;
+  readonly costIncomplete: boolean;
 }
 
 function readGrokUsageTotals(value: unknown): GrokUsageTotals | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
+  const costIncomplete = record["usageIsIncomplete"] === true || record["costIsPartial"] === true;
   return {
     inputTokens: int(record["inputTokens"]),
     outputTokens: int(record["outputTokens"]),
     cachedReadTokens: int(record["cachedReadTokens"]),
     cacheCreationTokens: int(record["cacheCreationTokens"]),
     reasoningTokens: int(record["reasoningTokens"]),
+    costIncomplete,
     costUsdTicks:
-      typeof record["costUsdTicks"] === "number" && Number.isFinite(record["costUsdTicks"])
+      !costIncomplete &&
+      typeof record["costUsdTicks"] === "number" &&
+      Number.isFinite(record["costUsdTicks"]) &&
+      record["costUsdTicks"] >= 0
         ? record["costUsdTicks"]
         : null,
   };
@@ -433,6 +442,7 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
         sessionId,
         totals: grokTotalsToUsage(topLevel),
         reportedCostUsd: grokCostTicksToUsd(topLevel.costUsdTicks),
+        ...(topLevel.costIncomplete ? { partial: true } : {}),
         // No prompt id means we cannot tell two same-second updates apart.
         dedupeKey: promptId === null ? null : `${sessionId}:${promptId}:grok`,
       },
@@ -478,7 +488,9 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
       model: entry.model,
       sessionId,
       totals,
-      reportedCostUsd,
+      reportedCostUsd:
+        topLevel.costIncomplete || entry.totals.costIncomplete ? null : reportedCostUsd,
+      ...(topLevel.costIncomplete || entry.totals.costIncomplete ? { partial: true } : {}),
       dedupeKey: promptId === null ? null : `${sessionId}:${promptId}:${entry.model}`,
     });
   }
