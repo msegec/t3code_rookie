@@ -124,6 +124,7 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
       const terminal =
         input.kind === "completed" ||
         input.status === "idle" ||
+        input.status === "unknown" ||
         (input.status !== undefined && TERMINAL_STATUSES.has(input.status));
       if (terminal) {
         drop(input.threadId, input.taskId);

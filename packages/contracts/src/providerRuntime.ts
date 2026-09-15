@@ -680,6 +680,7 @@ const TaskStartedPayload = Schema.Struct({
 export type TaskStartedPayload = typeof TaskStartedPayload.Type;
 
 export const RuntimeTaskStatus = Schema.Literals([
+  "unknown",
   "pending",
   "running",
   "waiting",
