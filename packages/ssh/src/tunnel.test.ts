@@ -111,6 +111,18 @@ const NODE_SCRIPT = {
 } as const;
 
 describe("ssh tunnel scripts", () => {
+  it("downloads fleet archives from the fork and preserves explicit mirrors", () => {
+    const archiveVersion = "0.0.41-nightly.20260915.1780.mzs.r1234abcdef56";
+    assert.include(
+      buildRemoteT3RunnerScript({ archiveVersion }),
+      "T3_RELEASE_BASE_URL='https://github.com/msegec/t3code_rookie/releases/download'",
+    );
+    assert.include(
+      buildRemoteT3RunnerScript({ archiveVersion, releaseBaseUrl: "https://mirror.example/t3/" }),
+      "T3_RELEASE_BASE_URL='https://mirror.example/t3'",
+    );
+  });
+
   it("installs and runs the release archive without Node, npm, or npx", () => {
     const script = buildRemoteT3RunnerScript(ARCHIVE);
 
