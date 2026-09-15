@@ -32,8 +32,10 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as ProjectService from "./project/ProjectService.ts";
+import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import {
   hasCompatibleOrchestrationProtocol,
+  projectFileFailureContext,
   resolveAvailableEditorsForConfig,
   shouldUseBoundedThreadSnapshot,
   subscribeOrchestrationV2Shell,
@@ -52,6 +54,25 @@ it("accepts only the current orchestration protocol before websocket RPC setup",
     hasCompatibleOrchestrationProtocol(
       new URL(`https://host.test/ws?orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION - 1}`),
     ),
+  );
+});
+
+it("reports missing project files and guarded write conflicts without leaking contents", () => {
+  const target = { workspaceRoot: "/repo", relativePath: "t3.json", resolvedPath: "/repo/t3.json" };
+  assert.deepEqual(
+    projectFileFailureContext(
+      new WorkspaceFileSystem.WorkspaceFileSystemOperationError({
+        ...target,
+        operationPath: target.resolvedPath,
+        operation: "realpath-target",
+        cause: Object.assign(new Error("missing"), { code: "ENOENT" }),
+      }),
+    ).failure,
+    "not_found",
+  );
+  assert.deepEqual(
+    projectFileFailureContext(new WorkspaceFileSystem.WorkspaceFileContentsChangedError(target)),
+    { failure: "contents_changed", resolvedPath: target.resolvedPath },
   );
 });
 
