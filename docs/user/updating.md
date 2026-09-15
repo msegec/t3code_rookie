@@ -50,6 +50,11 @@ Replace `<client-version>` with the version shown in the notice. Using
 service launcher may require this local update before it supports remote updates
 and rollback.
 
+Service updates keep the server's host, port, Tailscale Serve settings, and T3
+home. The replacement waits for the previous server to stop and must become
+ready on the same endpoint.
+Starting another server against that home is refused, even on a different port.
+
 For a foreground server, the copied command is `npx t3@<client-version>`. Add
 `serve` if you normally run without a browser, and preserve options such as
 `--host` or `--tailscale-serve`. See
