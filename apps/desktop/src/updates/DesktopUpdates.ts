@@ -561,7 +561,8 @@ export const make = Effect.gen(function* () {
     yield* Ref.set(desktopState.quitting, false);
     yield* removeUpdateRestartMarker;
     yield* Effect.gen(function* () {
-      const instances = yield* pool.list;
+      const settings = yield* desktopSettings.get;
+      const instances = settings.localEnvironmentEnabled ? yield* pool.list : [];
       const restartExit = yield* Effect.forEach(instances, (instance) => instance.start, {
         concurrency: "unbounded",
         discard: true,
