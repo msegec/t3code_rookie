@@ -1,4 +1,5 @@
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
+import { projectSettingsSearch } from "../projectSettingsNavigation";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
@@ -2520,13 +2521,16 @@ export default function Sidebar() {
   }, [clearSelection, projectScopeKey]);
 
   const openProjectSettings = useCallback(
-    (projectGroup: SidebarProjectSnapshot) => {
+    (
+      projectGroup: SidebarProjectSnapshot,
+      project?: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+    ) => {
       if (isMobile) {
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/projects/$projectKey",
-        params: { projectKey: projectGroup.projectKey },
+        to: "/settings/projects",
+        search: projectSettingsSearch(projectGroup.projectKey, project),
       });
     },
     [isMobile, router, setOpenMobile],
@@ -4194,9 +4198,18 @@ export default function Sidebar() {
               );
             }
             return;
-          case "project-settings":
-            if (threadProjectGroup) openProjectSettings(threadProjectGroup);
+          case "project-settings": {
+            const projectGroup = projectGroupsRef.current.find((group) =>
+              group.memberProjectRefs.some(
+                (projectRef) =>
+                  projectRef.environmentId === thread.environmentId &&
+                  projectRef.projectId === thread.projectId,
+              ),
+            );
+            const project = projectByKey.get(`${thread.environmentId}:${thread.projectId}`);
+            if (projectGroup && project) openProjectSettings(projectGroup, project);
             return;
+          }
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
