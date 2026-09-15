@@ -24,5 +24,6 @@ export const APP_STAGE_LABEL =
 export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
+export const APP_BUILD_LABEL = import.meta.env.VITE_MZS_FLEET_LABEL?.trim() || null;
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
 export const DESKTOP_DOWNLOAD_URL = "https://t3.codes/download";
