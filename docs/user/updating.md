@@ -55,6 +55,11 @@ If you run the server with `npx` rather than an installed `t3`, there is
 nothing to update on the host: stop the server and relaunch it as
 `npx t3@<client-version>` with the same subcommand and options.
 
+Service updates keep the server's host, port, Tailscale Serve settings, and T3
+home. The replacement waits for the previous server to stop and must become
+ready on the same endpoint.
+Starting another server against that home is refused, even on a different port.
+
 ## If an update fails
 
 Keep the client open until it reconnects or reports a failure. A failed service
