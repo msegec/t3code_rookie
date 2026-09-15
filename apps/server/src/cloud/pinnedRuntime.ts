@@ -18,6 +18,7 @@ import {
   cliArchivePlatformKey,
   cliArchiveTarCommand,
   cliReleaseAssetUrl,
+  cliReleaseDownloadBaseUrl,
   type CliArchivePlatformKey,
   parseChecksums,
 } from "@t3tools/shared/cliRelease";
@@ -210,7 +211,14 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
   const { fileName, expected } = yield* publishedArchive(input, platformKey);
   const archive = yield* fetchReleaseAsset(
     httpClient,
-    cliReleaseAssetUrl(input.version, fileName, input.releaseBaseUrl),
+    cliReleaseAssetUrl(
+      input.version,
+      fileName,
+      cliReleaseDownloadBaseUrl(input.version, input.releaseBaseUrl).slice(
+        0,
+        -`/v${input.version}`.length,
+      ),
+    ),
     "downloading the t3 release archive",
     input.onProgress,
   );
@@ -269,7 +277,14 @@ const publishedArchive = Effect.fn("cloud.pinned_runtime.published_archive")(fun
     new TextDecoder().decode(
       yield* fetchReleaseAsset(
         input.httpClient,
-        cliReleaseAssetUrl(input.version, CLI_RELEASE_CHECKSUMS_FILE, input.releaseBaseUrl),
+        cliReleaseAssetUrl(
+          input.version,
+          CLI_RELEASE_CHECKSUMS_FILE,
+          cliReleaseDownloadBaseUrl(input.version, input.releaseBaseUrl).slice(
+            0,
+            -`/v${input.version}`.length,
+          ),
+        ),
         "downloading the t3 release checksums",
       ),
     ),

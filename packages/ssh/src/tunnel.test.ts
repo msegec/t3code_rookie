@@ -222,6 +222,22 @@ describe("ssh tunnel scripts", () => {
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
+  it("downloads fleet archives from the fork and preserves explicit mirrors", () => {
+    const archiveVersion = "0.0.41-nightly.20260915.1780.mzs.r1234abcdef56";
+    assert.include(
+      SshTunnel.buildRemoteT3RunnerScript({ archiveVersion }),
+      "T3_RELEASE_BASE_URL='https://github.com/msegec/t3code_rookie/releases/download'",
+    );
+    assert.include(
+      SshTunnel.buildRemoteT3RunnerScript({
+        archiveVersion,
+        releaseBaseUrl: "https://mirror.example/t3/",
+      }),
+      "T3_RELEASE_BASE_URL='https://mirror.example/t3'",
+    );
+  });
+
+
   it.live("reports only the failed launch's own output, not an earlier launch's log", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
