@@ -130,6 +130,10 @@ such as another drive, set **Settings → Storage → Worktree location** to an 
 `D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
 are, and cleanup covers both the default folder and the custom one.
 
+Opening **Project settings** from a thread selects that thread's environment and checkout.
+Opening it from a project group keeps the whole group selected. Group settings show the same
+project icon as the sidebar, including when that checkout's environment is offline.
+
 ## Storage cleanup
 
 Open **Settings → Storage** to enable automatic cleanup on one machine or all connected
@@ -160,7 +164,7 @@ working. Current logs, message attachments, and browser profiles are kept.
 ## Project icons
 
 Select the project and open Project to choose an icon, emoji, monogram, or image. The choice applies to
-every checkout in the project group and appears on connected clients. Choose **Automatic** to let
+the selected checkouts and appears on connected clients. Choose **Automatic** to let
 T3 Code detect an icon again.
 
 Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
@@ -181,7 +185,15 @@ local work, resolve it yourself before automatic pulls can resume.
 
 ## Sidebar accent
 
-Add `accentColor` to `t3.json` to tint every sidebar thread row for the project. The tint is
+In Project Settings, use **Sidebar accent** below **Project icon**. Choose a preset, use the
+colour picker, or enter a six-digit hex colour, then select **Save accent**. Simple mode generates
+row tints from one colour. Advanced mode sets separate idle, active and selected colours.
+The mode and colours load from the selected checkout's `t3.json`. Saving creates the file if it is missing.
+**Reset** removes the accent. Changes save to each selected checkout's `t3.json` and refresh
+connected web and desktop sidebars. If a checkout cannot be saved, the error names it; earlier
+checkouts may already have been updated.
+
+You can also add `accentColor` to `t3.json` directly. The tint is
 strongest at the right edge of the row and fades out toward the left. A single color generates
 restrained idle, active, and selected tints:
 
