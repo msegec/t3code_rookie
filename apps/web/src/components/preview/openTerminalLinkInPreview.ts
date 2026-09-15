@@ -1,17 +1,19 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 
 import {
-  browserDefaultOpenProfileId,
-  browserDefaultOpenViewport,
-  resolveBrowserDefaults,
-} from "~/browser/browserDefaults";
+  BrowserSettingsReadError,
+  openUrlInPreview,
+  type OpenPreviewMutation,
+} from "~/browser/openFileInPreview";
 import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserLinkTarget";
-import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
-import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { isPreviewSupportedInRuntime } from "~/previewStateStore";
+import { toastManager } from "~/components/ui/toast";
 
 const terminalLinkErrorContext = {
   environmentId: Schema.String,
@@ -63,32 +65,22 @@ export async function openTerminalLinkInPreview<E>(
     targetOrigin: new URL(input.url).origin,
   };
 
-  const defaults = await resolveBrowserDefaults();
-  const result = await input.openPreview({
-    environmentId: input.threadRef.environmentId,
-    input: {
-      threadId: input.threadRef.threadId,
-      url: input.url,
-      // Same reason as `openUrlInPreview`: this path handles its own result
-      // mapping, so the configured defaults are applied explicitly.
-      viewport: browserDefaultOpenViewport(defaults),
-      profileId: browserDefaultOpenProfileId(defaults),
-    },
+  const result = await openUrlInPreview({
+    threadRef: input.threadRef,
+    url: input.url,
+    openPreview: input.openPreview,
   });
   if (result._tag === "Failure") {
-    if (isAtomCommandInterrupted(result)) {
-      return;
-    }
-    console.error(
-      new TerminalLinkPreviewOpenError({
-        ...errorContext,
-        cause: result.cause,
-      }),
-    );
-    input.fallbackToBrowser();
+    if (isAtomCommandInterrupted(result)) return;
+    const error = squashAtomCommandFailure(result);
+    if (error instanceof BrowserSettingsReadError) throw error.cause;
+    console.error(new TerminalLinkPreviewOpenError({ ...errorContext, cause: result.cause }));
+    toastManager.add({
+      type: "error",
+      title: "Unable to open terminal link in preview",
+      description: "Check the project environment connection and try again.",
+    });
     return;
   }
   recordVisitForThread(input.threadRef, input.url);
-  applyPreviewServerSnapshot(input.threadRef, result.value);
-  useRightPanelStore.getState().openBrowser(input.threadRef, result.value.tabId);
 }

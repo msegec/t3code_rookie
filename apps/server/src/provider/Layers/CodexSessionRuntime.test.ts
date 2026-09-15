@@ -644,7 +644,10 @@ describe("T3 tool instructions", () => {
     NodeAssert.match(tools, /t3-code/);
     NodeAssert.match(tools, /preview_status/);
     NodeAssert.match(tools, /preview_open/);
-    NodeAssert.match(tools, /Do not switch to global browser skills/);
+    NodeAssert.match(tools, /workspace-file/);
+    NodeAssert.match(tools, /Do not expose application ports/);
+    NodeAssert.match(tools, /selected browser host can be on another machine/);
+    NodeAssert.match(tools, /Use another browser only when preview tools are absent/);
     NodeAssert.doesNotMatch(tools, /device_open/);
   });
 

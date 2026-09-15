@@ -1,15 +1,29 @@
 import type { PreviewSessionSnapshot, ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   openTerminalLinkInPreview,
   TerminalLinkPreviewOpenError,
 } from "./openTerminalLinkInPreview";
 
+const gateway = vi.hoisted(() => ({ resolve: vi.fn(), release: vi.fn(), toast: vi.fn() }));
+vi.mock("~/browser/browserTargetResolver", () => ({
+  resolveBrowserNavigationTarget: gateway.resolve,
+}));
+vi.mock("~/browser/previewGateway", () => ({ releaseUnusedPreviewGateway: gateway.release }));
+vi.mock("~/components/ui/toast", () => ({ toastManager: { add: gateway.toast } }));
+vi.mock("~/browserHistoryStore", () => ({ recordVisitForThread: vi.fn() }));
+beforeEach(() => {
+  gateway.resolve
+    .mockReset()
+    .mockResolvedValue({ resolvedUrl: "http://opaque.localhost:3773/app" });
+});
+
 vi.mock("~/previewStateStore", () => ({
   applyPreviewServerSnapshot: vi.fn(),
+  rememberPreviewUrl: vi.fn(),
   isPreviewSupportedInRuntime: () => true,
 }));
 
@@ -156,14 +170,14 @@ describe("openTerminalLinkInPreview", () => {
       environmentId: "local",
       input: {
         threadId: "thread-1",
-        url: "http://localhost:3000/",
+        url: "http://opaque.localhost:3773/app",
         viewport: hydratedDefaults.viewport,
         profileId: hydratedDefaults.profileId,
       },
     });
   });
 
-  it("preserves the complete preview failure cause before falling back", async () => {
+  it("preserves the complete preview failure cause without opening a raw browser URL", async () => {
     const rpcError = new Error("preview unavailable");
     const cause = Cause.combine(Cause.fail(rpcError), Cause.die("preview defect"));
     const fallbackToBrowser = vi.fn();
@@ -177,7 +191,7 @@ describe("openTerminalLinkInPreview", () => {
       forceBrowser: false,
     });
 
-    expect(fallbackToBrowser).toHaveBeenCalledOnce();
+    expect(fallbackToBrowser).not.toHaveBeenCalled();
     expect(reportError).toHaveBeenCalledOnce();
     const error = reportError.mock.calls[0]?.[0];
     expect(error).toBeInstanceOf(TerminalLinkPreviewOpenError);
@@ -188,6 +202,33 @@ describe("openTerminalLinkInPreview", () => {
       cause,
     });
     expect(error.message).not.toContain("preview unavailable");
+  });
+
+  it("routes a remote terminal localhost link through the shared resolver", async () => {
+    const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
+    const fallbackToBrowser = vi.fn();
+    await openTerminalLinkInPreview({
+      url: "http://localhost:5173/app",
+      threadRef,
+      openPreview,
+      fallbackToBrowser,
+      forceBrowser: false,
+    });
+    expect(gateway.resolve).toHaveBeenCalledWith(
+      threadRef.environmentId,
+      { kind: "url", url: "http://localhost:5173/app" },
+      threadRef.threadId,
+    );
+    expect(openPreview).toHaveBeenCalledWith({
+      environmentId: threadRef.environmentId,
+      input: {
+        threadId: threadRef.threadId,
+        url: "http://opaque.localhost:3773/app",
+        viewport: hydratedDefaults.viewport,
+        profileId: hydratedDefaults.profileId,
+      },
+    });
+    expect(fallbackToBrowser).not.toHaveBeenCalled();
   });
 
   it("does not report or fall back when opening the preview is interrupted", async () => {
