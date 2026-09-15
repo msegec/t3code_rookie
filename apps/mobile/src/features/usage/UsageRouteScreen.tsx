@@ -97,10 +97,8 @@ export function UsageRouteScreen() {
   const isPast24Hours = windowDays === 1;
   const [selectedEnvironmentIds, setSelectedEnvironmentIds] =
     useState<ReadonlySet<EnvironmentId> | null>(null);
-  const { merged, environments, selectedEnvironments, isPending, refresh } = useUsage(
-    window,
-    selectedEnvironmentIds,
-  );
+  const { merged, environments, selectedEnvironments, isPending, isUnreachable, refresh } =
+    useUsage(window, selectedEnvironmentIds);
   const isFocused = useIsFocused();
   const limits = useRefreshLimits(selectedEnvironmentIds, isFocused && tab === "limits");
   const cursorAccessEnvironments = cursorKeychainAccessEnvironments(selectedEnvironments);
@@ -269,7 +267,9 @@ export function UsageRouteScreen() {
         showsVerticalScrollIndicator={false}
         className="flex-1"
         contentContainerClassName="gap-6 px-5 pt-4"
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+        contentContainerStyle={{
+          paddingBottom: Math.max(insets.bottom, 18) + 18,
+        }}
         refreshControl={
           <RefreshControl
             refreshing={showingLimits ? limits.refreshing : refreshingUsage}
@@ -332,6 +332,10 @@ export function UsageRouteScreen() {
                   {environments.length === 0
                     ? "Connect an environment to see usage."
                     : "Select an environment to see usage."}
+                </Text>
+              ) : isUnreachable ? (
+                <Text className="py-16 text-center text-base text-foreground-muted">
+                  No device reported usage. Reconnect a device or pull to scan again.
                 </Text>
               ) : (
                 <>
@@ -619,7 +623,10 @@ function ProviderSection(props: {
             <View className="h-1 flex-row overflow-hidden rounded-full bg-subtle">
               <View
                 className="h-full rounded-full"
-                style={{ flex: share, backgroundColor: colors[provider.provider] }}
+                style={{
+                  flex: share,
+                  backgroundColor: colors[provider.provider],
+                }}
               />
               <View style={{ flex: 1 - share }} />
             </View>
@@ -745,7 +752,10 @@ function ModelsSection(props: { readonly merged: MergedUsage }) {
  * reported.
  */
 function isUsageLoading(environment: EnvironmentUsageStatus) {
-  return environment.isPending || (environment.summary === null && environment.error === null);
+  return (
+    !environment.offline &&
+    (environment.isPending || (environment.summary === null && environment.error === null))
+  );
 }
 
 function usageEnvironmentStatus(environment: EnvironmentUsageStatus): string {
@@ -760,6 +770,7 @@ function usageEnvironmentStatus(environment: EnvironmentUsageStatus): string {
           : "clientBehind",
     });
   }
+  if (environment.offline) return "Offline · excluded from totals";
   if (!environment.isConnected)
     return environment.summary ? "Disconnected · showing saved usage" : "Waiting for connection…";
   if (environment.error)

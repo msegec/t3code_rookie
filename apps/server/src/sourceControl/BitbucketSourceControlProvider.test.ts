@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -147,5 +147,17 @@ it.effect("creates Bitbucket PRs through provider-neutral input names", () =>
       title: "Provider PR",
       bodyFile: "/tmp/body.md",
     });
+  }),
+);
+
+it.effect("reports repository search as unsupported without calling the Bitbucket API", () =>
+  Effect.gen(function* () {
+    const request = vi.fn<BitbucketApi.BitbucketApi["Service"]["request"]>();
+    const provider = yield* makeProvider({ request });
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3code" });
+
+    assert.deepStrictEqual(output, { supported: false, results: [] });
+    expect(request).not.toHaveBeenCalled();
   }),
 );

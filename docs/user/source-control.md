@@ -81,6 +81,13 @@ clone runs in the background: you can write your first prompt, and sending waits
 are in place. A toast tracks progress and lets you cancel; if the clone fails, retry it from the
 toast or from the banner above the composer.
 
+### Search GitHub by name
+
+On the repository step, type at least two characters to search GitHub. Your repositories appear
+first, followed by other matches. On web, use the arrow keys and Enter; on mobile, tap a result.
+Exact `owner/repo` paths still work for every provider. GitLab, Bitbucket, and Azure DevOps accept
+exact paths but do not support search.
+
 For a local Git repository without a remote, **Publish Repository** creates a hosted repository,
 adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
 make your first commit before pushing.

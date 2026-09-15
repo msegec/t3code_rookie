@@ -42,6 +42,10 @@ import {
   ProjectId,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
+import {
+  resolveRepositorySearchAnswer,
+  type RepositorySearchAnswer,
+} from "@t3tools/client-runtime/state/source-control";
 import { CommonActions, StackActions, useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -56,6 +60,7 @@ import { useProjects, useServerConfigs, waitForProject } from "../../state/entit
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
+import { useDebouncedValue } from "../../state/queries";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -69,7 +74,15 @@ import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
+import {
+  buildRepositorySearchTarget,
+  buildSearchedRepositoryDestination,
+  groupRepositorySearchResults,
+  repositorySearchEmptyState,
+  resolveAddProjectEnvironment,
+  REPOSITORY_SEARCH_DEBOUNCE_MS,
+  REPOSITORY_SEARCH_MIN_QUERY_LENGTH,
+} from "./AddProjectScreen.logic";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -707,6 +720,101 @@ function useEnvironmentFromParam(
   return resolveAddProjectEnvironment(environmentOptions, environmentId);
 }
 
+function RepositorySearchResults(props: {
+  readonly environment: EnvironmentOption;
+  readonly source: AddProjectRemoteSource;
+  readonly query: string;
+  /** Called before navigating so the parent can invalidate a pending exact-path lookup. */
+  readonly onSelectResult: () => void;
+}) {
+  const navigation = useNavigation();
+  const provider = addProjectRemoteSourceProvider(props.source);
+  const debouncedQuery = useDebouncedValue(props.query, REPOSITORY_SEARCH_DEBOUNCE_MS);
+  const searchTarget = useMemo(
+    () =>
+      buildRepositorySearchTarget({
+        environmentId: props.environment.environmentId,
+        provider,
+        query: props.query,
+        debouncedQuery,
+      }),
+    [debouncedQuery, props.environment.environmentId, props.query, provider],
+  );
+  // A null target leaves the query unsubscribed, so a short prefix never reaches the wire and a
+  // still-settling query renders blank instead of keeping the previous prefix's matches on screen.
+  const searchState = useEnvironmentQuery(
+    searchTarget === null ? null : sourceControlEnvironment.repositorySearch(searchTarget),
+  );
+  const canSearch =
+    provider !== null && props.query.trim().length >= REPOSITORY_SEARCH_MIN_QUERY_LENGTH;
+  const groups = useMemo(
+    () =>
+      provider === null
+        ? []
+        : groupRepositorySearchResults(searchState.data?.results ?? [], provider),
+    [provider, searchState.data?.results],
+  );
+  // Sticky per environment+provider, so a provider already known unsupported keeps its exact-path
+  // affordance instead of flashing "Searching repositories…" on every keystroke's fresh atom.
+  const answerMemoryRef = useRef<Map<string, RepositorySearchAnswer> | null>(null);
+  answerMemoryRef.current ??= new Map();
+  const answer = resolveRepositorySearchAnswer({
+    memory: answerMemoryRef.current,
+    environmentId: props.environment.environmentId,
+    provider,
+    canSearch,
+    data: searchState.data,
+    error: searchState.error,
+  });
+  const emptyStateMessage = repositorySearchEmptyState({
+    source: props.source,
+    supported: answer.supported,
+    error: answer.error,
+    isPending: canSearch && (searchTarget === null || searchState.isPending),
+    canSearch,
+  });
+
+  if (provider === null || groups.length === 0) {
+    return emptyStateMessage === null ? null : (
+      <Text className="px-1 text-sm leading-normal text-foreground-muted">{emptyStateMessage}</Text>
+    );
+  }
+
+  return (
+    <>
+      {groups.map((group) => (
+        <View key={group.key} className="gap-2">
+          <SectionTitle>{group.label}</SectionTitle>
+          <ListSection>
+            {group.results.map((result, index) => (
+              <ListRow
+                key={result.nameWithOwner}
+                title={result.nameWithOwner}
+                subtitle={result.description ?? null}
+                icon={<SourceControlIcon kind={provider} size={18} colorClassName="accent-icon" />}
+                isFirst={index === 0}
+                onPress={() => {
+                  props.onSelectResult();
+                  navigation.dispatch(
+                    StackActions.push(
+                      "AddProjectDestination",
+                      buildSearchedRepositoryDestination({
+                        environmentId: props.environment.environmentId,
+                        source: provider,
+                        result,
+                      }),
+                    ),
+                  );
+                }}
+              />
+            ))}
+          </ListSection>
+        </View>
+      ))}
+    </>
+  );
+}
+
 export function AddProjectRepositoryScreen(props: {
   readonly environmentId?: string | string[];
   readonly source?: string | string[];
@@ -720,6 +828,10 @@ export function AddProjectRepositoryScreen(props: {
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped whenever a competing action supersedes a pending exact-path lookup (selecting a search
+  // result). The continuation bails when its captured value is stale. isFocused alone is not
+  // enough: popping the pushed destination re-focuses this screen while the lookup still settles.
+  const lookupGenerationRef = useRef(0);
 
   const lookupRepository = useCallback(async () => {
     if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
@@ -741,6 +853,7 @@ export function AddProjectRepositoryScreen(props: {
       return;
     }
 
+    const generation = ++lookupGenerationRef.current;
     const result = await lookupRepositoryQuery({
       environmentId: environment.environmentId,
       input: {
@@ -748,6 +861,13 @@ export function AddProjectRepositoryScreen(props: {
         repository: repositoryInput.trim(),
       },
     });
+    // A stale lookup must not push a destination the user did not ask for: the generation catches
+    // a search result selected while it was pending (even after popping back here), and the focus
+    // check catches this screen no longer being current (popped, or something else on top).
+    if (generation !== lookupGenerationRef.current || !navigation.isFocused()) {
+      setIsSubmitting(false);
+      return;
+    }
     if (AsyncResult.isFailure(result)) {
       setError(errorMessage(Cause.squash(result.cause)));
     } else {
@@ -789,6 +909,14 @@ export function AddProjectRepositoryScreen(props: {
             disabled={isSubmitting || repositoryInput.trim().length === 0}
             onPress={() => void lookupRepository()}
             loading={isSubmitting}
+          />
+          <RepositorySearchResults
+            environment={environment}
+            source={source}
+            query={repositoryInput}
+            onSelectResult={() => {
+              lookupGenerationRef.current += 1;
+            }}
           />
         </>
       ) : (
