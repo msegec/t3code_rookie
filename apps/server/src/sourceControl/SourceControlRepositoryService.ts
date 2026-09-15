@@ -18,6 +18,8 @@ import {
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryInfo,
   type SourceControlRepositoryLookupInput,
+  type SourceControlRepositorySearchInput,
+  type SourceControlRepositorySearchOutput,
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
@@ -34,6 +36,26 @@ const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketRepositoryLocatorError);
 
+/**
+ * The detail a client may show. Bitbucket locator errors carry a credential
+ * token in the repository field, so their canned wording wins; a structured
+ * miss gets the actionable path hint; anything else is generic and stays
+ * server-side.
+ */
+function repositoryErrorDetail(cause: unknown): string {
+  if (
+    isSourceControlProviderError(cause) &&
+    cause.provider === "bitbucket" &&
+    isBitbucketRepositoryLocatorError(cause.cause)
+  ) {
+    return BitbucketApi.BitbucketRepositoryLocatorError.detail;
+  }
+  if (isSourceControlProviderError(cause) && cause.reason === "repository-not-found") {
+    return "Repository not found. Check the owner/repo path and try again.";
+  }
+  return "The source control operation could not be completed.";
+}
+
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
   {
@@ -48,6 +70,9 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly prepareClone: (
       input: SourceControlCloneRepositoryInput,
     ) => Effect.Effect<SourceControlPreparedClone, SourceControlRepositoryError>;
+    readonly searchRepositories: (
+      input: SourceControlRepositorySearchInput,
+    ) => Effect.Effect<SourceControlRepositorySearchOutput, SourceControlRepositoryError>;
     readonly cloneRepository: (
       input: SourceControlCloneRepositoryInput,
       options?: SourceControlCloneOptions,
@@ -97,12 +122,7 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
       : new SourceControlRepositoryError({
           operation,
           provider,
-          detail:
-            isSourceControlProviderError(cause) &&
-            cause.provider === "bitbucket" &&
-            isBitbucketRepositoryLocatorError(cause.cause)
-              ? BitbucketApi.BitbucketRepositoryLocatorError.detail
-              : "The source control operation could not be completed.",
+          detail: repositoryErrorDetail(cause),
           cause,
         }),
   );
@@ -202,6 +222,20 @@ export const make = Effect.gen(function* () {
     });
     return toRepositoryInfo(providerKind, urls);
   });
+
+  const searchRepositories = Effect.fn("SourceControlRepositoryService.searchRepositories")(
+    function* (input: SourceControlRepositorySearchInput) {
+      const providerKind = yield* ensureConcreteProvider({
+        operation: "searchRepositories",
+        provider: input.provider,
+      });
+      const provider = yield* providers.get(providerKind);
+      return yield* provider.searchRepositories({
+        cwd: input.cwd ?? config.cwd,
+        query: input.query.trim(),
+      });
+    },
+  );
 
   const normalizeDestinationPath = Effect.fn("SourceControlRepositoryService.normalizeDestination")(
     function* (destinationPath: string) {
@@ -462,6 +496,8 @@ export const make = Effect.gen(function* () {
   return SourceControlRepositoryService.of({
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
+    searchRepositories: (input) =>
+      searchRepositories(input).pipe(mapRepositoryError("searchRepositories", input.provider)),
     prepareClone: (input) =>
       prepareClone(input).pipe(
         mapRepositoryError(

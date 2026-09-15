@@ -126,6 +126,9 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
+    // Repository search is GitHub only for now. Bitbucket answers as data rather than
+    // failing, so a search-as-you-type caller renders "not supported" instead of an error.
+    searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
     createRepository: (input) =>
       bitbucket.createRepository(input).pipe(
         Effect.mapError(

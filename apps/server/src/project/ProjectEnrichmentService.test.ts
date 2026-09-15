@@ -58,6 +58,7 @@ it.effect("preserves either enrichment field when the other resolver fails", () 
             : Effect.succeed(identity(workspaceRoot)),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) =>
           workspaceRoot === "/favicon-fails"
             ? Effect.fail(
@@ -109,6 +110,7 @@ it.effect("does not warn about favicons for workspace roots that no longer exist
         resolve: (workspaceRoot) => Effect.succeed(identity(workspaceRoot)),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) =>
           Effect.fail(
             workspaceRoot === "/missing"
@@ -158,6 +160,7 @@ it.effect("publishes repository completion while favicon enrichment is still pen
         resolve: (workspaceRoot) => Effect.succeed(identity(workspaceRoot)),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) =>
           Deferred.await(releaseFavicon).pipe(Effect.as(`${workspaceRoot}/favicon.svg`)),
       }),
@@ -186,6 +189,7 @@ it.effect("keeps repository workers available when every favicon worker is hung"
         resolve: (workspaceRoot) => Effect.succeed(identity(workspaceRoot)),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: () =>
           Effect.gen(function* () {
             const started = yield* Ref.updateAndGet(faviconStarts, (count) => count + 1);
@@ -237,6 +241,7 @@ it.effect("getAvailable returns immediately while repository identity is still u
           ),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) => Effect.succeed(`${workspaceRoot}/favicon.svg`),
       }),
     );
@@ -287,6 +292,7 @@ it.effect(
           },
         }),
         Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
           resolvePath: () => Effect.succeed(null),
         }),
       );
@@ -347,6 +353,7 @@ it.effect("deduplicates requests, bounds pending work, and reloads invalidated r
           }),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) => Effect.succeed(`${workspaceRoot}/favicon.svg`),
       }),
     );
@@ -406,6 +413,7 @@ it.effect("rescans a favicon only after 15 minutes", () =>
         resolve: (workspaceRoot) => Effect.succeed(identity(workspaceRoot)),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         // Each scan returns a new path, so a wait can tell a rescan from the cached value.
         resolvePath: (workspaceRoot) =>
           Ref.updateAndGet(faviconScans, (count) => count + 1).pipe(
@@ -457,6 +465,7 @@ it.effect(
             ),
         }),
         Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
           resolvePath: () => Ref.update(faviconScans, (count) => count + 1).pipe(Effect.as(null)),
         }),
       );

@@ -328,6 +328,7 @@ export const make = Effect.gen(function* () {
   return SourceControlProvider.SourceControlProvider.of({
     kind: SourceControlProviderKind.make("gitcafe"),
     repositoryNameFromRemoteUrl: (url) => GitCafeHosts.parseGitCafeRemote(url)?.repository ?? null,
+    searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
     getChangeRequest: getPull,
     listChangeRequests: Effect.fn("GitCafeSourceControlProvider.listChangeRequests")(
       function* (input) {

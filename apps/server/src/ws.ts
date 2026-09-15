@@ -188,6 +188,7 @@ import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { attachmentRelativePath, createDeterministicAttachmentId } from "./attachmentStore.ts";
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import { issueWorkspaceUploadUrl } from "./workspace/WorkspaceUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -203,6 +204,7 @@ import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts
 import * as ProjectService from "./project/ProjectService.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import { projectMutationOperation } from "./project/ProjectMutation.ts";
+import * as ProjectAccents from "./project/ProjectAccents.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
@@ -230,11 +232,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
-import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
-import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
-import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
-import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
-import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
+
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
@@ -721,13 +719,19 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
           // shells for multi-env grouping without blocking the initial
           // snapshot or completion marker on slow git probes.
           projectEnrichment.getAvailable(project.workspaceRoot).pipe(
-            Effect.map((enrichment) => ({
-              project: {
+            // Accents ride on the shell so sidebar rows never paint once
+            // without them and once with them. See ProjectAccents.
+            Effect.flatMap((enrichment) =>
+              ProjectAccents.withProjectAccent({
                 ...project,
                 repositoryIdentity: enrichment.repositoryIdentity,
-              },
-              repositoryIdentityResolved: enrichment.repositoryIdentityResolved,
-            })),
+              }).pipe(
+                Effect.map((enrichedProject) => ({
+                  project: enrichedProject,
+                  repositoryIdentityResolved: enrichment.repositoryIdentityResolved,
+                })),
+              ),
+            ),
           ),
         { concurrency: 16 },
       ).pipe(
@@ -1004,6 +1008,16 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         }),
       });
     });
+    // The update carries the accent for the same reason the snapshot does: a
+    // project that changes must not hand the client a record the rows then
+    // have to repaint.
+    const projectItemWithAccent = Effect.fn("ws.orchestrationV2.projectShellItemWithAccent")(
+      function* (stored: Extract<ShellApplicationEvent, { readonly aggregateKind: "project" }>) {
+        const item = yield* projectItem(stored);
+        if (item.kind !== "project.updated") return item;
+        return { ...item, project: yield* ProjectAccents.withProjectAccent(item.project) };
+      },
+    );
 
     // Coalescing makes each per-thread shell read represent every event
     // for that thread in the current window; reading only the affected
@@ -1017,7 +1031,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         (stored) =>
           Effect.gen(function* () {
             if ("aggregateKind" in stored) {
-              return yield* projectItem(stored);
+              return yield* projectItemWithAccent(stored);
             }
             const shell = yield* threadManagement.getThreadShell(stored.event.threadId);
             return shellStreamItemFromThreadShell({ stored, shell });
@@ -1060,10 +1074,17 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
             ]),
           );
           const snapshotSequence = yield* applicationEvents.latestApplicationSequence;
-          const changedProjects = (yield* projects.listShells()).flatMap((project) =>
-            identities.has(project.workspaceRoot)
-              ? [{ ...project, repositoryIdentity: identities.get(project.workspaceRoot) ?? null }]
-              : [],
+          const changedProjects = yield* ProjectAccents.withProjectAccents(
+            (yield* projects.listShells()).flatMap((project) =>
+              identities.has(project.workspaceRoot)
+                ? [
+                    {
+                      ...project,
+                      repositoryIdentity: identities.get(project.workspaceRoot) ?? null,
+                    },
+                  ]
+                : [],
+            ),
           );
           return shellStreamItemFromEnrichmentRefresh({
             snapshot: {
@@ -2544,6 +2565,8 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.setLabels(input)),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           sourceControlRepositories.lookupRepository(input),
+        [WS_METHODS.sourceControlSearchRepositories]: (input) =>
+          sourceControlRepositories.searchRepositories(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
           sourceControlRepositories.cloneRepository(input),
         [WS_METHODS.projectCloneStart]: (input) =>
@@ -2680,6 +2703,9 @@ const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsCreateUploadUrl]: (input) => issueWorkspaceUploadUrl(input),
+        [WS_METHODS.projectsRenameEntry]: (input) => workspaceFileSystem.renameEntry(input),
+        [WS_METHODS.projectsDeleteEntry]: (input) => workspaceFileSystem.deleteEntry(input),
         [WS_METHODS.shellOpenInEditor]: (input) => externalLauncher.launchEditor(input),
         [WS_METHODS.filesystemBrowse]: (input) =>
           workspaceEntries.browse(input).pipe(
@@ -3134,6 +3160,7 @@ export const layer = Layer.unwrap(
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const sql = yield* SqlClient.SqlClient;
+    const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3199,17 +3226,13 @@ export const layer = Layer.unwrap(
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
+              // The server-lifetime instance resolved above, so every
+              // connection shares the same provider CLI caches and rate-limit
+              // circuits instead of minting fresh ones per client.
               Layer.provide(
-                SourceControlDiscovery.layer.pipe(
-                  Layer.provide(
-                    SourceControlProviderRegistry.layer.pipe(
-                      Layer.provide(SourceControlBuiltInDrivers.layer),
-                      Layer.provideMerge(GitVcsDriver.layer),
-                      Layer.provide(
-                        VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
-                      ),
-                    ),
-                  ),
+                Layer.succeed(
+                  SourceControlDiscovery.SourceControlDiscovery,
+                  sourceControlDiscovery,
                 ),
               ),
             ),

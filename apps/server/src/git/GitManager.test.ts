@@ -666,6 +666,9 @@ function createGitHubProviderWithFakeGh(scenario: FakeGhScenario = {}): {
           cwd: input.cwd,
           args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
         }).pipe(Effect.map((result) => JSON.parse(result.stdout))),
+      // GitManager never searches repositories; the fake only has to satisfy
+      // the service interface.
+      searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
       createRepository: (input) =>
         Effect.fail(fail(input.cwd, `Unexpected repository create: ${input.repository}`)),
       checkoutChangeRequest: (input) =>

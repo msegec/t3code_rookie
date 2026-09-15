@@ -18,6 +18,14 @@ interface FileSaveOptions {
   cwd: string;
   relativePath: string;
   onPendingChange: (relativePath: string, pending: boolean) => void;
+  discardSavesRef?: { current: FileSaveControls | null } | undefined;
+}
+
+export interface FileSaveControls {
+  suspend: () => void;
+  resume: () => void;
+  discard: () => void;
+  reset: () => void;
 }
 
 export function useFileSaveCoordinator({
@@ -25,6 +33,7 @@ export function useFileSaveCoordinator({
   cwd,
   relativePath,
   onPendingChange,
+  discardSavesRef,
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change"> {
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
@@ -46,13 +55,22 @@ export function useFileSaveCoordinator({
             confirmProjectFileQueryData(environmentId, cwd, relativePath, confirmedContents),
         });
         coordinatorRef.current = coordinator;
+        if (discardSavesRef) {
+          discardSavesRef.current = {
+            suspend: () => coordinator.suspend(),
+            resume: () => coordinator.resume(),
+            discard: () => coordinator.discard(),
+            reset: () => coordinator.reset(),
+          };
+        }
         return () => {
           coordinatorRef.current = null;
+          if (discardSavesRef) discardSavesRef.current = null;
           coordinator.dispose();
         };
       },
     };
-  }, [cwd, environmentId, onPendingChange, relativePath, writeFile]);
+  }, [cwd, discardSavesRef, environmentId, onPendingChange, relativePath, writeFile]);
 
   // StrictMode replays effect setup. Retired file sessions stay inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.

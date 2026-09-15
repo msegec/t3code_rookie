@@ -260,6 +260,7 @@ import {
   type ProviderInstanceEntry,
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { projectAccentRowState, projectAccentRowStyle } from "../projectAccent";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button, InlineButton } from "./ui/button";
 import {
@@ -1232,6 +1233,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     },
     [threadRef],
   );
+  const projectAccent = props.project?.accent ?? null;
 
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
@@ -1590,7 +1592,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         : hasUnsentDraft
           ? cn(draftSurfaceClassName, "text-sidebar-foreground")
           : shouldRecede
-            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:text-sidebar-foreground"
             : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
     // Background work fades as a whole row, status label included, so it
     // takes less attention than rows that need a human (input, approval).
@@ -1803,6 +1805,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       >
         <Tooltip disabled={sortable?.isDragging}>
           <TooltipTrigger
+            delay={600}
             render={
               <div
                 ref={rowRef}
@@ -1811,6 +1814,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
                 data-testid="sidebar-row-slim"
+                data-project-accent={projectAccent === null ? undefined : "true"}
+                data-project-accent-state={projectAccentRowState(
+                  projectAccent,
+                  props.isActive,
+                  isSelected,
+                )}
+                style={projectAccentRowStyle(projectAccent)}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
                 onClick={handleClick}
@@ -1968,6 +1978,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     >
       <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger
+          delay={600}
           render={
             <div
               ref={rowRef}
@@ -1976,6 +1987,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               aria-label={accessibility.label}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isActive,
+                isSelected,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -2257,6 +2275,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
+  const projectAccent = props.project?.accent ?? null;
   // Same details tooltip as the regular rows: a search hit is still a thread,
   // and the hover card is how you disambiguate identically-titled results.
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
@@ -2316,6 +2335,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     <li role="presentation" className="list-none" {...fileDropHandlers}>
       <Tooltip>
         <TooltipTrigger
+          delay={600}
           render={
             <button
               ref={rowRef}
@@ -2328,6 +2348,18 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               aria-selected={props.isHighlighted}
               aria-current={accessibility.current}
               aria-label={accessibility.label}
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              // Focus stays on the search input and the option is tabIndex -1,
+              // so this fill is the keyboard cursor. It must stay on the
+              // strongest row token: sidebar-row-selected paints weaker than
+              // hover in the dark palette, which would make the highlighted
+              // row read as less prominent than a merely hovered one.
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isRouteActive || props.isHighlighted,
+                false,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(
@@ -2413,7 +2445,9 @@ export default function Sidebar() {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
-  const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
+  const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{
+    path: string;
+  }>({
     onCopy: ({ path }) => {
       toastManager.add({
         type: "success",
@@ -2431,7 +2465,9 @@ export default function Sidebar() {
       );
     },
   });
-  const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
+  const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{
+    branch: string;
+  }>({
     target: "branch name",
     onCopy: ({ branch }) => {
       toastManager.add({
@@ -2450,7 +2486,9 @@ export default function Sidebar() {
       );
     },
   });
-  const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
+  const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{
+    threadId: ThreadId;
+  }>({
     onCopy: ({ threadId }) => {
       toastManager.add({
         type: "success",
@@ -2824,7 +2862,11 @@ export default function Sidebar() {
         ).push(
           optimisticDrop.clearsSnooze
             ? projected
-            : { ...projected, snoozedAt: thread.snoozedAt, snoozedUntil: thread.snoozedUntil },
+            : {
+                ...projected,
+                snoozedAt: thread.snoozedAt,
+                snoozedUntil: thread.snoozedUntil,
+              },
         );
       } else {
         const section = resolveSidebarThreadSection({
@@ -3266,7 +3308,10 @@ export default function Sidebar() {
         const trimmed = title.trim();
         setRenamingThreadKey(null);
         if (trimmed.length === 0) {
-          toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
+          toastManager.add({
+            type: "warning",
+            title: "Thread title cannot be empty",
+          });
           return;
         }
         if (trimmed === originalTitle) return;
@@ -3650,7 +3695,9 @@ export default function Sidebar() {
       setOptimisticDrop(null);
       return;
     }
-    const canonicalSection = effectiveSnoozed(thread, { now: new Date().toISOString() })
+    const canonicalSection = effectiveSnoozed(thread, {
+      now: new Date().toISOString(),
+    })
       ? "snoozed"
       : thread.settledOverride === "settled"
         ? "settled"
@@ -4193,7 +4240,10 @@ export default function Sidebar() {
           // Never navigate away from a thread that did not snooze.
           return isAtomCommandInterrupted(result)
             ? ({ status: "interrupted" } as const)
-            : ({ status: "failure", error: squashAtomCommandFailure(result) } as const);
+            : ({
+                status: "failure",
+                error: squashAtomCommandFailure(result),
+              } as const);
         }
         // Only move forward if the user is still on the snoozed thread —
         // a navigation made during the await wins over ours.
@@ -4376,7 +4426,9 @@ export default function Sidebar() {
           const outcomes = await Promise.all(
             selectedThreads.map(async (thread) => {
               const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-              const outcome = await performSnooze(threadRef, preset, { coSnoozingKeys });
+              const outcome = await performSnooze(threadRef, preset, {
+                coSnoozingKeys,
+              });
               return { outcome, threadRef };
             }),
           );
@@ -4629,7 +4681,9 @@ export default function Sidebar() {
               isSettled,
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
-              canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
+              canSnoozeNow: canSnooze(thread, {
+                now: new Date().toISOString(),
+              }),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               supports: {
@@ -4760,7 +4814,9 @@ export default function Sidebar() {
               );
               return;
             }
-            copyPathToClipboard(threadWorkspacePath, { path: threadWorkspacePath });
+            copyPathToClipboard(threadWorkspacePath, {
+              path: threadWorkspacePath,
+            });
             return;
           case "copy-branch":
             if (thread.branch) {
