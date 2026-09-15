@@ -30,6 +30,7 @@ import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";
+import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import {
   hasCompatibleOrchestrationProtocol,
@@ -351,6 +352,9 @@ it.live.each(["thread", "shell"] as const)(
         Effect.provideService(ProjectEnrichment.ProjectEnrichmentService, {
           subscribeChanges: PubSub.subscribe(updates),
         } as ProjectEnrichment.ProjectEnrichmentService["Service"]),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
       );
       assert.deepEqual(
         items.map((item) => item.kind),

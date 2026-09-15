@@ -291,6 +291,7 @@ export const make = Effect.gen(function* () {
     kind: SourceControlProviderKind.make("forgejo"),
     repositoryNameFromRemoteUrl,
     refineRepositoryIdentity,
+    searchRepositories: () => Effect.succeed({ supported: false, results: [] }),
     listChangeRequests: (input) =>
       Effect.gen(function* () {
         const repo = yield* cli.resolveRepository(input);

@@ -62,7 +62,7 @@ const GITHUB_PROCESS_CONCURRENCY = 4;
 
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
 
-const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
+export const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
   const normalized = stderr.toLowerCase();
 
   if (
@@ -86,6 +86,10 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
     normalized.includes("http 429")
   ) {
     return "rate-limited";
+  }
+
+  if (command === "gh" && normalized.includes("could not resolve to a repository")) {
+    return "repository-not-found";
   }
 
   if (

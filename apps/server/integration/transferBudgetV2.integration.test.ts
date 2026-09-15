@@ -45,6 +45,7 @@ import * as ProjectStore from "../src/orchestration-v2/ProjectStore.ts";
 import * as ProjectService from "../src/project/ProjectService.ts";
 import * as ProjectEnrichmentService from "../src/project/ProjectEnrichmentService.ts";
 import * as OrchestrationHttp from "../src/orchestration-v2/http.ts";
+import * as ProjectFaviconResolver from "../src/project/ProjectFaviconResolver.ts";
 import * as ServerHttp from "../src/http.ts";
 import { subscribeOrchestrationV2Thread, subscribeOrchestrationV2Shell } from "../src/ws.ts";
 import {
@@ -114,6 +115,11 @@ const layerServices = layerManagement.pipe(
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(Layer.mock(ProjectService.ProjectService)({})),
   Layer.provideMerge(layerEnrichment),
+  Layer.provideMerge(
+    Layer.mock(ProjectFaviconResolver.ProjectFaviconResolver)({
+      resolveAccent: () => Effect.succeed(null),
+    }),
+  ),
   Layer.provideMerge(layerPersistence),
 );
 class TransferApi extends HttpApi.make("environment").add(

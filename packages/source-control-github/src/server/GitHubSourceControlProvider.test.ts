@@ -12,6 +12,7 @@ import { ChildProcessSpawner } from "effect/process";
 import * as TestClock from "effect/testing/TestClock";
 
 import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as GitHubApi from "./GitHubApi.ts";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
@@ -694,6 +695,171 @@ describe("GitHubSourceControlProvider.checkoutChangeRequest", () => {
     assert.strictEqual(name("main", false), "main");
   });
 });
+
+const SEARCH_DESCRIPTION_CAP = 160;
+
+/**
+ * One `user/repos` or `search/repositories` row. Both endpoints speak this
+ * vocabulary, so one builder covers the owned listing and the public search.
+ */
+function searchRepo(
+  nameWithOwner: string,
+  overrides: { readonly description?: string; readonly stargazers_count?: number } = {},
+) {
+  return {
+    full_name: nameWithOwner,
+    html_url: `https://github.com/${nameWithOwner}`,
+    ssh_url: `git@github.com:${nameWithOwner}.git`,
+    ...(overrides.description === undefined ? {} : { description: overrides.description }),
+    ...(overrides.stargazers_count === undefined
+      ? {}
+      : { stargazers_count: overrides.stargazers_count }),
+  };
+}
+
+/** Answers the two search reads by path, so a test owns both listings independently. */
+function searchApi(input: {
+  readonly owned: ReadonlyArray<ReturnType<typeof searchRepo>>;
+  readonly searched: ReadonlyArray<ReturnType<typeof searchRepo>>;
+}): Partial<GitHubApi.GitHubApi["Service"]> {
+  return {
+    rest: (request) =>
+      Effect.succeed(
+        request.path.startsWith("user/repos")
+          ? restResponse(input.owned)
+          : restResponse({ items: input.searched }),
+      ),
+  };
+}
+
+it.effect("ranks, caps, and trims the repository search results it returns", () =>
+  Effect.gen(function* () {
+    // Every adjacent pair below is decided by a different rule, so dropping or
+    // reordering any one of them changes this expectation. Owned rows come
+    // from `user/repos`, the rest from `search/repositories`.
+    const filler = Array.from({ length: 20 }, (_unused, index) =>
+      searchRepo(`filler/pack-t3code-${index}`),
+    );
+    const provider = yield* makeProvider(
+      searchApi({
+        owned: [
+          searchRepo("mark/t3code-tools", { description: "a".repeat(400) }),
+          searchRepo("mark/awesome-t3code", { stargazers_count: 9000 }),
+        ],
+        searched: [
+          searchRepo("pingdotgg/t3code", {
+            stargazers_count: 5000,
+            description: "Short and untouched.",
+          }),
+          searchRepo("forks/t3code-mirror", { stargazers_count: 100 }),
+          searchRepo("legacy/old-t3code", { stargazers_count: 4000 }),
+          ...filler,
+        ],
+      }),
+    );
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3code" });
+
+    assert.strictEqual(output.supported, true);
+    assert.strictEqual(output.results.length, 20);
+    assert.deepStrictEqual(
+      output.results.slice(0, 5).map((result) => result.nameWithOwner),
+      [
+        "mark/t3code-tools",
+        "mark/awesome-t3code",
+        "pingdotgg/t3code",
+        "forks/t3code-mirror",
+        "legacy/old-t3code",
+      ],
+    );
+    assert.strictEqual(output.results[0]?.description, "a".repeat(SEARCH_DESCRIPTION_CAP));
+    assert.strictEqual(output.results[2]?.description, "Short and untouched.");
+  }),
+);
+
+it.effect("ranks a spaced query the way the search actually ran it", () =>
+  Effect.gen(function* () {
+    // "t3 code" reaches GitHub as "t3code" after sanitizing, so ranking must
+    // use the sanitized form too: the exact-name match beats the popular
+    // substring.
+    const provider = yield* makeProvider(
+      searchApi({
+        owned: [],
+        searched: [
+          searchRepo("acme/uses-t3code-inside", { stargazers_count: 5000 }),
+          searchRepo("pingdotgg/t3code", { stargazers_count: 10 }),
+        ],
+      }),
+    );
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3 code" });
+
+    assert.strictEqual(output.supported, true);
+    assert.deepStrictEqual(
+      output.results.map((result) => result.nameWithOwner),
+      ["pingdotgg/t3code", "acme/uses-t3code-inside"],
+    );
+  }),
+);
+
+it.effect("redacts search queries in provider errors while keeping the raw cause", () =>
+  Effect.gen(function* () {
+    // A listing body GitHub did not describe in the shape we asked for. The
+    // decode failure is raw and belongs in `cause`; the detail a client sees is
+    // the canned sentence, and the query is reduced to a credential-free URL.
+    const provider = yield* makeProvider({
+      rest: () => Effect.succeed(restResponse({ nope: "not a repository list" })),
+    });
+
+    const error = yield* provider
+      .searchRepositories({
+        cwd: "/repo",
+        query: "https://user:secret@github.com/pingdotgg/t3code?token=secret",
+      })
+      .pipe(Effect.flip);
+
+    assert.deepStrictEqual(
+      {
+        provider: error.provider,
+        operation: error.operation,
+        cwd: error.cwd,
+        repository: error.repository,
+        detail: error.detail,
+      },
+      {
+        provider: "github",
+        operation: "searchRepositories",
+        cwd: "/repo",
+        repository: "https://github.com/pingdotgg/t3code",
+        detail: "GitHub returned an invalid repository list.",
+      },
+    );
+    assert.notEqual(error.cause, undefined);
+    assert.equal(error.message.includes("not a repository list"), false);
+    assert.equal(error.message.includes("secret"), false);
+  }),
+);
+
+// Search-as-you-type would raise one toast per keystroke if a paused circuit
+// failed, so a refusal answers with whatever the caches already hold. This is
+// the error `GitHubApi.send` raises before it builds a request.
+it.effect("answers with empty results instead of an error while the GitHub circuit is open", () =>
+  Effect.gen(function* () {
+    const paused = () =>
+      new SourceControlRateLimit.SourceControlRateLimitPausedError({
+        provider: SourceControlProviderKind.make("github"),
+        host: "github.com",
+        retryAt: 0,
+      });
+    const provider = yield* makeProvider({
+      rest: () => Effect.fail(paused()),
+    });
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "codething" });
+
+    assert.deepStrictEqual(output, { supported: true, results: [] });
+  }),
+);
 
 it("accepts active authenticated GitHub accounts when another account fails", () => {
   const auth = GitHubSourceControlProvider.discovery.parseAuth(
