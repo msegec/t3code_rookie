@@ -138,6 +138,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsReviewerCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsLabelCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
+  // A read like the lookup beside it. Clone and publish repository, and the
+  // project clone lifecycle, ship upstream under AuthSourceControlWriteScope.
+  [WS_METHODS.sourceControlSearchRepositories]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsListEntries]: AuthFilesystemReadScope,
   [WS_METHODS.projectsReadFile]: AuthFilesystemReadScope,
@@ -146,6 +149,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.projectsWriteFile]: AuthFilesystemWriteScope,
   [WS_METHODS.projectsEnsureScratch]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsCreateNew]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectsCreateUploadUrl]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectsRenameEntry]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectsDeleteEntry]: AuthOrchestrationOperateScope,
   [WS_METHODS.shellOpenInEditor]: AuthOrchestrationOperateScope,
   [WS_METHODS.filesystemBrowse]: AuthFilesystemReadScope,
   [WS_METHODS.agentSessionsScan]: AuthOrchestrationReadScope,

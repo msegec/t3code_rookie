@@ -1,9 +1,10 @@
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ChildProcessSpawner } from "effect/process";
 
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 import { parseGitLabAuthStatusHosts } from "./gitLabAuthStatus.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
@@ -306,4 +307,20 @@ it.effect.each(["read", "decode"] as const)(
       if (stage === "read") assert.strictEqual(error.cause, cause);
       else assert.propertyVal(error.cause, "_tag", "SchemaError");
     }),
+);
+
+it.effect("reports repository search as unsupported without running a GitLab command", () =>
+  Effect.gen(function* () {
+    const run = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
+    const provider = yield* GitLabSourceControlProvider.make.pipe(
+      Effect.provide(
+        GitLabCli.layer.pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run }))),
+      ),
+    );
+
+    const output = yield* provider.searchRepositories({ cwd: "/repo", query: "t3code" });
+
+    assert.deepStrictEqual(output, { supported: false, results: [] });
+    expect(run).not.toHaveBeenCalled();
+  }),
 );

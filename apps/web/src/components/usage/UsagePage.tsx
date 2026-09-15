@@ -141,10 +141,15 @@ export function UsagePage() {
     useState<ReadonlySet<EnvironmentId> | null>(null);
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, selectedEnvironments, isPending, isPartial, refresh } = useUsage(
-    window,
-    selectedEnvironmentIds,
-  );
+  const {
+    merged,
+    environments,
+    selectedEnvironments,
+    isPending,
+    isPartial,
+    isUnreachable,
+    refresh,
+  } = useUsage(window, selectedEnvironmentIds);
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const cursorAccessEnvironments = cursorKeychainAccessEnvironments(selectedEnvironments);
   const sourceMessages = [
@@ -506,6 +511,17 @@ export function UsagePage() {
                   </p>
                 ))}
               </div>
+            ) : isUnreachable ? (
+              <>
+                <UsageCoverageNotice
+                  environments={selectedEnvironments}
+                  duplicateSources={merged.duplicateSources}
+                  contractMismatches={merged.contractMismatches}
+                />
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  No device reported usage. Reconnect a device or refresh to scan again.
+                </p>
+              </>
             ) : (
               <>
                 {sourceMessages.map((message) => (
@@ -1066,7 +1082,15 @@ function UsageCoverageNotice({
     const mismatch = mismatchByEnvironment.get(environment.environmentId);
     return mismatch === undefined ? [] : [{ environment, mismatch }];
   });
-  if (failed.length === 0 && incompatible.length === 0 && duplicateSources.length === 0) {
+  const offline = environments.filter(
+    (environment) => environment.offline && environment.summary === null,
+  );
+  if (
+    failed.length === 0 &&
+    offline.length === 0 &&
+    incompatible.length === 0 &&
+    duplicateSources.length === 0
+  ) {
     return null;
   }
 
@@ -1080,6 +1104,11 @@ function UsageCoverageNotice({
       {incompatible.map(({ environment, mismatch }) => (
         <span key={environment.environmentId}>
           {formatUsageContractMismatch(environment.label, mismatch)}
+        </span>
+      ))}
+      {offline.map((environment) => (
+        <span key={environment.label}>
+          {environment.label} is offline and excluded from totals.
         </span>
       ))}
       {duplicateSources.length > 0 ? (
@@ -1122,11 +1151,15 @@ function UsageEnvironmentFilter({
       : `${selectedEnvironments.length} environments`;
   const pendingCount = selectedEnvironments.filter(
     (environment) =>
-      environment.error === null && (environment.isPending || environment.summary === null),
+      environment.error === null &&
+      !environment.offline &&
+      (environment.isPending || environment.summary === null),
   ).length;
   const hasIssue =
-    selectedEnvironments.some((environment) => environment.error !== null) ||
-    contractMismatches.length > 0;
+    selectedEnvironments.some(
+      (environment) =>
+        environment.error !== null || (environment.offline && environment.summary === null),
+    ) || contractMismatches.length > 0;
 
   return (
     <Menu>

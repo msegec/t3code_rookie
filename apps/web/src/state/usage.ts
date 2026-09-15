@@ -19,7 +19,7 @@ import { needsCursorKeychainAccess, refreshUsage } from "@t3tools/client-runtime
 import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -35,7 +35,18 @@ export interface EnvironmentUsageStatus {
   readonly error: string | null;
   readonly summary: UsageSummary | null;
   readonly needsCursorKeychainAccess: boolean;
+  /** Connection is live, so the environment will eventually answer. */
+  readonly connected: boolean;
+  /** Unreachable past the scan deadline; excluded from totals unless it answers later. */
+  readonly offline: boolean;
 }
+
+/**
+ * How long an unreachable device may hold the page. Past this, devices without
+ * a live connection show as offline and the totals move on; a connected device
+ * that is still scanning keeps its wait.
+ */
+const OFFLINE_DEADLINE_MS = 7_500;
 
 /**
  * Reads every environment's summary for one window.
@@ -64,6 +75,8 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
           ...access,
           summary: null,
           needsCursorKeychainAccess: false,
+          connected: presentation.connection.phase === "connected",
+          offline: false,
         });
         continue;
       }
@@ -80,6 +93,8 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
           summary,
           get(serverEnvironment.providersValueAtom(environmentId)),
         ),
+        connected: presentation.connection.phase === "connected",
+        offline: false,
       });
     }
     return statuses;
@@ -94,10 +109,16 @@ export interface UsageView {
   readonly isPending: boolean;
   /**
    * True while environments that have not failed are still answering. Failed
-   * environments are reported through their own error rows: totals will not
-   * improve by waiting on them, so they must not read as "still reporting".
+   * and offline environments are reported through their own rows: totals will
+   * not improve by waiting on them, so they must not read as "still reporting".
    */
   readonly isPartial: boolean;
+  /**
+   * True when environments exist but none answered: every one is offline or
+   * failed. The merged zeros are not data, so pages must not show them as
+   * totals.
+   */
+  readonly isUnreachable: boolean;
   readonly refresh: (input?: UsageSummaryInput) => Promise<void>;
 }
 
@@ -152,7 +173,48 @@ export function useUsage(
     ],
   );
   const atom = usageByWindowAtom(windowKey);
-  const environments = useAtomValue(atom);
+  const reported = useAtomValue(atom);
+
+  const [scanNonce, setScanNonce] = useState(0);
+  // An environment that appears mid-scan must get the full grace period, so
+  // the set of scanned environments is part of the key: a set change restarts
+  // the deadline just like a refresh or a new window.
+  const environmentSetKey = useMemo(
+    () =>
+      reported
+        .map((environment) => environment.environmentId)
+        .sort()
+        .join(","),
+    [reported],
+  );
+  // The passed flag names the scan it belongs to, so a new window or refresh
+  // invalidates it on the same render instead of one effect tick later.
+  const scanKey = `${scanNonce}:${environmentSetKey}:${windowKey}`;
+  const [passedScanKey, setPassedScanKey] = useState<string | null>(null);
+  // Returning to a previously viewed window would match the flag that window
+  // left behind and skip the grace period, so drop it when the scan changes.
+  const [lastScanKey, setLastScanKey] = useState(scanKey);
+  if (lastScanKey !== scanKey) {
+    setLastScanKey(scanKey);
+    setPassedScanKey(null);
+  }
+  useEffect(() => {
+    const timer = setTimeout(() => setPassedScanKey(scanKey), OFFLINE_DEADLINE_MS);
+    return () => clearTimeout(timer);
+  }, [scanKey]);
+  const deadlinePassed = passedScanKey === scanKey;
+
+  const environments = useMemo(
+    () =>
+      deadlinePassed
+        ? reported.map((environment) =>
+            environment.summary === null && environment.error === null && !environment.connected
+              ? { ...environment, offline: true }
+              : environment,
+          )
+        : reported,
+    [reported, deadlinePassed],
+  );
   const selectedEnvironments = useMemo(
     () =>
       selectedEnvironmentIds === null
@@ -164,8 +226,9 @@ export function useUsage(
   );
 
   const refresh = useCallback(
-    (nextInput?: UsageSummaryInput) =>
-      refreshUsage({
+    (nextInput?: UsageSummaryInput) => {
+      setScanNonce((nonce) => nonce + 1);
+      return refreshUsage({
         registry: appAtomRegistry,
         server: serverEnvironment,
         presentations: environmentPresentations,
@@ -179,7 +242,8 @@ export function useUsage(
           )
           .map(({ environmentId }) => environmentId),
         input: nextInput ?? (JSON.parse(windowKey) as UsageSummaryInput),
-      }),
+      });
+    },
     [selectedEnvironments, windowKey],
   );
 
@@ -189,7 +253,8 @@ export function useUsage(
     (environment) => environment.summary !== null,
   ).length;
   const stillReporting = selectedEnvironments.filter(
-    (environment) => environment.summary === null && environment.error === null,
+    (environment) =>
+      environment.summary === null && environment.error === null && !environment.offline,
   ).length;
 
   return {
@@ -198,6 +263,7 @@ export function useUsage(
     selectedEnvironments,
     isPending: answeredCount === 0 && stillReporting > 0,
     isPartial: answeredCount > 0 && stillReporting > 0,
+    isUnreachable: selectedEnvironments.length > 0 && answeredCount === 0 && stillReporting === 0,
     refresh,
   };
 }

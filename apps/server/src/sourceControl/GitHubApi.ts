@@ -137,6 +137,11 @@ export interface GitHubRestInput {
   readonly timeout?: Duration.Input;
   /** Overrides `AllowGitHubReserve` for this one request. */
   readonly allowReserve?: boolean;
+  /**
+   * Which GitHub quota this read spends. `search/` reads have their own small
+   * budget, so they name it instead of spending `core`. Defaults to `core`.
+   */
+  readonly resource?: "core" | "search" | undefined;
 }
 
 export interface GitHubGraphQlInput {
@@ -379,6 +384,8 @@ export const make = Effect.gen(function* () {
     readonly timeout?: Duration.Input | undefined;
     readonly allowReserve: boolean;
     readonly acceptNotModified: boolean;
+    /** REST spends `core` unless the caller names a smaller quota. GraphQL always spends `graphql`. */
+    readonly resource?: "core" | "search" | undefined;
     /** Reads the body for GraphQL `errors`, which GitHub sends with HTTP 200. */
     readonly graphql?: boolean;
   }) {
@@ -393,10 +400,10 @@ export const make = Effect.gen(function* () {
     });
     const { token, fingerprint } = yield* credential(host);
     const scope = yield* SourceControlRateLimit.CredentialScope;
-    // REST spends `core` and GraphQL its own quota, each with its own reserve. Every REST path
-    // this reads today is `core`; a `search/` read would need its own resource here. A refusal
-    // still pauses the whole host, the key PullRequestService records its own backoff under.
-    const resource = input.graphql === true ? "graphql" : "core";
+    // REST spends `core` and GraphQL its own quota, each with its own reserve. A `search/`
+    // read names the smaller quota it actually spends. A refusal still pauses the whole host,
+    // the key PullRequestService records its own backoff under.
+    const resource = input.graphql === true ? "graphql" : (input.resource ?? "core");
     const key = { provider: "github" as const, host };
     const run = Effect.gen(function* () {
       const lease = yield* quota
@@ -533,6 +540,7 @@ export const make = Effect.gen(function* () {
           timeout: input.timeout,
           allowReserve: input.allowReserve ?? interactive,
           acceptNotModified: input.ifNoneMatch !== undefined,
+          resource: input.resource,
         }),
       ),
     );

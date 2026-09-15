@@ -47,6 +47,7 @@ const layerEnrichment = ProjectEnrichmentService.layer.pipe(
         resolve: () => Effect.succeed(null),
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: () => Effect.succeed(null),
       }),
     ),

@@ -4,18 +4,24 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Cache from "effect/Cache";
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
+import * as Ref from "effect/Ref";
 import * as Request from "effect/Request";
 import * as RequestResolver from "effect/RequestResolver";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
   DEFAULT_SERVER_SETTINGS,
+  NonNegativeInt,
   SourceControlProviderError,
   TrimmedNonEmptyString,
   type ChangeRequest,
   type GitHubSettings,
   type SourceControlProviderDiscoveryItem,
   type SourceControlRepositoryCloneUrls,
+  type SourceControlRepositorySearchResult,
 } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
@@ -76,6 +82,114 @@ function authAccounts(accounts: ReadonlyArray<GitHubAuthStatusAccount>) {
       ? {}
       : { environmentVariable: entry.environmentVariable }),
   }));
+}
+
+/** Longest query we hand to the search API. Repository names are far shorter than this. */
+const SEARCH_QUERY_MAX_LENGTH = 128;
+
+/**
+ * The viewer's own repositories change on the scale of days and are matched
+ * locally, so one listing covers a whole typing session.
+ */
+const OWNED_REPOSITORIES_TTL_MS = 60_000;
+
+/**
+ * Search rows are cached per sanitized query: long enough to absorb backspacing
+ * and retyping, short enough that a repository created mid-session turns up.
+ */
+const SEARCHED_REPOSITORIES_TTL_MS = 30_000;
+
+/**
+ * GitHub allows 30 search requests a minute, far tighter than the 5000 an hour
+ * the core API allows, so a query has to say something before it costs one.
+ */
+const MIN_GLOBAL_SEARCH_QUERY_LENGTH = 3;
+
+/**
+ * Local matches from this count up already fill the visible part of the
+ * dropdown, so a global search would only add rows below the fold.
+ */
+const SUFFICIENT_LOCAL_MATCHES = 5;
+
+/** A fast typist produces one cache entry per keystroke; bound both caches. */
+const SEARCH_CACHE_CAPACITY = 64;
+
+/** One dropdown's worth of rows. Ranking already puts the useful ones first. */
+const MAX_SEARCH_RESULTS = 20;
+
+/**
+ * GitHub descriptions run to 350 characters and this payload is rebuilt on every
+ * keystroke, so descriptions are trimmed to about one list row before they cross
+ * the socket. Clients that want the full text read the repository itself.
+ */
+const MAX_SEARCH_RESULT_DESCRIPTION_LENGTH = 160;
+
+/**
+ * The search query is free user text. Keep it to characters that can appear in
+ * an owner or repository name, drop leading dashes so it can never be read as a
+ * flag, and cap the length. Applied inside the search so callers cannot skip
+ * it. Exported so result ranking can normalize with the same rule the search
+ * actually ran under.
+ */
+export function sanitizeSearchQuery(query: string): string {
+  return query
+    .replace(/[^A-Za-z0-9._/-]/g, "")
+    .replace(/^-+/, "")
+    .slice(0, SEARCH_QUERY_MAX_LENGTH);
+}
+
+/** True when the query starts the repository name, or the whole `owner/name`. */
+function matchesSearchPrefix(result: SourceControlRepositorySearchResult, query: string): boolean {
+  if (query.length === 0) {
+    return false;
+  }
+  const nameWithOwner = result.nameWithOwner.toLowerCase();
+  const name = nameWithOwner.slice(nameWithOwner.lastIndexOf("/") + 1);
+  return nameWithOwner.startsWith(query) || name.startsWith(query);
+}
+
+/** Own repositories first, then prefix matches over substring matches, then most stars. */
+function compareSearchResults(query: string) {
+  return (
+    left: SourceControlRepositorySearchResult,
+    right: SourceControlRepositorySearchResult,
+  ) => {
+    if (left.ownedByViewer !== right.ownedByViewer) {
+      return left.ownedByViewer ? -1 : 1;
+    }
+    const leftPrefix = matchesSearchPrefix(left, query);
+    const rightPrefix = matchesSearchPrefix(right, query);
+    if (leftPrefix !== rightPrefix) {
+      return leftPrefix ? -1 : 1;
+    }
+    return (right.starCount ?? 0) - (left.starCount ?? 0);
+  };
+}
+
+function trimSearchResultDescription(
+  result: SourceControlRepositorySearchResult,
+): SourceControlRepositorySearchResult {
+  if (
+    result.description === undefined ||
+    result.description.length <= MAX_SEARCH_RESULT_DESCRIPTION_LENGTH
+  ) {
+    return result;
+  }
+  return {
+    ...result,
+    description: result.description.slice(0, MAX_SEARCH_RESULT_DESCRIPTION_LENGTH).trimEnd(),
+  };
+}
+
+function rankSearchResults(
+  results: ReadonlyArray<SourceControlRepositorySearchResult>,
+  query: string,
+): ReadonlyArray<SourceControlRepositorySearchResult> {
+  // Rank against the query as it actually searched: "t3 code" matched as "t3code".
+  return [...results]
+    .sort(compareSearchResults(sanitizeSearchQuery(query).toLowerCase()))
+    .slice(0, MAX_SEARCH_RESULTS)
+    .map(trimSearchResultDescription);
 }
 
 /**
@@ -160,6 +274,78 @@ export function parseGitHubAuth(
     status: "unknown",
     detail: firstSafeAuthLine(output) ?? "GitHub CLI auth status could not be parsed.",
   });
+}
+
+/** GitHub reports a missing description as `null` or `""`; both mean absent. */
+function optionalDescription(value: string | null | undefined) {
+  return value !== undefined && value !== null && value !== "" ? { description: value } : {};
+}
+
+/** The owner segment of `owner/name`, lowercased the way GitHub compares logins. */
+function repositoryOwner(nameWithOwner: string): string {
+  const separator = nameWithOwner.indexOf("/");
+  return (separator === -1 ? nameWithOwner : nameWithOwner.slice(0, separator)).toLowerCase();
+}
+
+function normalizeOwnedRepository(raw: RawSearchRepository): SourceControlRepositorySearchResult {
+  return {
+    nameWithOwner: raw.full_name,
+    url: raw.html_url,
+    sshUrl: raw.ssh_url ?? deriveSshUrl(raw.full_name, raw.html_url),
+    ownedByViewer: true,
+    ...optionalDescription(raw.description),
+    ...(raw.stargazers_count !== undefined ? { starCount: raw.stargazers_count } : {}),
+    ...(raw.fork !== undefined ? { isFork: raw.fork } : {}),
+    ...(raw.private !== undefined ? { isPrivate: raw.private } : {}),
+  };
+}
+
+function normalizeSearchedRepository(
+  raw: RawSearchRepository,
+  viewerLogin: string | undefined,
+): SourceControlRepositorySearchResult {
+  return {
+    nameWithOwner: raw.full_name,
+    url: raw.html_url,
+    sshUrl: raw.ssh_url ?? deriveSshUrl(raw.full_name, raw.html_url),
+    ownedByViewer: viewerLogin !== undefined && repositoryOwner(raw.full_name) === viewerLogin,
+    ...optionalDescription(raw.description),
+    ...(raw.stargazers_count !== undefined ? { starCount: raw.stargazers_count } : {}),
+    ...(raw.fork !== undefined ? { isFork: raw.fork } : {}),
+    ...(raw.private !== undefined ? { isPrivate: raw.private } : {}),
+  };
+}
+
+function deriveSshUrl(nameWithOwner: string, url: string): string {
+  try {
+    return `git@${new URL(url).host}:${nameWithOwner}.git`;
+  } catch {
+    return `git@github.com:${nameWithOwner}.git`;
+  }
+}
+
+/** Joins host and query into one cache key. NUL cannot appear in either part. */
+const SEARCH_KEY_SEPARATOR = String.fromCharCode(0);
+
+interface SearchCacheEntry<A> {
+  readonly fetchedAt: number;
+  readonly value: A;
+}
+
+/** Bounded insert-ordered map. The oldest fetch is evicted first. */
+function storeCacheEntry<A>(
+  current: ReadonlyMap<string, SearchCacheEntry<A>>,
+  key: string,
+  entry: SearchCacheEntry<A>,
+): ReadonlyMap<string, SearchCacheEntry<A>> {
+  const next = new Map(current);
+  next.delete(key);
+  next.set(key, entry);
+  for (const oldest of next.keys()) {
+    if (next.size <= SEARCH_CACHE_CAPACITY) break;
+    next.delete(oldest);
+  }
+  return next;
 }
 
 export const discovery = {
@@ -266,9 +452,12 @@ export const makeDiscovery = Effect.gen(function* () {
 class GitHubFailure extends Data.TaggedError("GitHubFailure")<{
   readonly detail: string;
   readonly cause: unknown;
+  /** Set when the request named a subject GitHub says does not exist. */
+  readonly reason?: "repository-not-found" | undefined;
 }> {}
 
-const failure = (detail: string, cause?: unknown) => new GitHubFailure({ detail, cause });
+const failure = (detail: string, cause?: unknown, reason?: "repository-not-found") =>
+  new GitHubFailure({ detail, cause, reason });
 
 const PULL_REQUEST_NOT_FOUND = "Pull request not found. Check the PR number or URL and try again.";
 const REPOSITORY_NOT_FOUND = "Repository not found. Check the owner and name and try again.";
@@ -300,7 +489,13 @@ function fromGitHubApiError(
         error,
       );
     case "GitHubApiNotFoundError":
-      return failure(notFound, error);
+      // Only a repository read knows a missing repository; a missing pull
+      // request must not claim one.
+      return failure(
+        notFound,
+        error,
+        notFound === REPOSITORY_NOT_FOUND ? "repository-not-found" : undefined,
+      );
     case "GitHubCliFailedError":
     case "GitHubApiResponseError":
     case "GitHubApiRequestError":
@@ -324,6 +519,29 @@ function repositoryCloneUrls(
 ): SourceControlRepositoryCloneUrls {
   return { nameWithOwner: raw.full_name, url: raw.html_url, sshUrl: raw.ssh_url };
 }
+
+/**
+ * REST search vocabulary: `full_name`, `html_url`, `stargazers_count`. The
+ * listing and the search endpoints agree on it, so one shape decodes both.
+ */
+const RawSearchRepositorySchema = Schema.Struct({
+  full_name: TrimmedNonEmptyString,
+  html_url: TrimmedNonEmptyString,
+  ssh_url: Schema.optional(TrimmedNonEmptyString),
+  stargazers_count: Schema.optional(NonNegativeInt),
+  fork: Schema.optional(Schema.Boolean),
+  private: Schema.optional(Schema.Boolean),
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+});
+type RawSearchRepository = Schema.Schema.Type<typeof RawSearchRepositorySchema>;
+
+const decodeRawSearchRepositories = decodeJsonResult(Schema.Array(RawSearchRepositorySchema));
+
+const decodeRawSearchResponse = (input: string) =>
+  Result.map(
+    decodeJsonResult(Schema.Struct({ items: Schema.Array(RawSearchRepositorySchema) }))(input),
+    (decoded) => decoded.items,
+  );
 
 const decodeViewerLogin = decodeJsonResult(Schema.Struct({ login: TrimmedNonEmptyString }));
 
@@ -830,6 +1048,117 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  // Two caches: the viewer's own repositories, and public search rows per
+  // query. GitHub allows 30 search requests a minute, so both absorb typing.
+  const ownedRepositoriesCache = yield* Ref.make<
+    ReadonlyMap<string, SearchCacheEntry<ReadonlyArray<RawSearchRepository>>>
+  >(new Map());
+  const searchedRepositoriesCache = yield* Ref.make<
+    ReadonlyMap<string, SearchCacheEntry<ReadonlyArray<RawSearchRepository>>>
+  >(new Map());
+
+  /** Fresh means fetched within the TTL. A clock that stepped backward reads as stale. */
+  const isFreshAt = (fetchedAt: number, now: number, ttlMs: number) =>
+    now >= fetchedAt && now - fetchedAt < ttlMs;
+
+  /**
+   * The viewer's own repositories, at most one listing per minute per host.
+   * `GitHubApi` already runs each request under the rate-limit circuit, so an
+   * open circuit surfaces as a failure and the caller falls back to cache.
+   */
+  /**
+   * One listing request, with no reserve: a paused circuit must not be walked
+   * through on every keystroke. `null` means paused and nothing ran, which is
+   * the caller's cue to serve whatever it already has. Any other failure keeps
+   * its typed form so `providerError` can report it.
+   */
+  const searchRequest = (input: GitHubApi.GitHubRestInput) =>
+    api
+      .rest(input)
+      .pipe(
+        Effect.catch((error) =>
+          error._tag === "SourceControlRateLimitPausedError"
+            ? Effect.succeed(null)
+            : Effect.fail(fromGitHubApiError(error)),
+        ),
+      );
+
+  const fetchOwnedRepositories = (host: string) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const cached = (yield* Ref.get(ownedRepositoriesCache)).get(host);
+      if (cached !== undefined && isFreshAt(cached.fetchedAt, now, OWNED_REPOSITORIES_TTL_MS)) {
+        return cached.value;
+      }
+
+      const response = yield* searchRequest({
+        host,
+        operation: "searchOwnedRepositories",
+        path: "user/repos?affiliation=owner&per_page=100&sort=pushed",
+      });
+      if (response === null) return cached?.value ?? [];
+      const decoded = decodeRawSearchRepositories(response.body);
+      if (Result.isFailure(decoded)) {
+        return yield* failure("GitHub returned an invalid repository list.", decoded.failure);
+      }
+
+      // Stamp completion, not start: a slow fetch must not age its own entry.
+      const fetchedAt = yield* Clock.currentTimeMillis;
+      yield* Ref.update(ownedRepositoriesCache, (current) =>
+        storeCacheEntry(current, host, { fetchedAt, value: decoded.success }),
+      );
+      return decoded.success;
+    });
+
+  /** Public repositories for one sanitized query, cached for a few keystrokes. */
+  const fetchSearchedRepositories = (key: string) =>
+    Effect.gen(function* () {
+      const separator = key.indexOf(SEARCH_KEY_SEPARATOR);
+      const host = key.slice(0, separator);
+      const query = key.slice(separator + 1);
+      const now = yield* Clock.currentTimeMillis;
+      const cached = (yield* Ref.get(searchedRepositoriesCache)).get(key);
+      if (cached !== undefined && isFreshAt(cached.fetchedAt, now, SEARCHED_REPOSITORIES_TTL_MS)) {
+        return cached.value;
+      }
+
+      const response = yield* searchRequest({
+        host,
+        operation: "searchRepositories",
+        path: `search/repositories?q=${encodeURIComponent(query)}&per_page=20&sort=stars&order=desc`,
+        resource: "search",
+      });
+      if (response === null) return cached?.value ?? [];
+      const decoded = decodeRawSearchResponse(response.body);
+      if (Result.isFailure(decoded)) {
+        return yield* failure("GitHub returned an invalid search result.", decoded.failure);
+      }
+
+      const fetchedAt = yield* Clock.currentTimeMillis;
+      yield* Ref.update(searchedRepositoriesCache, (current) =>
+        storeCacheEntry(current, key, { fetchedAt, value: decoded.success }),
+      );
+      return decoded.success;
+    });
+
+  /**
+   * Zero time-to-live makes these caches pure in-flight shares: concurrent
+   * callers for one key await the same lookup, and the entry is dropped the
+   * moment it settles. Values live in the Ref caches above.
+   */
+  const ownedRepositoriesInFlight = yield* Cache.makeWith(fetchOwnedRepositories, {
+    capacity: SEARCH_CACHE_CAPACITY,
+    timeToLive: () => Duration.zero,
+  });
+  const ownedRepositories = (host: string) => Cache.get(ownedRepositoriesInFlight, host);
+
+  const searchedRepositoriesInFlight = yield* Cache.makeWith(fetchSearchedRepositories, {
+    capacity: SEARCH_CACHE_CAPACITY,
+    timeToLive: () => Duration.zero,
+  });
+  const searchedRepositories = (host: string, query: string) =>
+    Cache.get(searchedRepositoriesInFlight, host + SEARCH_KEY_SEPARATOR + query);
+
   /** Reports a failure against the operation and request that made it, with transport-safe context. */
   const providerError =
     (
@@ -857,6 +1186,7 @@ export const make = Effect.gen(function* () {
               ),
             }),
         detail: error.detail,
+        ...(error.reason === undefined ? {} : { reason: error.reason }),
         cause: error.cause,
       });
 
@@ -979,6 +1309,66 @@ export const make = Effect.gen(function* () {
       }).pipe(
         Effect.mapError(
           providerError("getRepositoryCloneUrls", input.cwd, { repository: input.repository }),
+        ),
+      ),
+    searchRepositories: (input) =>
+      Effect.gen(function* () {
+        const query = sanitizeSearchQuery(input.query);
+        if (query.length === 0) {
+          return { supported: true, results: [] };
+        }
+
+        const host =
+          contextHost(input.context) ?? (environment.GH_HOST ?? "github.com").toLowerCase();
+
+        // The viewer's repositories are matched here against one cached
+        // listing. That is the common keystroke: no request on the wire.
+        const owned = yield* ownedRepositories(host);
+        const needle = query.toLowerCase();
+        const localMatches = owned.filter((raw) => raw.full_name.toLowerCase().includes(needle));
+
+        // The listing is capped, which makes membership in it under-report
+        // ownership. Comparing owner segments does not, so a searched repository
+        // the capped listing missed still lands under the viewer's own group.
+        const viewerLogin =
+          owned[0] !== undefined ? repositoryOwner(owned[0].full_name) : undefined;
+
+        // A failed global search degrades to the stale cached rows for this
+        // query, and to the local rows alone when nothing is cached.
+        const searched: ReadonlyArray<RawSearchRepository> =
+          query.length >= MIN_GLOBAL_SEARCH_QUERY_LENGTH &&
+          localMatches.length < SUFFICIENT_LOCAL_MATCHES
+            ? yield* searchedRepositories(host, query).pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning("GitHub repository search failed; serving cached matches", {
+                    error,
+                  }).pipe(
+                    Effect.flatMap(() => Ref.get(searchedRepositoriesCache)),
+                    Effect.map(
+                      (cache) => cache.get(host + SEARCH_KEY_SEPARATOR + query)?.value ?? [],
+                    ),
+                  ),
+                ),
+              )
+            : [];
+
+        // Owned repositories come first, and one the viewer owns is never
+        // repeated by the public search below it. GitHub compares repository
+        // names case-insensitively, and the two listings can disagree on casing,
+        // so the dedup key is lowercased.
+        const results = localMatches.map(normalizeOwnedRepository);
+        const seen = new Set(results.map((result) => result.nameWithOwner.toLowerCase()));
+        for (const raw of searched) {
+          const dedupKey = raw.full_name.toLowerCase();
+          if (seen.has(dedupKey)) continue;
+          seen.add(dedupKey);
+          results.push(normalizeSearchedRepository(raw, viewerLogin));
+        }
+
+        return { supported: true, results: rankSearchResults(results, query) };
+      }).pipe(
+        Effect.mapError(
+          providerError("searchRepositories", input.cwd, { repository: input.query }),
         ),
       ),
     createRepository: (input) =>

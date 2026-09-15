@@ -85,7 +85,6 @@ import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderUsageLimitsIngestion from "./provider/ProviderUsageLimitsIngestion.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
-import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -101,6 +100,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
+import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -413,10 +413,7 @@ const layerWorkspace = Layer.mergeAll(
   layerWorkspaceFileSystem,
 );
 
-const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(
-  Layer.provide(WorkspacePaths.layer),
-  Layer.provide(T3ProjectFileLoader.layer),
-);
+const layerProjectFaviconResolver = ProjectFaviconResolver.layerLive;
 
 const layerServerEnvironment = ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer));
 
@@ -652,6 +649,12 @@ const layerCommandReadiness = HttpRouter.middleware(
   { global: true },
 );
 
+// Built once here and handed to every connection, so provider CLI caches and
+// rate-limit circuits are shared by all clients. GitHub's search quota is 30
+// requests a minute; per-connection caches would exhaust it. The registry and
+// the process limiter stay the server-lifetime instances from above.
+const layerSourceControlDiscovery = SourceControlDiscovery.layer;
+
 const layerMakeRoutes = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
@@ -670,6 +673,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerAttachmentUploadRoute,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
+    ServerHttp.layerWorkspaceUpload,
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
   ),
@@ -692,6 +696,9 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(PreviewBrowser.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
+  // The websocket route resolves this once and hands the same instance to every
+  // connection.
+  Layer.provide(layerSourceControlDiscovery),
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),

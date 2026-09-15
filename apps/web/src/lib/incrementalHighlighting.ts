@@ -1,4 +1,4 @@
-import type { DiffsHighlighter } from "@pierre/diffs";
+import type { DiffsHighlighter, ShikiTransformer } from "@pierre/diffs";
 
 import type { DiffThemeName } from "./diffRendering";
 
@@ -18,8 +18,9 @@ export function createIncrementalHighlightedDocument(
   highlighter: DiffsHighlighter,
   language: string,
   theme: DiffThemeName,
+  transformers: ShikiTransformer[] = [],
 ) {
-  const options = { lang: language, theme };
+  const options = { lang: language, theme, transformers };
   const newline = { type: "text" as const, value: "\n" };
   let cached:
     | {
@@ -65,6 +66,7 @@ export function createIncrementalHighlightedDocument(
       ...options,
       grammarState: prefix.state,
       transformers: [
+        ...transformers,
         {
           code: (node) => ({ ...node, children: [...prefix.children, newline, ...node.children] }),
         },
