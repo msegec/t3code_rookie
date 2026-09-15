@@ -157,6 +157,22 @@ it.effect("submits a Forgejo review without sending its summary in the prelimina
   );
 });
 
+it.effect("reports Forgejo repository search as unsupported without invoking its CLI", () =>
+  Effect.gen(function* () {
+    const provider = yield* ForgejoSourceControlProvider.make;
+    const result = yield* provider.searchRepositories({ cwd: "/repo", query: "t3code" });
+    assert.deepStrictEqual(result, { supported: false, results: [] });
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.succeed(FileSystem.FileSystem, FileSystem.makeNoop({})),
+        Layer.mock(VcsProcess.VcsProcess)({}),
+        Layer.mock(ForgejoCli.ForgejoCli)({}),
+      ),
+    ),
+  ),
+);
+
 it.effect("loads Forgejo pull request references from files and commits views", () =>
   Effect.gen(function* () {
     const provider = yield* ForgejoSourceControlProvider.make;

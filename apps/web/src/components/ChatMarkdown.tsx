@@ -133,6 +133,7 @@ import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
+import { codeColorPreviewTransformers } from "../lib/codeColorPreviews";
 import { GitHubIcon } from "./Icons";
 import { createIncrementalHighlightedDocument } from "../lib/incrementalHighlighting";
 import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
@@ -512,7 +513,12 @@ const CHAT_MARKDOWN_REHYPE_PLUGINS = [
 /** GitHub's own five alert kinds, in its colors: the glyph names the urgency, the title says it. */
 const GITHUB_ALERT_PRESENTATIONS: Record<
   string,
-  { label: string; Icon: typeof InfoIcon; borderClassName: string; titleClassName: string }
+  {
+    label: string;
+    Icon: typeof InfoIcon;
+    borderClassName: string;
+    titleClassName: string;
+  }
 > = {
   note: {
     label: "Note",
@@ -667,9 +673,11 @@ function extractCodeBlock(
 
   const onlyChild = childNodes[0];
   if (
-    !isValidElement<{ className?: string; children?: ReactNode; node?: { tagName?: string } }>(
-      onlyChild,
-    )
+    !isValidElement<{
+      className?: string;
+      children?: ReactNode;
+      node?: { tagName?: string };
+    }>(onlyChild)
   ) {
     return null;
   }
@@ -1091,15 +1099,27 @@ function UncachedShikiCodeBlock({
   const highlighter = use(getSyntaxHighlighterPromise(language));
   const incrementalHighlight = useMemo(
     () =>
-      preserveLines ? createIncrementalHighlightedDocument(highlighter, language, themeName) : null,
+      preserveLines
+        ? createIncrementalHighlightedDocument(
+            highlighter,
+            language,
+            themeName,
+            codeColorPreviewTransformers(language),
+          )
+        : null,
     [highlighter, preserveLines, language, themeName],
   );
   const highlighted = useMemo(() => {
     try {
       if (incrementalHighlight) return incrementalHighlight(code);
+      const options = {
+        lang: language,
+        theme: themeName,
+        transformers: codeColorPreviewTransformers(language),
+      };
       return preserveLines
-        ? highlighter.codeToHast(code, { lang: language, theme: themeName })
-        : highlighter.codeToHtml(code, { lang: language, theme: themeName });
+        ? highlighter.codeToHast(code, options)
+        : highlighter.codeToHtml(code, options);
     } catch (error) {
       // Log highlighting failures for debugging while falling back to plain text
       console.warn(
@@ -1651,12 +1671,13 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     ...(relativePath && (resource._tag === "media-file" || resource._tag === "workspace-file")
       ? {
           onOpenFile: () =>
-            useRightPanelStore
-              .getState()
-              .openFile(
-                { environmentId: props.environmentId, threadId: resource.threadId },
-                relativePath,
-              ),
+            useRightPanelStore.getState().openFile(
+              {
+                environmentId: props.environmentId,
+                threadId: resource.threadId,
+              },
+              relativePath,
+            ),
         }
       : {}),
   };
@@ -2045,7 +2066,11 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         },
         (error) => {
           reportMarkdownActionFailure(
-            { operation: "copy-file-path", target: targetPath, copyTarget: title },
+            {
+              operation: "copy-file-path",
+              target: targetPath,
+              copyTarget: title,
+            },
             error,
           );
           toastManager.add(
@@ -2072,7 +2097,12 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
             ...(onOpenMedia ? ([{ id: "preview-media", label: "Preview media" }] as const) : []),
             ...(onOpen ? ([{ id: "open", label: openInEditorMenuLabel }] as const) : []),
             ...(onOpenInBrowser
-              ? ([{ id: "open-in-browser", label: "Open in integrated browser" }] as const)
+              ? ([
+                  {
+                    id: "open-in-browser",
+                    label: "Open in integrated browser",
+                  },
+                ] as const)
               : []),
             ...(onReveal && revealLabel ? ([{ id: "reveal", label: revealLabel }] as const) : []),
             { id: "copy-relative", label: "Copy relative path" },
@@ -2359,7 +2389,11 @@ function useChatMarkdownState({
       if (environmentId === null) {
         return Promise.resolve(
           AsyncResult.failure<void, PreferredEditorEnvironmentRequiredError>(
-            Cause.fail(new PreferredEditorEnvironmentRequiredError({ targetPath: filePath })),
+            Cause.fail(
+              new PreferredEditorEnvironmentRequiredError({
+                targetPath: filePath,
+              }),
+            ),
           ),
         );
       }
@@ -2832,7 +2866,10 @@ const CHAT_MARKDOWN_COMPONENTS = {
         onChange={(event) => {
           const markerOffset = Number(event.currentTarget.closest("li")?.dataset.taskMarkerOffset);
           if (!Number.isSafeInteger(markerOffset)) return;
-          onTaskListChange({ markerOffset, checked: event.currentTarget.checked });
+          onTaskListChange({
+            markerOffset,
+            checked: event.currentTarget.checked,
+          });
         }}
       />
     );
