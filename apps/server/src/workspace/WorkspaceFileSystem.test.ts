@@ -256,6 +256,73 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
   });
 
   describe("writeFile", () => {
+    it.effect("preserves newer contents and accepts a matching version", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "t3.json", '{"other":true}');
+        const error = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath: "t3.json",
+            expectedContents: "{}",
+            contents: "changed",
+          })
+          .pipe(Effect.flip);
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileContentsChangedError);
+        expect(
+          (yield* workspaceFileSystem.readFile({ cwd, relativePath: "t3.json" })).contents,
+        ).toBe('{"other":true}');
+        yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: "t3.json",
+          expectedContents: '{"other":true}',
+          contents: '{"other":true,"accentColor":"#1688f0"}',
+        });
+        expect(
+          (yield* workspaceFileSystem.readFile({ cwd, relativePath: "t3.json" })).contents,
+        ).toBe('{"other":true,"accentColor":"#1688f0"}');
+      }),
+    );
+
+    it.effect("creates only absent files when expected contents is null", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: "t3.json",
+          expectedContents: null,
+          contents: "{}",
+        });
+        const error = yield* workspaceFileSystem
+          .writeFile({ cwd, relativePath: "t3.json", expectedContents: null, contents: "changed" })
+          .pipe(Effect.flip);
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileContentsChangedError);
+        expect(
+          (yield* workspaceFileSystem.readFile({ cwd, relativePath: "t3.json" })).contents,
+        ).toBe("{}");
+      }),
+    );
+
+    it.effect("serializes competing guarded writes without losing changes", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "t3.json", "{}");
+        const results = yield* Effect.all(
+          ["first", "second"].map((contents) =>
+            workspaceFileSystem
+              .writeFile({ cwd, relativePath: "t3.json", expectedContents: "{}", contents })
+              .pipe(Effect.result),
+          ),
+          { concurrency: 2 },
+        );
+        expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
+        expect(results.filter((result) => result._tag === "Failure")).toHaveLength(1);
+      }),
+    );
+
     it.effect("writes files relative to the workspace root", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

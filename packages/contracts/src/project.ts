@@ -217,6 +217,8 @@ export const ProjectFileFailure = Schema.Literals([
   "resolved_path_outside_root",
   "path_not_file",
   "binary_file",
+  "not_found",
+  "contents_changed",
   "operation_failed",
 ]);
 export type ProjectFileFailure = typeof ProjectFileFailure.Type;
@@ -270,6 +272,7 @@ export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileErro
 }
 
 export const ProjectWriteFileInput = Schema.Struct({
+  expectedContents: Schema.optionalKey(Schema.NullOr(Schema.String)),
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
   contents: Schema.String,
