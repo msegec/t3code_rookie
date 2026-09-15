@@ -1,6 +1,11 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import {
+  FLEET_RELEASE_BASE_URL,
+  FLEET_RELEASE_REPOSITORY,
+  isFleetVersion,
+} from "./fleetRelease.ts";
 import { compareSemverVersions } from "./semver.ts";
 
 const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
@@ -43,11 +48,15 @@ export function cliArchiveFileName(version: string, platformKey: CliArchivePlatf
 
 const CLI_RELEASE_DEFAULT_BASE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases/download`;
 
-export function cliReleaseDownloadBaseUrl(
-  version: string,
-  baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
-): string {
-  return `${(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL).replace(/\/+$/, "")}/v${version}`;
+function releaseBaseUrlFor(version: string, baseUrl: string | undefined): string {
+  return (
+    baseUrl?.trim() ||
+    (isFleetVersion(version) ? FLEET_RELEASE_BASE_URL : CLI_RELEASE_DEFAULT_BASE_URL)
+  );
+}
+
+export function cliReleaseDownloadBaseUrl(version: string, baseUrl?: string): string {
+  return `${releaseBaseUrlFor(version, baseUrl).replace(/\/+$/, "")}/v${version}`;
 }
 
 /** `segments` added to `baseUrl`'s path, keeping its query, such as a signed mirror URL's token. */
@@ -58,12 +67,8 @@ export function releaseAssetUrl(baseUrl: string, ...segments: ReadonlyArray<stri
 }
 
 /** A file of release `version`, from `baseUrl` laid out as GitHub's release downloads. */
-export function cliReleaseAssetUrl(
-  version: string,
-  fileName: string,
-  baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
-): string {
-  return releaseAssetUrl(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL, `v${version}`, fileName);
+export function cliReleaseAssetUrl(version: string, fileName: string, baseUrl?: string): string {
+  return releaseAssetUrl(releaseBaseUrlFor(version, baseUrl), `v${version}`, fileName);
 }
 
 export function parseChecksums(text: string): ReadonlyMap<string, string> {
@@ -85,6 +90,7 @@ export const CLI_RELEASE_CHANNELS: ReadonlyArray<CliReleaseChannel> = [
 ];
 
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
+  if (isFleetVersion(version)) return "nightly";
   const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";
 }
@@ -131,8 +137,11 @@ export function acceptsTrackSwitchRelease(
 }
 
 /** Page until the channel matches; nightlies can push preview/stable releases past the first page. */
-export function cliReleaseIndexPageUrl(page: number): string {
-  return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases?per_page=100&page=${page}`;
+export function cliReleaseIndexPageUrl(page: number, currentVersion = ""): string {
+  const repository = isFleetVersion(currentVersion)
+    ? FLEET_RELEASE_REPOSITORY
+    : CLI_RELEASE_REPOSITORY;
+  return `https://api.github.com/repos/${repository}/releases?per_page=100&page=${page}`;
 }
 
 /** Draft assets are not downloadable. */

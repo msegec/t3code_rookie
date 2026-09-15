@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useAtomValue } from "@effect/atom-react";
+import { APP_BUILD_LABEL } from "../../branding";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { shortcutLabelForCommand } from "../../keybindings";
 import {
@@ -81,6 +82,19 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
             </div>
           ) : null}
         </div>
+        {APP_BUILD_LABEL ? (
+          <div className="ml-1 flex h-7 items-center">
+            <Badge
+              className="text-muted-foreground"
+              data-fleet-build="true"
+              size="sm"
+              title="This build follows the MZS fleet release channel."
+              variant="secondary"
+            >
+              {APP_BUILD_LABEL}
+            </Badge>
+          </div>
+        ) : null}
         {pillLabel ? (
           <div className="ml-1 flex h-7 items-center">
             <Badge data-environment-identification="pill" size="sm" variant="secondary">
