@@ -38,10 +38,15 @@ import {
   createStagePatchedDependencies,
   createStageWorkspaceConfig,
   resolveFffNativeDependencies,
+  resolveStageAllowBuilds,
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
-import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  resolveCatalogDependencies,
+  resolveLockedDependencies,
+  WorkspaceLock,
+} from "./lib/resolve-catalog.ts";
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64"]);
@@ -165,7 +170,17 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
     catalog,
     "apps/server",
   );
-  const fffNodeVersion = serverDependencies["@ff-labs/fff-node"];
+  const lock = yield* Schema.decodeEffect(fromYaml(WorkspaceLock))(
+    yield* fs.readFileString(path.join(input.repoRoot, "pnpm-lock.yaml")),
+  );
+  const runtimeDependencies = yield* Effect.try(() =>
+    resolveLockedDependencies(
+      selectCliRuntimeExternalDependencies(serverDependencies),
+      lock,
+      "apps/server",
+    ),
+  );
+  const fffNodeVersion = runtimeDependencies["@ff-labs/fff-node"];
   if (fffNodeVersion === undefined) {
     return yield* new CliArchiveInputMissingError({
       inputPath: "apps/server/package.json#dependencies['@ff-labs/fff-node']",
@@ -173,7 +188,7 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
     });
   }
   const dependencies = {
-    ...selectCliRuntimeExternalDependencies(serverDependencies),
+    ...runtimeDependencies,
     ...resolveFffNativeDependencies(input.platform, input.arch, fffNodeVersion),
   };
   const patchedDependencies = createStagePatchedDependencies(
@@ -197,7 +212,12 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
       ...createStageWorkspaceConfig({
         platform: input.platform,
         arch: input.arch,
-        ...(workspace.allowBuilds ? { allowBuilds: workspace.allowBuilds } : {}),
+        allowBuilds: resolveStageAllowBuilds(workspace.allowBuilds ?? {}, {
+          platform: input.platform,
+          arch: input.arch,
+          hostPlatform: yield* HostProcessPlatform,
+          hostArch: yield* HostProcessArchitecture,
+        }),
         patchedDependencies,
         overrides: resolveCatalogDependencies(workspace.overrides ?? {}, catalog, "apps/server"),
       }),
@@ -269,11 +289,17 @@ const removeNestedBinDirectories = (
     }
   });
 
-/** Copies the web client without its sourcemaps, which nothing serves. */
-const stageWebClient = Effect.fn("stageWebClient")(function* (source: string, target: string) {
+export const stageClientAssets = Effect.fn("stageClientAssets")(function* (
+  source: string,
+  target: string,
+) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   yield* fs.copy(source, target);
+  const provenance = path.join(path.dirname(source), "mzs-fleet.json");
+  if (yield* fs.exists(provenance)) {
+    yield* fs.copyFile(provenance, path.join(path.dirname(target), "mzs-fleet.json"));
+  }
   const maps = (yield* fs.readDirectory(target, { recursive: true })).filter((entry) =>
     entry.endsWith(".map"),
   );
@@ -296,7 +322,7 @@ const MacSigningConfig = Config.all({
  * notarization requires only loads signed libraries, so every native addon in
  * the archive is signed with the same identity.
  */
-const signMacArchiveContents = Effect.fn("signMacArchiveContents")(function* (input: {
+export const signMacArchiveContents = Effect.fn("signMacArchiveContents")(function* (input: {
   readonly repoRoot: string;
   readonly contentDir: string;
   readonly executablePath: string;
@@ -304,6 +330,7 @@ const signMacArchiveContents = Effect.fn("signMacArchiveContents")(function* (in
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const signing = yield* MacSigningConfig;
+  const hostPlatform = yield* HostProcessPlatform;
   const identity = Option.getOrUndefined(signing.identity)?.trim() || "-";
 
   const entitlements = path.join(input.repoRoot, "apps/server/resources/cli-entitlements.plist");
@@ -319,14 +346,24 @@ const signMacArchiveContents = Effect.fn("signMacArchiveContents")(function* (in
 
   for (const target of [...libraries, input.executablePath]) {
     yield* runCommand(
-      ChildProcess.make("codesign", [
-        "--force",
-        "--sign",
-        identity,
-        ...(identity === "-" ? [] : ["--options", "runtime", "--timestamp"]),
-        ...(target === input.executablePath ? ["--entitlements", entitlements] : []),
-        target,
-      ]),
+      hostPlatform !== "darwin" && identity === "-"
+        ? ChildProcess.make("rcodesign", [
+            "--config-file",
+            "/dev/null",
+            "sign",
+            "--timestamp-url",
+            "none",
+            ...(target === input.executablePath ? ["--entitlements-xml-file", entitlements] : []),
+            target,
+          ])
+        : ChildProcess.make("codesign", [
+            "--force",
+            "--sign",
+            identity,
+            ...(identity === "-" ? [] : ["--options", "runtime", "--timestamp"]),
+            ...(target === input.executablePath ? ["--entitlements", entitlements] : []),
+            target,
+          ]),
       `codesign ${path.relative(input.contentDir, target)}`,
     );
   }
@@ -507,7 +544,7 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
 
   yield* Effect.log(`[cli-archive] Staging ${stem}...`);
   yield* fs.copyFile(builtExecutable, path.join(contentDir, executableName));
-  yield* stageWebClient(webClient, path.join(contentDir, "client"));
+  yield* stageClientAssets(webClient, path.join(contentDir, "client"));
   yield* fs.copy(resourceMonitorDir, path.join(contentDir, "resource-monitor"));
   yield* stageRuntimeExternals({
     repoRoot,
@@ -538,8 +575,20 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
     // the Git Bash shell CI uses, a bare `tar` is GNU tar, which neither
     // writes zip nor accepts a drive-letter path.
     yield* runCommand(
-      ChildProcess.make(windowsSystemTar(), ["-a", "-c", "-f", archivePath, "-C", stageRoot, stem]),
-      "tar (zip)",
+      hostPlatform === "win32"
+        ? ChildProcess.make(windowsSystemTar(), [
+            "-a",
+            "-c",
+            "-f",
+            archivePath,
+            "-C",
+            stageRoot,
+            stem,
+          ])
+        : ChildProcess.make("zip", ["-q", "-r", path.resolve(archivePath), stem], {
+            cwd: stageRoot,
+          }),
+      "Windows CLI zip",
     );
   } else {
     // On Linux, pnpm hard-links identical files out of its store and node-gyp

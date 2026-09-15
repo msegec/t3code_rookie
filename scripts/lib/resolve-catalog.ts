@@ -48,3 +48,33 @@ export function resolveCatalogDependencies(
     }),
   );
 }
+
+export const WorkspaceLock = Schema.Struct({
+  importers: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      dependencies: Schema.optional(
+        Schema.Record(Schema.String, Schema.Struct({ version: Schema.String })),
+      ),
+    }),
+  ),
+});
+
+export function resolveLockedDependencies(
+  dependencies: Record<string, string>,
+  lock: typeof WorkspaceLock.Type,
+  workspacePackage: string,
+): Record<string, string> {
+  const locked = lock.importers[workspacePackage]?.dependencies;
+  return Object.fromEntries(
+    Object.keys(dependencies).map((name) => {
+      const version = locked?.[name]?.version.split("(", 1)[0];
+      if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+        throw new Error(
+          `Missing exact locked version for ${workspacePackage} dependency '${name}'.`,
+        );
+      }
+      return [name, version];
+    }),
+  );
+}
