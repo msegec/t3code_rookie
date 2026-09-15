@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeHttp from "node:http";
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -71,6 +70,8 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";
+import * as PreviewGateway from "./preview/Gateway.ts";
+import { makeGatewayServer } from "./preview/GatewayTransport.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -226,16 +227,19 @@ const RelayClientLive = Layer.unwrap(
 const HttpServerLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
-    return NodeHttpServer.layer(() => guardHttpResponseWriteErrors(NodeHttp.createServer()), {
+    const gateway = yield* PreviewGateway.Gateway;
+    const transport = yield* Effect.acquireRelease(
+      Effect.sync(() => makeGatewayServer(gateway.resolve)),
+      (transport) => Effect.sync(transport.dispose),
+    );
+    transport.server.once("listening", () => {
+      const address = transport.server.address();
+      if (address && typeof address !== "string") gateway.setListeningPort(address.port);
+    });
+    return NodeHttpServer.layer(() => guardHttpResponseWriteErrors(transport.server), {
       host: config.host ?? "127.0.0.1",
       port: config.port,
       gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
-      // Negotiate permessage-deflate with clients that offer it; clients
-      // that don't still get uncompressed frames on their connection.
-      // Context takeover stays enabled (ws default) so the compression
-      // window is shared across frames — that also makes small frames cheap
-      // to compress, so no size threshold is set (ws only honors
-      // `threshold` when context takeover is disabled).
       websocket: { perMessageDeflate: true },
     });
   }),
@@ -571,6 +575,7 @@ const SourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
 );
 
 export const makeRoutesLayer = Layer.mergeAll(
+  PreviewGateway.revocationLayer,
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(authHttpApiLayer),
@@ -811,6 +816,7 @@ const makeServerLayer = Layer.unwrap(
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),
       Layer.provideMerge(HttpServerLive),
+      Layer.provideMerge(PreviewGateway.layer),
       Layer.provide(ApplicationObservabilityLive),
       Layer.provideMerge(FetchHttpClient.layer),
       // PR reads, Git operations, and WebSocket discovery share one process limiter.
