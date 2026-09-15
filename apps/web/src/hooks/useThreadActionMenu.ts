@@ -1,5 +1,6 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
+import { projectSettingsSearch } from "../projectSettingsNavigation";
+import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -194,8 +195,8 @@ export function useThreadActionMenu(input: {
               logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
               deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
             void router.navigate({
-              to: "/projects/$projectKey",
-              params: { projectKey },
+              to: "/settings/projects",
+              search: projectSettingsSearch(projectKey, project),
             });
             return;
           }

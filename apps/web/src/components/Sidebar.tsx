@@ -13,6 +13,7 @@ import {
 } from "./chat/threadContextDrag";
 import { discardComposerDraft } from "../lib/discardComposerDraft";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
+import { projectSettingsSearch } from "../projectSettingsNavigation";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
@@ -2569,15 +2570,13 @@ export default function Sidebar() {
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/projects/$projectKey",
-        params: {
-          projectKey: getSidebarProjectSettingsKey(
-            projectGroup,
-            projectGroupingSettings,
-            projects,
-            projectRef,
-          ),
-        },
+        to: "/settings/projects",
+        search: projectSettingsSearch(
+          getSidebarProjectSettingsKey(projectGroup, projectGroupingSettings, projects, projectRef),
+          projectRef
+            ? projectByKey.get(`${projectRef.environmentId}:${projectRef.projectId}`)
+            : undefined,
+        ),
       });
     },
   );

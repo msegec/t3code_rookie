@@ -22,6 +22,7 @@ import {
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
 } from "./ChatView.logic";
+import { projectSettingsSearch } from "../projectSettingsNavigation";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -2632,10 +2633,10 @@ export default function ChatView(props: ChatViewProps) {
       ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
       : undefined;
   const handleOpenDraftProjectSettings = () => {
-    if (!activeDraftLogicalProjectKey) return;
+    if (!activeDraftLogicalProjectKey || !activeProject) return;
     void navigate({
-      to: "/projects/$projectKey",
-      params: { projectKey: activeDraftLogicalProjectKey },
+      to: "/settings/projects",
+      search: projectSettingsSearch(activeDraftLogicalProjectKey, activeProject),
     });
   };
   const handleOpenDraftProjectSettingsStable = useStableCallback(handleOpenDraftProjectSettings);
