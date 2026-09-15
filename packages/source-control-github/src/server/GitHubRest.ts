@@ -42,6 +42,11 @@ export interface GitHubRestInput {
   readonly timeout?: Duration.Input;
   /** Overrides `SourceControlRateLimit.Interactive` for this one request. */
   readonly allowReserve?: boolean;
+  /**
+   * Which GitHub quota this read spends. `search/` reads have their own small
+   * budget, so they name it instead of spending `core`. Defaults to `core`.
+   */
+  readonly resource?: "core" | "search" | undefined;
 }
 
 export class GitHubRest extends Context.Service<
@@ -133,6 +138,7 @@ export const make = Effect.gen(function* () {
     readonly timeout?: Duration.Input | undefined;
     readonly allowReserve: boolean;
     readonly acceptNotModified: boolean;
+    readonly resource?: "core" | "search" | undefined;
   }) {
     const host = normalizeHost(input.host);
     // Only the path: a query string can carry a SHA or a branch, and never needs to be in a trace.
@@ -145,9 +151,8 @@ export const make = Effect.gen(function* () {
       {
         host,
         operation: input.operation,
-        // Every REST path this reads today spends `core`; a `search/` read would need its own
-        // resource here.
-        resource: "core",
+        // REST spends `core` unless a `search/` read names the smaller quota it spends.
+        resource: input.resource ?? "core",
         allowReserve: input.allowReserve,
         timeout: input.timeout,
       },
@@ -215,6 +220,7 @@ export const make = Effect.gen(function* () {
           timeout: input.timeout,
           allowReserve: input.allowReserve ?? interactive,
           acceptNotModified: input.ifNoneMatch !== undefined,
+          resource: input.resource,
         }),
       ),
     );

@@ -26,6 +26,7 @@ import {
 import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -39,6 +40,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
+import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import { subscribeOrchestrationV2Thread } from "../ws.ts";
 import * as OrchestrationHttp from "./http.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -232,11 +234,16 @@ const TestLayer = Layer.mergeAll(
   Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({}),
   Layer.mock(ProjectStore.ProjectStoreV2)({}),
   Layer.mock(ProjectEnrichmentService.ProjectEnrichmentService)({}),
+  Layer.mock(ProjectFaviconResolver.ProjectFaviconResolver)({}),
 ).pipe(Layer.provideMerge(store));
 
 const withHttp = <A>(use: (get: (path: string) => Promise<Response>) => Promise<A>) =>
   Effect.gen(function* () {
     const context = yield* Effect.context<Layer.Success<typeof TestLayer>>();
+    const requestContext = Context.make(
+      ProjectFaviconResolver.ProjectFaviconResolver,
+      Context.get(context, ProjectFaviconResolver.ProjectFaviconResolver),
+    );
     const appLayer = HttpApiBuilder.layer(OrchestrationApi).pipe(
       Layer.provide(OrchestrationHttp.layer),
       Layer.provide(auth),
@@ -256,6 +263,7 @@ const withHttp = <A>(use: (get: (path: string) => Promise<Response>) => Promise<
                   [ORCHESTRATION_PROTOCOL_HEADER]: String(ORCHESTRATION_PROTOCOL_VERSION),
                 },
               }),
+              requestContext,
             ),
           ),
         ),

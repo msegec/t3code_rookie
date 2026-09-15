@@ -33,6 +33,7 @@ import * as ServerSettings from "../serverSettings.ts";
 
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import { ProjectEnrichmentService } from "../project/ProjectEnrichmentService.ts";
+import { ProjectFaviconResolver } from "../project/ProjectFaviconResolver.ts";
 import * as OrchestrationHttp from "./http.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -157,12 +158,14 @@ it.effect("exports full history with size, scope, and missing-thread checks", ()
     );
     const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true });
     yield* Effect.addFinalizer(() => Effect.promise(dispose));
+    const requestContext = yield* Layer.build(Layer.mock(ProjectFaviconResolver)({}));
     const read = (threadId: ThreadId) =>
       Effect.promise(() =>
         handler(
           new Request(`http://localhost/api/orchestration/threads/${threadId}/transcript`, {
             headers: { [ORCHESTRATION_PROTOCOL_HEADER]: ORCHESTRATION_PROTOCOL_VERSION_TEXT },
           }),
+          requestContext,
         ),
       );
 

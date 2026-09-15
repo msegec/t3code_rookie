@@ -30,6 +30,7 @@ import {
 } from "./threadHistoryPaging.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
+import * as ProjectAccents from "../project/ProjectAccents.ts";
 import { buildActiveShellSnapshot, loadShellSnapshotParts } from "./ShellStream.ts";
 import { boundedSnapshotResponseFields } from "./ThreadStream.ts";
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
@@ -66,10 +67,14 @@ export const layer = HttpApiBuilder.group(
             // identity resolution can exceed the client shell-snapshot budget
             // (ProcessRunner allows probes up to one minute).
             projectEnrichment.getAvailable(project.workspaceRoot).pipe(
-              Effect.map((enrichment) => ({
-                ...project,
-                repositoryIdentity: enrichment.repositoryIdentity,
-              })),
+              // Clients prefer this snapshot over the WS one, so it has to carry
+              // accents too or the sidebar repaints a round trip after it loads.
+              Effect.flatMap((enrichment) =>
+                ProjectAccents.withProjectAccent({
+                  ...project,
+                  repositoryIdentity: enrichment.repositoryIdentity,
+                }),
+              ),
             ),
           { concurrency: 16 },
         ),

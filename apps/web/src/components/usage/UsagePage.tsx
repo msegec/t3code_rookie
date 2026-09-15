@@ -153,6 +153,7 @@ export function UsagePage() {
     selectedEnvironments,
     shown,
     isPartial,
+    isUnreachable,
     refresh,
   } = useUsage(window, selectedEnvironmentIds, hiddenProviders);
   const merged = shown?.merged ?? answeredUsage;
@@ -558,6 +559,17 @@ export function UsagePage() {
                   </p>
                 ))}
               </div>
+            ) : isUnreachable ? (
+              <>
+                <UsageCoverageNotice
+                  environments={selectedEnvironments}
+                  duplicateSources={merged.duplicateSources}
+                  contractMismatches={merged.contractMismatches}
+                />
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  No device reported usage. Reconnect a device or refresh to scan again.
+                </p>
+              </>
             ) : (
               <div aria-busy={loading.partial} className="flex flex-col gap-6">
                 {sourceMessages.map((message) => (
@@ -1188,7 +1200,15 @@ function UsageCoverageNotice({
     const mismatch = mismatchByEnvironment.get(environment.environmentId);
     return mismatch === undefined ? [] : [{ environment, mismatch }];
   });
-  if (failed.length === 0 && incompatible.length === 0 && duplicateSources.length === 0) {
+  const offline = environments.filter(
+    (environment) => environment.offline && environment.summary === null,
+  );
+  if (
+    failed.length === 0 &&
+    offline.length === 0 &&
+    incompatible.length === 0 &&
+    duplicateSources.length === 0
+  ) {
     return null;
   }
 
@@ -1202,6 +1222,11 @@ function UsageCoverageNotice({
       {incompatible.map(({ environment, mismatch }) => (
         <span key={environment.environmentId}>
           {formatUsageContractMismatch(environment.label, mismatch)}
+        </span>
+      ))}
+      {offline.map((environment) => (
+        <span key={environment.label}>
+          {environment.label} is offline and excluded from totals.
         </span>
       ))}
       {duplicateSources.length > 0 ? (
@@ -1244,8 +1269,10 @@ function UsageEnvironmentFilter({
       ? selectedEnvironments[0]!.label
       : `${selectedEnvironments.length} environments`;
   const hasIssue =
-    selectedEnvironments.some((environment) => environment.error !== null) ||
-    contractMismatches.length > 0;
+    selectedEnvironments.some(
+      (environment) =>
+        environment.error !== null || (environment.offline && environment.summary === null),
+    ) || contractMismatches.length > 0;
 
   return (
     <Menu>
