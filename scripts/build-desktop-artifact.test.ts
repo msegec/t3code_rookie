@@ -929,9 +929,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
               readonly command: string;
               readonly args: ReadonlyArray<string>;
             };
-            const fails =
-              childProcess.command === "rustc" ||
-              (childProcess.command === "xcrun" && childProcess.args.includes("iconutil"));
+            const fails = childProcess.command === "rustc" || childProcess.command === "clang";
             return Effect.succeed(mockProcess(fails ? 1 : 0));
           }),
         );
@@ -941,7 +939,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         );
 
         assert.instanceOf(error, MacDesktopBuildPrerequisitesMissingError);
-        assert.deepStrictEqual(error.missing, ["rust", "iconutil"]);
+        assert.deepStrictEqual(error.missing, ["rust", "clang"]);
         assert.deepStrictEqual(error.rustTargets, ["aarch64-apple-darwin", "x86_64-apple-darwin"]);
         assert.include(error.message, "xcode-select --install");
         assert.include(error.message, "rustup target add aarch64-apple-darwin x86_64-apple-darwin");
@@ -1455,6 +1453,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it.effect("skips the primary native probe for cross-architecture Windows payloads", () => {
     const commands: Array<{
       readonly command: string;
+      readonly args: ReadonlyArray<string>;
       readonly options: {
         readonly env?: Readonly<Record<string, string | undefined>>;
       };
@@ -1469,6 +1468,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
     return Effect.scoped(
       Effect.gen(function* () {
+        const path = yield* Path.Path;
         const fixture = yield* makeWindowsPayloadFixture({ copyUnpackedNatives: true });
         yield* validateWindowsPackagedPayload({
           stageDistDir: fixture.stageDistDir,
@@ -1478,12 +1478,18 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         });
 
         assert.isFalse(
-          commands.some((command) => command.options.env?.ELECTRON_RUN_AS_NODE === "1"),
+          commands.some(
+            (command) =>
+              command.command === path.join(fixture.packagedAppDir, fixture.appExecutableName),
+          ),
         );
         assert.isTrue(
           commands.some(
             (command) =>
-              command.command === process.execPath && command.options.env?.NODE_PATH === "",
+              command.command === process.execPath &&
+              command.args[0] === "--no-global-search-paths" &&
+              command.args[2] === "--version" &&
+              command.options.env?.NODE_PATH === "",
           ),
         );
       }),
