@@ -64,6 +64,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-self-update-test-" });
   const order: string[] = [];
   const urls: string[] = [];
+  let stagedEntryPath = "";
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
@@ -71,7 +72,8 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
           order.push("extract");
           const stagingDir = input.args[input.args.indexOf("-C") + 1];
           if (stagingDir === undefined) return yield* Effect.die("missing tar target");
-          yield* fs.writeFileString(path.join(stagingDir, "t3"), "#!/bin/sh\n").pipe(Effect.orDie);
+          stagedEntryPath = path.join(stagingDir, "t3");
+          yield* fs.writeFileString(stagedEntryPath, "#!/bin/sh\n").pipe(Effect.orDie);
           return {
             stdout: "",
             stderr: "",
@@ -83,6 +85,14 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
             stderrInvalidUtf8: false,
           };
         }
+        expect(input.command).toBe(stagedEntryPath);
+        expect(input.args).toEqual([
+          "__service-preflight",
+          "--database-path",
+          config.dbPath,
+          "--launcher-protocol",
+          String(SERVICE_LAUNCHER_PROTOCOL),
+        ]);
         if (options.preflightStarted) yield* Deferred.succeed(options.preflightStarted, undefined);
         if (options.preflightDuration !== undefined) {
           // Like the real runner, fail once the caller's timeout elapses.

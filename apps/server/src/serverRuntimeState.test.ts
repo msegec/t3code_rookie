@@ -148,7 +148,12 @@ describe("server ownership", () => {
     Layer.succeed(HostProcess.Environment, {}),
   ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
   const makeState = ServerRuntimeState.makePersistedServerRuntimeState({
-    config: { host: undefined, devUrl: undefined },
+    config: {
+      host: undefined,
+      devUrl: undefined,
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
+    },
     port: 3773,
   });
 
