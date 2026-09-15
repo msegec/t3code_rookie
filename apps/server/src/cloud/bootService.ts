@@ -18,7 +18,15 @@ import * as Schema from "effect/Schema";
 
 import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
 
+import {
+  captureManualServerHandoff,
+  readServerNetworkSettings,
+  verifyDatabaseOwner,
+} from "../serviceLauncher.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { DEFAULT_PORT } from "../config.ts";
+import { watchServerReadiness } from "../serviceReadiness.ts";
+import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
@@ -548,6 +556,7 @@ export class BootService extends Context.Service<
 
 export interface BootServiceHost {
   readonly execPath: string;
+  readonly watchReadiness?: typeof watchServerReadiness;
 }
 
 export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
@@ -814,19 +823,76 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     const installed = yield* fs
       .exists(unitPath)
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
-    // With start=false the service keeps running while its files change. The
-    // launcher reads the state file once at startup and the unit only matters
-    // on the next start, so that is safe as long as the launcher is not in
-    // the middle of a remote update, which is the one time it writes the
-    // state file itself. That case is refused below, before anything is
-    // written, from the same read the downgrade check uses; the stop that
-    // normally serialises against the launcher is skipped on purpose.
     const start = options?.start !== false;
+    const previousStateText = yield* fs.readFileString(statePath).pipe(Effect.option);
+    const previousState = Option.isSome(previousStateText)
+      ? parseServiceState(previousStateText.value)
+      : undefined;
+    const runtime = yield* readPersistedServerRuntimeState(
+      path.join(input.baseDir, "userdata", "server-runtime.json"),
+    ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
+    const dbPath = path.join(input.baseDir, "userdata", "state.sqlite");
+    if (
+      installed &&
+      platform === "darwin" &&
+      Option.isSome(runtime) &&
+      runtime.value.tailscaleServeEnabled === undefined
+    ) {
+      const unit = yield* fs
+        .readFileString(unitPath)
+        .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+      if (unit.includes("T3CODE_TAILSCALE_SERVE")) {
+        return yield* new BootServiceInstallError({
+          cause: new Error(
+            "Cannot preserve custom legacy launchd Tailscale settings. Move them to the service manager environment before updating.",
+          ),
+        });
+      }
+    }
+    const network = Option.isSome(runtime)
+      ? yield* Effect.tryPromise({
+          try: () => readServerNetworkSettings(runtime.value, dbPath, installed),
+          catch: (cause) => new BootServiceInstallError({ cause }),
+        })
+      : undefined;
+    const endpoint = Option.isSome(runtime)
+      ? {
+          ...(previousState?.endpoint?.tailscaleServeEnabled === undefined
+            ? {}
+            : { tailscaleServeEnabled: previousState.endpoint.tailscaleServeEnabled }),
+          ...(previousState?.endpoint?.tailscaleServePort === undefined
+            ? {}
+            : { tailscaleServePort: previousState.endpoint.tailscaleServePort }),
+          ...network,
+          port: runtime.value.port,
+          ...(runtime.value.host === undefined ? {} : { host: runtime.value.host }),
+        }
+      : (previousState?.endpoint ?? { port: DEFAULT_PORT });
+    yield* Effect.tryPromise({
+      try: () =>
+        verifyDatabaseOwner(dbPath, Option.isSome(runtime) ? runtime.value.pid : undefined),
+      catch: (cause) => new BootServiceInstallError({ cause }),
+    });
     if (installed && start) {
       yield* runSteps(manager.stop);
     }
 
     yield* Effect.gen(function* () {
+      const handoff =
+        start && Option.isSome(runtime)
+          ? yield* Effect.tryPromise({
+              try: async () => {
+                const owner = await captureManualServerHandoff(runtime.value.pid, dbPath);
+                if (owner !== undefined && runtime.value.devUrl !== undefined) {
+                  throw new Error(
+                    "Stop the development server before installing a managed service.",
+                  );
+                }
+                return owner;
+              },
+              catch: (cause) => new BootServiceInstallError({ cause }),
+            })
+          : undefined;
       if (installed) {
         const previousStateText = yield* fs.readFileString(statePath).pipe(Effect.option);
         if (Option.isSome(previousStateText)) {
@@ -865,6 +931,8 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           {
             protocol: SERVICE_LAUNCHER_PROTOCOL,
             activeVersion: input.cliVersion,
+            endpoint,
+            ...(handoff === undefined ? {} : { handoff }),
           } satisfies ServiceState,
           null,
           2,
@@ -885,10 +953,19 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       yield* writeDurably(unitPath, manager.render(plan));
 
       if (start) {
+        const ready = yield* (host.watchReadiness ?? watchServerReadiness)({
+          path: path.join(input.baseDir, "userdata", "server-runtime.json"),
+          endpoint,
+          ...(Option.isSome(runtime) ? { previousPid: runtime.value.pid } : {}),
+        }).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
         yield* runSteps(manager.activate);
+        yield* ready.awaitReady.pipe(
+          Effect.mapError((cause) => new BootServiceInstallError({ cause })),
+        );
         yield* fs.remove(restartPendingPath, { force: true });
       }
     }).pipe(
+      Effect.scoped,
       Effect.mapError((cause) =>
         cause._tag === "PlatformError" ? new BootServiceInstallError({ cause }) : cause,
       ),
@@ -979,6 +1056,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         Option.isSome(runtimeSentinel) &&
         runtimeSentinel.value.trim() === input.cliVersion &&
         state?.activeVersion === input.cliVersion &&
+        state.endpoint !== undefined &&
         state?.update?.status !== "pending",
       unitPath,
       logPath,
