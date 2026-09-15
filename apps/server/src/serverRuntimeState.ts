@@ -16,6 +16,8 @@ export const PersistedServerRuntimeState = Schema.Struct({
   host: Schema.optional(Schema.String),
   privateNetworkOnly: Schema.optional(Schema.Boolean),
   port: Schema.Int,
+  tailscaleServeEnabled: Schema.optional(Schema.Boolean),
+  tailscaleServePort: Schema.optional(Schema.Int),
   origin: Schema.String,
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
   devUrl: Schema.optional(Schema.String),
@@ -55,7 +57,10 @@ export const makePersistedServerRuntimeState = (input: {
   readonly config: Pick<
     ServerConfig.ServerConfig["Service"],
     "host" | "privateNetworkOnly" | "devUrl"
-  >;
+  > &
+    Partial<
+      Pick<ServerConfig.ServerConfig["Service"], "tailscaleServeEnabled" | "tailscaleServePort">
+    >;
   readonly port: number;
   readonly serviceManaged?: boolean;
 }): Effect.Effect<PersistedServerRuntimeState> =>
@@ -65,6 +70,12 @@ export const makePersistedServerRuntimeState = (input: {
     ...(input.config.host ? { host: input.config.host } : {}),
     ...(input.config.privateNetworkOnly ? { privateNetworkOnly: true } : {}),
     port: input.port,
+    ...(input.config.tailscaleServeEnabled === undefined
+      ? {}
+      : { tailscaleServeEnabled: input.config.tailscaleServeEnabled }),
+    ...(input.config.tailscaleServePort === undefined
+      ? {}
+      : { tailscaleServePort: input.config.tailscaleServePort }),
     origin: runtimeOriginForConfig(input.config, input.port),
     ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
     startedAt: DateTime.formatIso(now),
