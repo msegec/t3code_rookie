@@ -562,7 +562,18 @@ const discoverCursorModelsViaListAvailableModels = (
     cursorSettings,
     (acp) =>
       Effect.gen(function* () {
-        yield* acp.start();
+        yield* acp.request("initialize", {
+          protocolVersion: 1,
+          clientCapabilities: {
+            ...CURSOR_PARAMETERIZED_MODEL_PICKER_CAPABILITIES,
+            fs: { readTextFile: false, writeTextFile: false },
+            terminal: false,
+          },
+          clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+        } satisfies EffectAcpSchema.InitializeRequest);
+        yield* acp.request("authenticate", {
+          methodId: "cursor_login",
+        } satisfies EffectAcpSchema.AuthenticateRequest);
         const response = yield* acp.request("cursor/list_available_models", {});
         const decoded = yield* decodeCursorListAvailableModelsResponse(response);
         return buildCursorDiscoveredModelsFromAvailableModelsResponse(decoded);
