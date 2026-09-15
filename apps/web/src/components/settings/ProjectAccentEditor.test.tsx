@@ -53,9 +53,17 @@ afterEach(() => {
 });
 
 describe("ProjectAccentEditor", () => {
+  it("saves the displayed default when no accent exists", async () => {
+    mount();
+    expect(button("Save accent").props.disabled).toBe(false);
+    await click("Save accent");
+    expect(onSave).toHaveBeenCalledExactlyOnceWith("#1688f0");
+    expect(button("Save accent").props.disabled).toBe(true);
+  });
+
   it("edits presets, custom hex and the colour picker without saving until requested", async () => {
     mount();
-    expect(button("Save accent").props.disabled).toBe(true);
+    expect(button("Save accent").props.disabled).toBe(false);
     act(() => renderer.root.findByProps({ "aria-label": "Accent: Purple" }).props.onClick());
     expect(field("Accent hex colour").props.value).toBe("#8b5cf6");
     change("Accent colour picker", "#123456");
@@ -109,7 +117,7 @@ describe("ProjectAccentEditor", () => {
     expect(onSave).toHaveBeenLastCalledWith("#abcdef");
     await click("Reset");
     expect(onSave).toHaveBeenLastCalledWith(null);
-    expect(button("Save accent").props.disabled).toBe(true);
+    expect(button("Save accent").props.disabled).toBe(false);
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
   });
 

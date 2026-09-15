@@ -36,7 +36,9 @@ vi.mock("../files/projectFilesQueryState", () => ({
 vi.mock("./settingsLayout", () => ({
   SettingsRow: ({ control }: { control: ReactNode }) => control,
 }));
-vi.mock("./ProjectAccentEditor", () => ({ ProjectAccentEditor: () => null }));
+vi.mock("../ui/button", () => ({ Button: "button" }));
+vi.mock("../ui/input", () => ({ Input: "input" }));
+vi.mock("../ui/toggle-group", () => ({ ToggleGroup: "toggle-group", Toggle: "toggle" }));
 
 import { ProjectAccentEditor } from "./ProjectAccentEditor";
 import { ProjectAccentSettingsRow } from "./ProjectAccentSettingsRow";
@@ -58,8 +60,8 @@ function member(name: string): SidebarProjectGroupMember {
 }
 const local = member("local");
 const remote = member("remote");
-function mount(members = [local]) {
-  act(() => {
+async function mount(members = [local]) {
+  await act(async () => {
     renderer = create(<ProjectAccentSettingsRow members={members} representative={local} />);
   });
 }
@@ -94,6 +96,148 @@ afterEach(() => {
 });
 
 describe("ProjectAccentSettingsRow", () => {
+  it.each([
+    ["simple", "#F2A93B"],
+    ["advanced", { idle: "#112233", active: "#445566", selected: "#778899" }],
+  ])(
+    "loads %s from checkout t3.json when the project snapshot has no accent",
+    async (_mode, accent) => {
+      mocks.read.mockResolvedValue({
+        _tag: "Success",
+        value: { contents: JSON.stringify({ accentColor: accent }), truncated: false },
+      });
+      await mount();
+      expect(renderer.root.findByType(ProjectAccentEditor).props.current).toEqual(accent);
+      expect(mocks.read).toHaveBeenCalledWith({
+        environmentId: local.environmentId,
+        input: { cwd: local.workspaceRoot, relativePath: "t3.json" },
+      });
+      expect(
+        renderer.root.findByProps({ "aria-label": "Sidebar accent mode" }).props.value,
+      ).toEqual([_mode]);
+    },
+  );
+
+  it("creates a missing file by saving the displayed default and resets the saved state", async () => {
+    mocks.read.mockResolvedValue(missing());
+    await mount();
+    const button = (label: string) =>
+      renderer.root.findAllByType("button").find((item) => item.children.includes(label))!;
+    expect(button("Save accent").props.disabled).toBe(false);
+    await act(async () => button("Save accent").props.onClick());
+    expect(mocks.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          expectedContents: null,
+          contents: expect.stringContaining('"accentColor": "#1688f0"'),
+        }),
+      }),
+    );
+    expect(button("Save accent").props.disabled).toBe(true);
+    await act(async () => button("Reset").props.onClick());
+    expect(button("Reset").props.disabled).toBe(true);
+  });
+
+  it.each([
+    [
+      "permission",
+      failure(
+        new ProjectReadFileError({
+          cwd: local.workspaceRoot,
+          relativePath: "t3.json",
+          failure: "operation_failed",
+        }),
+      ),
+    ],
+    ["disconnected", failure(new Error("Disconnected"))],
+    ["malformed", { _tag: "Success", value: { contents: "{broken", truncated: false } }],
+    ["truncated", { _tag: "Success", value: { contents: "{}", truncated: true } }],
+  ])("shows an error instead of defaults for %s and retries", async (_name, result) => {
+    mocks.read.mockResolvedValue(result);
+    await mount();
+    expect(renderer.root.findAllByType(ProjectAccentEditor)).toHaveLength(0);
+    expect(renderer.root.findByProps({ role: "alert" })).toBeDefined();
+    expect(mocks.write).not.toHaveBeenCalled();
+    mocks.read.mockResolvedValue({
+      _tag: "Success",
+      value: { contents: '{"accentColor":"#abcdef"}', truncated: false },
+    });
+    await act(async () =>
+      renderer.root
+        .findAllByType("button")
+        .find((item) => item.children.includes("Retry"))!
+        .props.onClick(),
+    );
+    expect(renderer.root.findByProps({ "aria-label": "Accent hex colour" }).props.value).toBe(
+      "#abcdef",
+    );
+  });
+
+  it("drops unsaved edits when switching checkout and ignores a late read", async () => {
+    await mount();
+    act(() =>
+      renderer.root
+        .findByProps({ "aria-label": "Accent hex colour" })
+        .props.onChange({ currentTarget: { value: "#112233" } }),
+    );
+    let finishRemote!: (value: unknown) => void;
+    mocks.read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRemote = resolve;
+        }),
+    );
+    await act(async () =>
+      renderer.update(<ProjectAccentSettingsRow members={[remote]} representative={remote} />),
+    );
+    expect(renderer.root.findAllByType(ProjectAccentEditor)).toHaveLength(0);
+    mocks.read.mockResolvedValue({
+      _tag: "Success",
+      value: { contents: '{"accentColor":"#abcdef"}', truncated: false },
+    });
+    await act(async () =>
+      renderer.update(<ProjectAccentSettingsRow members={[local]} representative={local} />),
+    );
+    await act(async () =>
+      finishRemote({
+        _tag: "Success",
+        value: { contents: '{"accentColor":"#998877"}', truncated: false },
+      }),
+    );
+    expect(renderer.root.findByProps({ "aria-label": "Accent hex colour" }).props.value).toBe(
+      "#abcdef",
+    );
+  });
+
+  it("does not replace another checkout's accent when an earlier save completes", async () => {
+    await mount();
+    let finishWrite!: (value: unknown) => void;
+    mocks.write.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    let pendingSave!: Promise<void>;
+    await act(async () => {
+      pendingSave = renderer.root.findByType(ProjectAccentEditor).props.onSave("#112233");
+    });
+    mocks.read.mockResolvedValue({
+      _tag: "Success",
+      value: { contents: '{"accentColor":"#abcdef"}', truncated: false },
+    });
+    await act(async () =>
+      renderer.update(<ProjectAccentSettingsRow members={[remote]} representative={remote} />),
+    );
+    await act(async () => {
+      finishWrite({ _tag: "Success", value: undefined });
+      await pendingSave;
+    });
+    expect(renderer.root.findByProps({ "aria-label": "Accent hex colour" }).props.value).toBe(
+      "#abcdef",
+    );
+  });
+
   it("opens the selected checkout's gold appearance and saves only that checkout", async () => {
     const projects = [local, { ...remote, accent: "#F2A93B", faviconPath: "gold.png" }].map(
       (project) => ({
@@ -125,7 +269,11 @@ describe("ProjectAccentSettingsRow", () => {
         (!search.checkout || project.physicalProjectKey === search.checkout),
     );
     const representative = projectSettingsRepresentative(group, members);
-    act(() => {
+    mocks.read.mockResolvedValue({
+      _tag: "Success",
+      value: { contents: '{"accentColor":"#F2A93B"}\n', truncated: false },
+    });
+    await act(async () => {
       renderer = create(
         <ProjectAccentSettingsRow members={members} representative={representative} />,
       );
@@ -138,14 +286,14 @@ describe("ProjectAccentSettingsRow", () => {
       input: {
         cwd: remote.workspaceRoot,
         relativePath: "t3.json",
-        expectedContents: "{}\n",
-        contents: expect.stringContaining('"accentColor": "#F2A93B"'),
+        expectedContents: '{"accentColor":"#F2A93B"}\n',
+        contents: '{"accentColor":"#F2A93B"}\n',
       },
     });
   });
 
   it("creates a missing file only for typed not_found and compares against absence", async () => {
-    mount();
+    await mount();
     mocks.read.mockResolvedValue(missing());
     await save();
     expect(mocks.write).toHaveBeenCalledWith({
@@ -178,7 +326,7 @@ describe("ProjectAccentSettingsRow", () => {
     ["truncated file", { _tag: "Success", value: { contents: "{}", truncated: true } }],
     ["invalid file", { _tag: "Success", value: { contents: "{broken", truncated: false } }],
   ])("refuses writes after %s", async (_name, result) => {
-    mount();
+    await mount();
     mocks.read.mockResolvedValue(result);
     await expect(save()).rejects.toThrow();
     expect(mocks.write).not.toHaveBeenCalled();
@@ -186,7 +334,7 @@ describe("ProjectAccentSettingsRow", () => {
   });
 
   it("preserves existing content, uses CAS, refreshes the sidebar and routes each checkout to its environment", async () => {
-    mount([local, remote]);
+    await mount([local, remote]);
     const source = '{\n // keep\n "unknown": true\n}\n';
     mocks.read.mockResolvedValue({
       _tag: "Success",
@@ -221,7 +369,7 @@ describe("ProjectAccentSettingsRow", () => {
   });
 
   it("reports the failed remote checkout after a partial save and does not refresh a rejected write", async () => {
-    mount([local, remote]);
+    await mount([local, remote]);
     mocks.write
       .mockResolvedValueOnce({ _tag: "Success" })
       .mockResolvedValueOnce(failure(new Error("File changed.")));
@@ -233,14 +381,14 @@ describe("ProjectAccentSettingsRow", () => {
   });
 
   it("reports a refresh failure after a successful file write", async () => {
-    mount();
+    await mount();
     mocks.update.mockResolvedValue(failure(new Error("Offline")));
     await expect(save()).rejects.toThrow("Accent saved, but sidebar refresh failed");
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });
 
   it("does not create a file when resetting a missing accent", async () => {
-    mount();
+    await mount();
     mocks.read.mockResolvedValue(missing());
     await save(null);
     expect(mocks.write).not.toHaveBeenCalled();

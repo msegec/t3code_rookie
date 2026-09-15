@@ -65,6 +65,7 @@ local work, resolve it yourself before automatic pulls can resume.
 In Project Settings, use **Sidebar accent** below **Project icon**. Choose a preset, use the
 colour picker, or enter a six-digit hex colour, then select **Save accent**. Simple mode generates
 row tints from one colour. Advanced mode sets separate idle, active and selected colours.
+The mode and colours load from the selected checkout's `t3.json`. Saving creates the file if it is missing.
 **Reset** removes the accent. Changes save to each selected checkout's `t3.json` and refresh
 connected web and desktop sidebars. If a checkout cannot be saved, the error names it; earlier
 checkouts may already have been updated.

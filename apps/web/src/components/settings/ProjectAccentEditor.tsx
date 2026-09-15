@@ -154,7 +154,7 @@ export function ProjectAccentEditor({
         <Button
           type="button"
           size="sm"
-          disabled={saving || !draft.dirty || Option.isNone(parsed)}
+          disabled={saving || (!draft.dirty && draft.value !== null) || Option.isNone(parsed)}
           onClick={() => {
             if (Option.isSome(parsed)) void save(parsed.value);
           }}
