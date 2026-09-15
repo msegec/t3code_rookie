@@ -24,7 +24,9 @@ export function deriveAgentSpawnSummary({
   const individuals = agentCount - batches;
   // Workflow coordinators can keep running between dynamic member launches.
   const live =
-    coordinatorStatus !== undefined ? !isTerminalSubagentStatus(coordinatorStatus) : working > 0;
+    coordinatorStatus !== undefined
+      ? coordinatorStatus !== "unknown" && !isTerminalSubagentStatus(coordinatorStatus)
+      : working > 0;
   const subjects = [
     individuals > 0 ? `${individuals} subagent${individuals === 1 ? "" : "s"}` : null,
     batches > 0
@@ -33,7 +35,7 @@ export function deriveAgentSpawnSummary({
   ]
     .filter(Boolean)
     .join(" and ");
-  const lead = `${batches > 0 ? "Launched" : live ? "Kicked off" : "Ran"} ${subjects || "subagents"}`;
+  const lead = `${batches > 0 || agents.some((agent) => agent.status === "unknown") ? "Launched" : live ? "Kicked off" : "Ran"} ${subjects || "subagents"}`;
 
   const status = live
     ? working > 0
@@ -49,8 +51,10 @@ export function deriveAgentSpawnSummary({
             ? `${stopped} stopped`
             : idle > 0
               ? `${idle} idle`
-              : coordinatorStatus !== "completed" &&
-                  (agents.length === 0 || agents.length < agentCount)
+              : coordinatorStatus === "unknown" ||
+                  agents.some((agent) => agent.status === "unknown") ||
+                  (coordinatorStatus !== "completed" &&
+                    (agents.length === 0 || agents.length < agentCount))
                 ? "Status unavailable"
                 : "✓ completed";
   const tone = live

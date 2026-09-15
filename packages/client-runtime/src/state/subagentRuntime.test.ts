@@ -62,6 +62,49 @@ function fold(rows: ReadonlyArray<OrchestrationThreadActivity>) {
 }
 
 describe("foldSubagentActivities", () => {
+  it("keeps unobservable background work unknown until an explicit outcome arrives", () => {
+    const rows = [
+      activity("task.started", { taskId: "cursor-background", title: "Audit files" }),
+      activity("task.progress", {
+        taskId: "cursor-background",
+        status: "unknown",
+        description: "Audit files",
+        summary: "Cursor does not report background task completion.",
+      }),
+    ];
+    expect(fold(rows)[0]).toMatchObject({
+      title: "Audit files",
+      status: "unknown",
+      completedAt: null,
+      result: null,
+      progress: "Cursor does not report background task completion.",
+    });
+    expect(foldSubagentActivities(rows, { sessionLive: false })[0]?.status).toBe("unknown");
+    expect(deriveAgentPanelModel({ agents: fold(rows) })).toMatchObject({
+      liveCount: 0,
+      settledCount: 0,
+      idleCount: 0,
+    });
+    expect(
+      fold([
+        ...rows,
+        activity("task.progress", {
+          taskId: "cursor-background",
+          description: "Audit files",
+        }),
+      ])[0]?.status,
+    ).toBe("unknown");
+    expect(
+      fold([
+        ...rows,
+        activity("task.completed", {
+          taskId: "cursor-background",
+          status: "completed",
+          summary: "Audit finished",
+        }),
+      ])[0],
+    ).toMatchObject({ status: "completed", result: "Audit finished" });
+  });
   it("shows the batch status limit after its parent turn ends without claiming a result", () => {
     const running = activity("task.progress", {
       taskId: "batch-1",
