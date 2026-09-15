@@ -34,6 +34,7 @@ describe("ElectronProtocol", () => {
       const directory = yield* fileSystem.makeTempDirectoryScoped();
       yield* fileSystem.writeFileString(`${directory}/index.html`, "<html>app</html>");
       yield* fileSystem.writeFileString(`${directory}/app.js`, "export default 1;");
+      yield* fileSystem.writeFile(`${directory}/worker.wasm`, new Uint8Array([0, 97, 115, 109]));
       let handler: ((request: Request) => Promise<Response>) | undefined;
       handleMock.mockImplementation((_scheme, nextHandler) => {
         handler = nextHandler;
@@ -60,6 +61,16 @@ describe("ElectronProtocol", () => {
       assert.equal(yield* Effect.promise(() => script.text()), "export default 1;");
       assert.include(script.headers.get("content-type") ?? "", "javascript");
 
+      const head = yield* request("/app.js", { method: "HEAD" });
+      assert.equal(head.status, 200);
+      assert.equal(yield* Effect.promise(() => head.text()), "");
+      assert.include(head.headers.get("content-type") ?? "", "javascript");
+      assert.equal(
+        (yield* request("/worker.wasm")).headers.get("content-type"),
+        "application/wasm",
+      );
+      const wrongHost = yield* Effect.promise(() => handler!(new Request("t3code://other/app.js")));
+      assert.equal(wrongHost.status, 404);
       assert.equal((yield* request("/missing.js")).status, 404);
       assert.equal((yield* request("/%2e%2e%2fsecret.txt")).status, 404);
       assert.equal((yield* request("/%invalid")).status, 400);

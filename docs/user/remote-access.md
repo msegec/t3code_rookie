@@ -190,11 +190,13 @@ devices. For server version warnings, follow [Updating T3 Code](./updating.md).
 
 ## Using the Desktop App as a Remote Only
 
-If a computer should only drive work running elsewhere, turn off its local environment. In the
-desktop app, open **Settings → Connections** and switch off **Local
-environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
-backends stay off, and other devices can no longer connect to this computer. Your projects,
-history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
+In **Settings → Connections**, turn off **Local environment** and confirm the restart.
+The desktop app opens without its local server, agents, or desktop-managed WSL backends.
+Connections to the desktop-hosted environment become unavailable. A separately installed
+background service keeps running. Your local projects, history, and saved connections are
+kept, and you can still connect through pairing, T3 Connect, or SSH.
 
-Switch **Local environment** back on in the same place to restart with your previous local
-settings.
+To use an existing background service, save its pairing URL through **Add environment
+→ Remote link**. The desktop then connects to that service without starting its own server.
+
+Turn **Local environment** back on in the same place to restart with your saved local settings.
