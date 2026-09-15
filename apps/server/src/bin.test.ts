@@ -40,6 +40,7 @@ import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngi
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
+import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import {
@@ -366,6 +367,7 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
     const routesLayer = HttpApiBuilder.layer(ProjectCliHttpApi).pipe(
       Layer.provide(
         orchestrationHttpApiLayer.pipe(
+          Layer.provide(ProjectFaviconResolver.layerLive),
           Layer.provide(
             Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({
               get: () => Effect.succeed(null),
@@ -395,6 +397,7 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
         }),
       ),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(ProjectFaviconResolver.layerLive.pipe(Layer.provide(NodeServices.layer))),
       Layer.provide(ServerConfig.layer(config)),
     );
 

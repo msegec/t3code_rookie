@@ -8,8 +8,8 @@ import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
-import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitHubGraphQlBudget from "../sourceControl/githubGraphQlBudget.ts";
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
 import { BASE_COMPARISON_GRAPHQL_QUERY } from "./gitHubPullRequestJson.ts";
