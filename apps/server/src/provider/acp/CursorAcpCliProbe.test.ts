@@ -10,8 +10,21 @@ import { describe, expect } from "vite-plus/test";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
+import { discoverCursorModelsViaAcp } from "../Layers/CursorProvider.ts";
 
 describe.runIf(process.env.T3_CURSOR_ACP_PROBE === "1")("Cursor ACP CLI probe", () => {
+  it.effect("discovers models within the provider status deadline without creating a session", () =>
+    Effect.gen(function* () {
+      const models = yield* discoverCursorModelsViaAcp({
+        enabled: true,
+        binaryPath: "cursor-agent",
+        apiEndpoint: "",
+        customModels: [],
+      }).pipe(Effect.timeout("15 seconds"));
+      expect(models.length).toBeGreaterThan(0);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("initialize and authenticate against real cursor-agent acp", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
