@@ -216,11 +216,11 @@ export interface AgentSpawnSummary {
   readonly title: string;
   /** Latest member activity while working, else the batch outcome. */
   readonly status: string;
-  readonly tone: "working" | "completed" | "failed" | "stopped";
+  readonly tone: "working" | "completed" | "failed" | "stopped" | "unknown";
   readonly members: ReadonlyArray<{
     readonly title: string;
     readonly status: string;
-    readonly tone: "working" | "completed" | "failed" | "stopped";
+    readonly tone: "working" | "completed" | "failed" | "stopped" | "unknown";
     readonly detail: string | undefined;
     readonly updatedAt: string;
   }>;
@@ -723,6 +723,7 @@ function agentSpawnLifecycleStatus(
   if (statuses.includes("failed")) return "failed";
   if (statuses.includes("declined")) return "declined";
   if (statuses.includes("stopped")) return "stopped";
+  if (statuses.includes("unknown")) return "unknown";
   return "completed";
 }
 
@@ -1096,6 +1097,9 @@ export function agentSpawnLabel(spawn: NonNullable<WorkLogEntry["agentSpawn"]>):
   if (working > 0) {
     return `Kicked off ${subjects} · ${working} working`;
   }
+  if (members.some((agent) => agent.status === "unknown")) {
+    return `Kicked off ${subjects} · status unavailable`;
+  }
   const status = failed > 0 ? `${failed} failed` : stopped > 0 ? `${stopped} stopped` : "completed";
   return `Ran ${subjects} · ${status}`;
 }
@@ -1117,6 +1121,8 @@ function agentSpawnTone(status: WorkLogToolLifecycleStatus | undefined): AgentSp
       return "failed";
     case "stopped":
       return "stopped";
+    case "unknown":
+      return "unknown";
   }
 }
 
@@ -1134,7 +1140,12 @@ export function agentSpawnSummary(
     const tone = agentSpawnTone(agent.status);
     return {
       title: agent.title,
-      status: tone === "working" ? "working" : (agent.status ?? tone),
+      status:
+        tone === "working"
+          ? "working"
+          : tone === "unknown"
+            ? "Status unavailable"
+            : (agent.status ?? tone),
       tone,
       detail: agent.detail,
       updatedAt: agent.updatedAt,
@@ -1163,6 +1174,7 @@ export function agentSpawnSummary(
       (members.length > 1 ? `${working.length} of ${members.length} working` : "Working");
     return { title, status, tone, members };
   }
+  if (tone === "unknown") return { title, status: "Status unavailable", tone, members };
   // The batch tone covers a coordinator that failed or stopped on its own.
   const failed = members.filter((member) => member.tone === "failed").length;
   const stopped = members.filter((member) => member.tone === "stopped").length;
@@ -1178,7 +1190,11 @@ export function agentSpawnSummary(
 function agentSpawnExpandedBody(spawn: NonNullable<WorkLogEntry["agentSpawn"]>): string | null {
   const lines = agentSpawnMembers(spawn).map((agent) => {
     const status =
-      agent.status === undefined || agent.status === "inProgress" ? "working" : agent.status;
+      agent.status === undefined || agent.status === "inProgress"
+        ? "working"
+        : agent.status === "unknown"
+          ? "Status unavailable"
+          : agent.status;
     return `${agent.title} · ${status}${agent.detail ? `\n  ${agent.detail}` : ""}`;
   });
   return lines.length > 0 ? lines.join("\n") : null;

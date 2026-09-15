@@ -137,3 +137,10 @@ Choose **Snooze → Custom…** from a thread's menu to pick a date and time in 
 local time zone, or a duration in minutes, hours, or days. Durations start when
 you confirm; one day means 24 hours. On web and desktop, you can also snooze
 several selected threads together. Choose **Wake thread** to bring a thread back early.
+
+## Subagent status
+
+Cursor foreground tasks report completion in the Agents panel. For background tasks, Cursor
+reports the launch but does not report completion. These tasks show **Status unknown**, with an
+explanation, and do not keep the thread marked as working. A later explicit result can update
+their status.
