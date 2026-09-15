@@ -35,7 +35,11 @@ import {
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
-import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  resolveCatalogDependencies,
+  resolveLockedDependencies,
+  WorkspaceLock,
+} from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -358,7 +362,6 @@ const MAC_DESKTOP_BUILD_PREREQUISITES = [
   { id: "clang", description: "Xcode Command Line Tools (clang)" },
   { id: "make", description: "Xcode Command Line Tools (make)" },
   { id: "sips", description: "macOS image tool (sips)" },
-  { id: "iconutil", description: "macOS icon tool (iconutil)" },
   { id: "lipo", description: "Xcode universal-binary tool (lipo)" },
 ] as const;
 
@@ -1472,6 +1475,22 @@ const stageClerkPasskeyNativeBinaries = Effect.fn("stageClerkPasskeyNativeBinari
   }
 });
 
+// Install scripts compile for the host, so a foreign stage would ship host
+// binaries under build/Release ahead of the target prebuilds pnpm selected.
+export function resolveStageAllowBuilds(
+  allowBuilds: Record<string, boolean>,
+  input: {
+    readonly platform: typeof BuildPlatform.Type;
+    readonly arch: typeof BuildArch.Type;
+    readonly hostPlatform: string;
+    readonly hostArch: string;
+  },
+): Record<string, boolean> {
+  const native =
+    detectHostBuildPlatform(input.hostPlatform) === input.platform && input.hostArch === input.arch;
+  return native ? allowBuilds : { ...allowBuilds, "node-pty": false, "msgpackr-extract": false };
+}
+
 export function createStageWorkspaceConfig(input: {
   readonly platform: typeof BuildPlatform.Type;
   readonly arch: typeof BuildArch.Type;
@@ -1775,10 +1794,6 @@ export const preflightMacDesktopBuild = Effect.fn("preflightMacDesktopBuild")(fu
       clang: desktopBuildProbeSucceeds(ChildProcess.make("clang", ["--version"]), "clang"),
       make: desktopBuildProbeSucceeds(ChildProcess.make("make", ["--version"]), "make"),
       sips: desktopBuildProbeSucceeds(ChildProcess.make("sips", ["--help"]), "sips"),
-      iconutil: desktopBuildProbeSucceeds(
-        ChildProcess.make("xcrun", ["--find", "iconutil"]),
-        "iconutil",
-      ),
       lipo:
         arch === "universal"
           ? desktopBuildProbeSucceeds(ChildProcess.make("lipo", ["-version"]), "lipo")
@@ -2026,8 +2041,39 @@ export const copyDirectoryPreservingSymlinks = Effect.fn("copyDirectoryPreservin
   },
 );
 
+// ffi-rs picks its native binding for the running host when it is imported,
+// and the server bundle reaches it eagerly through @ff-labs/fff-node. A
+// Windows sidecar carries only the win32 binding, so probing it on another
+// host needs that host's binding beside the probe copy. The bindings come
+// from the build tree's own ffi-rs install; the packaged tree is untouched.
+export const resolveHostFfiBindings = Effect.fn("desktopArtifact.resolveHostFfiBindings")(
+  function* (repoRoot: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const ffiPackageDir = yield* fs.realPath(
+      path.join(repoRoot, "apps/desktop/node_modules/ffi-rs"),
+    );
+    const bindingsDir = path.join(path.dirname(ffiPackageDir), "@yuuang");
+    const names = yield* fs
+      .readDirectory(bindingsDir)
+      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+    const bindings: Array<{ readonly name: string; readonly directory: string }> = [];
+    for (const name of names) {
+      bindings.push({
+        name: `@yuuang/${name}`,
+        directory: yield* fs.realPath(path.join(bindingsDir, name)),
+      });
+    }
+    return bindings;
+  },
+);
+
 const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSelfContained")(
-  function* (input: { readonly asarPath: string; readonly verbose: boolean }) {
+  function* (input: {
+    readonly asarPath: string;
+    readonly probeBindings?: ReadonlyArray<{ readonly name: string; readonly directory: string }>;
+    readonly verbose: boolean;
+  }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
 
@@ -2048,6 +2094,11 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
     // is hoisted and should be physical. A future package-manager layout change
     // must not let the probe resolve through the build tree.
     yield* copyDirectoryPreservingSymlinks(extractedApp, probeApp);
+    for (const binding of input.probeBindings ?? []) {
+      const target = path.join(probeApp, "node_modules", binding.name);
+      yield* fs.makeDirectory(path.dirname(target), { recursive: true });
+      yield* fs.copy(binding.directory, target);
+    }
 
     // Guard the guard: if anything above the probe provides a node_modules, a
     // missing dependency would resolve there and the check would pass while the
@@ -2288,11 +2339,18 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
     return yield* new LinuxBrowserSecretHostError({ hostPlatform });
   }
   const path = yield* Path.Path;
+  const prebuilt = yield* Config.String("T3CODE_DESKTOP_BROWSER_SECRET").pipe(Config.option);
+  const digest = yield* Config.String("T3CODE_DESKTOP_BROWSER_SECRET_SHA256").pipe(Config.option);
   yield* runCommand(
     ChildProcess.make(
       "node",
       [
         path.join(input.repoRoot, "apps/desktop/scripts/build-browser-secret.mjs"),
+        ...Option.match(prebuilt, { onNone: () => [], onSome: (value) => ["--prebuilt", value] }),
+        ...Option.match(digest, {
+          onNone: () => [],
+          onSome: (value) => ["--prebuilt-sha256", value],
+        }),
         "--arch",
         input.arch === "arm64" ? "arm64" : "x64",
         "--output",
@@ -2304,67 +2362,14 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   );
 });
 
-function generateMacIconSet(
-  sourcePng: string,
-  targetIcns: string,
-  tmpRoot: string,
-  path: Path.Path,
-  verbose: boolean,
-) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const iconsetDir = path.join(tmpRoot, "icon.iconset");
-    yield* fs.makeDirectory(iconsetDir, { recursive: true });
-
-    const iconSizes = [16, 32, 128, 256, 512] as const;
-    for (const size of iconSizes) {
-      yield* runCommand(
-        ChildProcess.make(
-          {},
-        )`sips -z ${size} ${size} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}.png`)}`,
-        { label: `sips icon ${size}x${size}`, verbose },
-      );
-
-      const retinaSize = size * 2;
-      yield* runCommand(
-        ChildProcess.make(
-          {},
-        )`sips -z ${retinaSize} ${retinaSize} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}@2x.png`)}`,
-        { label: `sips icon ${size}x${size}@2x`, verbose },
-      );
-    }
-
-    yield* runCommand(ChildProcess.make({})`iconutil -c icns ${iconsetDir} -o ${targetIcns}`, {
-      label: "iconutil icns",
-      verbose,
-    });
-  });
-}
-
-function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: boolean) {
+export function stageMacIcons(stageResourcesDir: string, sourcePng: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     if (!(yield* fs.exists(sourcePng))) {
-      return yield* new DesktopIconSourceMissingError({
-        platform: "mac",
-        sourcePath: sourcePng,
-      });
+      return yield* new DesktopIconSourceMissingError({ platform: "mac", sourcePath: sourcePng });
     }
-
-    const tmpRoot = yield* fs.makeTempDirectoryScoped({
-      prefix: "t3code-icon-build-",
-    });
-
-    const iconPngPath = path.join(stageResourcesDir, "icon.png");
-    const iconIcnsPath = path.join(stageResourcesDir, "icon.icns");
-
-    yield* runCommand(ChildProcess.make({})`sips -z 512 512 ${sourcePng} --out ${iconPngPath}`, {
-      label: "sips mac icon",
-      verbose,
-    });
-
-    yield* generateMacIconSet(sourcePng, iconIcnsPath, tmpRoot, path, verbose);
+    yield* fs.copyFile(sourcePng, path.join(stageResourcesDir, "icon.png"));
   });
 }
 
@@ -2685,9 +2690,18 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
+    const hostPlatform = yield* HostProcessPlatform;
+    if (hostPlatform !== "darwin") {
+      // node-gyp refuses to cross-compile, and the stage already installed
+      // darwin prebuilds (node-pty, msgpackr-extract) via supportedArchitectures.
+      buildConfig.npmRebuild = false;
+    }
+    if (hostPlatform !== "darwin" && !signed) {
+      buildConfig.afterPack = path.join(repoRoot, "scripts/sign-macos-adhoc.ts");
+    }
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
-      icon: "icon.icns",
+      icon: "icon.png",
       category: "public.app-category.developer-tools",
       extendInfo: {
         NSScreenCaptureUsageDescription:
@@ -2784,7 +2798,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   verbose: boolean,
 ) {
   if (platform === "mac") {
-    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
+    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng);
     return;
   }
 
@@ -3094,6 +3108,9 @@ export const validateWindowsPackagedPayload = Effect.fn(
   readonly appVersion: string;
   readonly expectWslRuntime?: boolean;
   readonly fileLimit?: number;
+  // The build tree whose ffi-rs install supplies the probe's host binding when
+  // this host is not Windows. Omit it to probe with the sidecar's own tree.
+  readonly repoRoot?: string;
   readonly verbose?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
@@ -3308,8 +3325,13 @@ export const validateWindowsPackagedPayload = Effect.fn(
     verbose: input.verbose ?? false,
   });
 
+  const hostPlatform = yield* HostProcessPlatform;
   yield* verifyPackagedBundleIsSelfContained({
     asarPath,
+    probeBindings:
+      hostPlatform === "win32" || input.repoRoot === undefined
+        ? []
+        : yield* resolveHostFfiBindings(input.repoRoot),
     verbose: input.verbose ?? false,
   });
 
@@ -3342,10 +3364,18 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
   const workspaceConfig = yield* readWorkspaceConfig();
+  const workspaceLock = yield* Schema.decodeEffect(fromYaml(WorkspaceLock))(
+    yield* fs.readFileString(path.join(repoRoot, "pnpm-lock.yaml")),
+  );
   const workspaceCatalog = workspaceConfig.catalog ?? {};
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
-  const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
+  const workspaceAllowBuilds = resolveStageAllowBuilds(workspaceConfig.allowBuilds ?? {}, {
+    platform: options.platform,
+    arch: options.arch,
+    hostPlatform,
+    hostArch: yield* HostProcessArchitecture,
+  });
 
   const platformConfig = PLATFORM_CONFIG[options.platform];
   if (!platformConfig) {
@@ -3374,7 +3404,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   });
 
   const resolvedServerDependencies = yield* Effect.try({
-    try: () => resolveCatalogDependencies(serverDependencies, workspaceCatalog, "apps/server"),
+    try: () =>
+      resolveLockedDependencies(
+        selectCliRuntimeExternalDependencies(
+          resolveCatalogDependencies(serverDependencies, workspaceCatalog, "apps/server"),
+        ),
+        workspaceLock,
+        "apps/server",
+      ),
     catch: (cause) =>
       new DesktopBuildDependencyResolutionError({
         kind: "server-production",
@@ -3386,7 +3423,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     resolvedServerDependencies,
   );
   const resolvedDesktopRuntimeDependencies = yield* Effect.try({
-    try: () => resolveDesktopRuntimeDependencies(desktopPackageJson.dependencies, workspaceCatalog),
+    try: () =>
+      resolveLockedDependencies(
+        resolveDesktopRuntimeDependencies(desktopPackageJson.dependencies, workspaceCatalog),
+        workspaceLock,
+        "apps/desktop",
+      ),
     catch: (cause) =>
       new DesktopBuildDependencyResolutionError({
         kind: "desktop-runtime",
@@ -3395,6 +3437,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       }),
   });
 
+  const fffNodeVersion = resolvedServerDependencies["@ff-labs/fff-node"];
+  if (fffNodeVersion === undefined) {
+    return yield* new MissingServerProductionDependenciesError({ manifestPath: "pnpm-lock.yaml" });
+  }
   const appVersion = options.version ?? serverPackageJson.version;
   const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
@@ -3624,7 +3670,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
           serverDependencies: resolvedServerDependencies,
           desktopDependencies: resolvedDesktopRuntimeDependencies,
           arch: options.arch,
-          fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+          fffNodeVersion,
         });
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
@@ -3707,7 +3753,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       arch: options.arch,
       appVersion,
       runtimeExternalDependencies: resolvedServerRuntimeExternalDependencies,
-      fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+      fffNodeVersion,
       allowBuilds: workspaceAllowBuilds,
       patchedDependencies: workspacePatchedDependencies,
       overrides: resolvedOverrides,
@@ -3825,6 +3871,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         platform: options.platform,
         runtimeArchivePath: options.wslRuntime,
       }),
+      repoRoot,
       verbose: options.verbose,
     });
   }
