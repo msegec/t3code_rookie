@@ -24,6 +24,14 @@ The confirmation counts the running threads that the restarts will interrupt,
 and how many can resume afterwards. See **Continue threads after restarts**
 below.
 
+## Release notes
+
+The desktop update notice shows changes in release order. Fleet releases include
+notes from their official T3 Code base, the status of tracked upstream pull
+requests, and the changes added on top. Pull request status is captured when the
+build is prepared. A merged pull request may still be absent from an older base.
+Use **View release on GitHub** for the full notes if the notice truncates them.
+
 ## Before you update
 
 Server updates restart the connection and can interrupt active agents and
