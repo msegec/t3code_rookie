@@ -61,7 +61,13 @@ import {
   pruneScanCache,
   type ScanCache,
 } from "./usageScanCache.ts";
-import type { UsageRecord } from "./usageTranscripts.ts";
+import { projectUsageSummary } from "./usageCompatibility.ts";
+import {
+  OPENCODE_MAX_DATABASES,
+  readOpenCodeUsage,
+  resolveOpenCodeDatabasePaths,
+} from "./usageOpenCode.ts";
+import type { JsonlUsageProvider, UsageRecord } from "./usageTranscripts.ts";
 
 const LITELLM_RATES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
@@ -242,7 +248,7 @@ export const make = Effect.gen(function* () {
   const resolveTranscriptDirs = Effect.fn("UsageService.resolveTranscriptDirs")(function* (
     settings: ServerSettingsValue,
   ) {
-    const dirs: Array<{ provider: UsageProviderKind; dir: string; fileName?: string }> = [];
+    const dirs: Array<{ provider: JsonlUsageProvider; dir: string; fileName?: string }> = [];
     const seen = new Set<string>();
     for (const driver of ["claudeAgent", "codex", "grok"] as const) {
       // Disabled accounts still have history. Explicit default slots replace
@@ -337,8 +343,8 @@ export const make = Effect.gen(function* () {
     filePath: string,
     size: number,
     mtimeMs: number,
-    provider: UsageProviderKind,
-  ): Effect.Effect<readonly UsageRecord[]> =>
+    provider: JsonlUsageProvider,
+  ): Effect.Effect<readonly UsageRecord[] | null> =>
     Effect.gen(function* () {
       const cached = fileCache.get(filePath);
       // Provider is part of the identity: if both providers were ever pointed
@@ -366,7 +372,7 @@ export const make = Effect.gen(function* () {
       );
       // A read failure is not an empty transcript: caching it under this
       // (size, mtime) would silently drop the file's usage until it changes.
-      if (parsed === null) return [];
+      if (parsed === null) return null;
 
       // Stored already de-duplicated within the file, which is 99% of all
       // duplicates. The aggregator still runs the cross-file dedupe pass. One
@@ -394,10 +400,13 @@ export const make = Effect.gen(function* () {
     readonly provider: UsageProviderKind;
     readonly dir: string;
     readonly volumeId: string;
-    /** Parsed records per file, or `null` when the directory does not exist. */
-    readonly files:
-      | readonly { readonly path: string; readonly records: readonly UsageRecord[] }[]
-      | null;
+    readonly missing: boolean;
+    readonly failedDirectories: number;
+    readonly failedFiles: number;
+    readonly files: readonly {
+      readonly path: string;
+      readonly records: readonly UsageRecord[] | null;
+    }[];
   }
 
   const collectDirs = Effect.fn("UsageService.collectDirs")(function* (
@@ -412,22 +421,15 @@ export const make = Effect.gen(function* () {
     const scanned: ScannedDir[] = [];
     for (const { provider, dir, fileName } of dirs) {
       const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
-      const exists = yield* fileSystem
-        .exists(dir)
-        .pipe(Effect.catchCause(() => Effect.succeed(false)));
-      if (!exists) {
-        scanned.push({ provider, dir, volumeId, files: null });
-        continue;
-      }
-      const files = yield* Effect.promise(() =>
+      const listing = yield* Effect.promise(() =>
         listTranscriptFiles(dir, windowStartMs, fileName === undefined ? undefined : { fileName }),
       );
-      const parsedFiles: { path: string; records: readonly UsageRecord[] }[] = [];
-      for (const file of files) {
+      const parsedFiles: { path: string; records: readonly UsageRecord[] | null }[] = [];
+      for (const file of listing.files) {
         const records = yield* readFileRecords(file.path, file.size, file.mtimeMs, provider);
         parsedFiles.push({ path: file.path, records });
       }
-      scanned.push({ provider, dir, volumeId, files: parsedFiles });
+      scanned.push({ provider, dir, volumeId, ...listing, files: parsedFiles });
     }
     return scanned;
   });
@@ -478,6 +480,13 @@ export const make = Effect.gen(function* () {
         detail: `sinceDay '${input.sinceDay}' is not a valid date`,
       });
     }
+    const windowEnd = DateTime.make(`${input.untilDay}T00:00:00Z`);
+    if (Option.isNone(windowEnd)) {
+      return yield* new UsageReadError({
+        reason: "invalidWindow",
+        detail: "untilDay is not a valid date",
+      });
+    }
     const windowStartMs =
       (hourlyWindow?.sinceTimeMs ?? DateTime.toEpochMillis(windowStart.value)) - MTIME_SLACK_MS;
 
@@ -503,8 +512,18 @@ export const make = Effect.gen(function* () {
     const livePaths = new Set<string>();
     const walkedRoots: string[] = [];
 
-    for (const { provider, dir, volumeId, files } of scannedDirs) {
-      if (files === null) {
+    scannedDirs.sort((a, b) => a.provider.localeCompare(b.provider) || a.dir.localeCompare(b.dir));
+    for (const {
+      provider,
+      dir,
+      volumeId,
+      files,
+      missing,
+      failedDirectories,
+      failedFiles,
+    } of scannedDirs) {
+      const sourceIndex = sources.length;
+      if (missing) {
         sources.push({
           fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
           status: "missing",
@@ -517,15 +536,24 @@ export const make = Effect.gen(function* () {
         continue;
       }
 
-      walkedRoots.push(dir);
+      if (failedDirectories === 0 && failedFiles === 0) walkedRoots.push(dir);
+      let successfulReads = 0;
+      let readFailures = failedDirectories + failedFiles;
       let scannedFiles = 0;
-      let skippedFiles = 0;
+      let partial = false;
+      let skippedFiles = failedFiles;
       // Distinct per directory. Buckets carry per-cell session counts, but a
       // session spans days and models, so clients total this figure instead.
       const sessionIds = new Set<string>();
 
       for (const file of files) {
         livePaths.add(file.path);
+        if (file.records === null) {
+          readFailures += 1;
+          skippedFiles += 1;
+          continue;
+        }
+        successfulReads += 1;
         if (file.records.length === 0) {
           skippedFiles += 1;
           continue;
@@ -534,20 +562,91 @@ export const make = Effect.gen(function* () {
         for (const record of file.records) {
           // Only sessions that contributed in-window count: the mtime slack
           // admits boundary files whose records fall outside the range.
-          if (aggregator.add(record) && record.sessionId.length > 0) {
-            sessionIds.add(record.sessionId);
+          if (aggregator.add(record, sourceIndex)) {
+            partial ||= record.partial === true;
+            if (record.sessionId.length > 0) sessionIds.add(record.sessionId);
           }
         }
       }
 
       sources.push({
         fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
-        status: "ok",
+        status:
+          readFailures > 0
+            ? successfulReads > 0
+              ? "partial"
+              : "failed"
+            : partial
+              ? "partial"
+              : "ok",
         scannedFiles,
         skippedFiles,
         malformedRecords: 0,
         distinctSessions: sessionIds.size,
-        message: null,
+        message:
+          [
+            readFailures > 0
+              ? "Some saved usage could not be read; totals may be incomplete."
+              : null,
+            partial ? "Provider marked saved usage or cost as incomplete." : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || null,
+      });
+    }
+
+    const openCodePaths = new Set<string>();
+    let openCodeDiscoveryPartial = false;
+    const instances = Object.values(settings.providerInstances).filter(
+      (instance) => instance.driver === "opencode",
+    );
+    const environments = instances.map((instance) =>
+      mergeProviderInstanceEnvironment(instance.environment, hostEnvironment),
+    );
+    if (!Object.hasOwn(settings.providerInstances, "opencode")) environments.push(hostEnvironment);
+    for (const environment of environments) {
+      const paths = yield* Effect.promise(() =>
+        resolveOpenCodeDatabasePaths({
+          environment,
+          fileSystem,
+          path,
+          homeDir: NodeOS.homedir(),
+          cwd: path.resolve("."),
+        }),
+      );
+      openCodeDiscoveryPartial ||= paths.partial;
+      for (const databasePath of paths.paths) openCodePaths.add(databasePath);
+    }
+    openCodeDiscoveryPartial ||= openCodePaths.size > OPENCODE_MAX_DATABASES;
+    const discoveryMessage = openCodeDiscoveryPartial
+      ? "OpenCode history discovery was incomplete or configured without persistent storage."
+      : null;
+    const databasePaths = [...openCodePaths].sort().slice(0, OPENCODE_MAX_DATABASES);
+    for (const databasePath of databasePaths) {
+      const result = yield* Effect.promise((signal) =>
+        readOpenCodeUsage(databasePath, fileSystem, {
+          sinceTimeMs: hourlyWindow?.sinceTimeMs ?? windowStartMs,
+          untilTimeMs:
+            hourlyWindow?.untilTimeMs ??
+            DateTime.toEpochMillis(windowEnd.value) + 24 * 60 * 60 * 1000 + MTIME_SLACK_MS,
+          signal,
+        }),
+      );
+      const sourceIndex = sources.length;
+      const sessionIds = new Set<string>();
+      for (const record of result.records) {
+        if (aggregator.add(record, sourceIndex) && record.sessionId.length > 0)
+          sessionIds.add(record.sessionId);
+      }
+      const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(databasePath));
+      sources.push({
+        fingerprint: { hostId, provider: "opencode", resolvedHomePath: databasePath, volumeId },
+        status: openCodeDiscoveryPartial && result.status === "ok" ? "partial" : result.status,
+        scannedFiles: result.scannedFiles,
+        skippedFiles: result.skippedFiles,
+        malformedRecords: result.malformedRecords,
+        distinctSessions: sessionIds.size,
+        message: [result.message, discoveryMessage].filter(Boolean).join(" ") || null,
       });
     }
 
@@ -571,6 +670,30 @@ export const make = Effect.gen(function* () {
       sinceDay: input.sinceDay,
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
+      providerCoverage: [
+        ...(["claude", "codex", "grok"] as const).map((provider) => ({
+          provider,
+          status: "supported" as const,
+          reason: null,
+        })),
+        {
+          provider: "opencode",
+          status: "supported",
+          reason: discoveryMessage,
+        },
+        {
+          provider: "cursor",
+          status: "unsupported",
+          reason:
+            "Cursor does not expose supported local usage history through its ACP connection.",
+        },
+        {
+          provider: "antigravity",
+          status: "unsupported",
+          reason:
+            "Antigravity history is unavailable because its stored usage format has not been verified.",
+        },
+      ],
       sources,
       pricing: pricing(),
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
@@ -625,7 +748,8 @@ export const make = Effect.gen(function* () {
     );
     // Waiting stays interruptible. The detached scan continues for other
     // callers and still warms the cache if this caller leaves.
-    return yield* Deferred.await(deferred);
+    const summary = yield* Deferred.await(deferred);
+    return projectUsageSummary(summary, input.maxContractVersion);
   });
 
   return { readSummary, refreshRates } as const;

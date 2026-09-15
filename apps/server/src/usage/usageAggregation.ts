@@ -52,7 +52,6 @@ interface MutableBucket {
   cacheSavingsUsd: number;
   records: number;
   unpricedRecords: number;
-  providerReportedRecords: number;
   sessions: Set<string>;
 }
 
@@ -112,13 +111,13 @@ export class UsageAggregator {
    * can derive per-window facts (distinct sessions, for one) from the records
    * that landed rather than everything the mtime prefilter happened to admit.
    */
-  add(record: UsageRecord): boolean {
+  add(record: UsageRecord, sourceIndex?: number): boolean {
     if (record.dedupeKey !== null) {
-      if (this.#seen.has(record.dedupeKey)) {
+      if (this.#seen.has(`${record.provider}\0${record.dedupeKey}`)) {
         this.#duplicatesDropped += 1;
         return false;
       }
-      this.#seen.add(record.dedupeKey);
+      this.#seen.add(`${record.provider}\0${record.dedupeKey}`);
     }
 
     if (
@@ -146,7 +145,14 @@ export class UsageAggregator {
             this.#hourlyWindow.sinceTimeMs +
               Math.floor((record.timestampMs - this.#hourlyWindow.sinceTimeMs) / HOUR_MS) * HOUR_MS,
           ).toISOString();
-    const key = `${day}\u0000${hourStart}\u0000${record.provider}\u0000${record.model}`;
+    const priced = priceUsage(
+      this.#options.rates,
+      record.model,
+      record.totals,
+      record.reportedCostUsd,
+      this.#options.priceOverrides,
+    );
+    const key = `${day}\u0000${hourStart}\u0000${record.provider}\u0000${record.model}\u0000${priced.costSource}\u0000${sourceIndex ?? ""}`;
     let bucket = this.#buckets.get(key);
     if (bucket === undefined) {
       bucket = {
@@ -155,19 +161,10 @@ export class UsageAggregator {
         cacheSavingsUsd: 0,
         records: 0,
         unpricedRecords: 0,
-        providerReportedRecords: 0,
         sessions: new Set<string>(),
       };
       this.#buckets.set(key, bucket);
     }
-
-    const priced = priceUsage(
-      this.#options.rates,
-      record.model,
-      record.totals,
-      record.reportedCostUsd,
-      this.#options.priceOverrides,
-    );
 
     bucket.totals = addTotals(bucket.totals, record.totals);
     bucket.costUsd += priced.costUsd;
@@ -179,7 +176,6 @@ export class UsageAggregator {
     );
     bucket.records += 1;
     if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
-    if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
     if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
     return true;
   }
@@ -187,7 +183,14 @@ export class UsageAggregator {
   finish(): AggregateResult {
     const buckets: UsageBucket[] = [];
     for (const [key, bucket] of this.#buckets) {
-      const [day = "", hourStart = "", provider = "", model = ""] = key.split("\u0000");
+      const [
+        day = "",
+        hourStart = "",
+        provider = "",
+        model = "",
+        costSource = "",
+        sourceIndex = "",
+      ] = key.split("\u0000");
       buckets.push({
         day: day as UsageDay,
         ...(hourStart === "" ? {} : { hourStart }),
@@ -196,7 +199,8 @@ export class UsageAggregator {
         totals: bucket.totals,
         costUsd: bucket.costUsd,
         cacheSavingsUsd: bucket.cacheSavingsUsd,
-        costSource: resolveCostSource(bucket),
+        costSource: costSource as UsageBucket["costSource"],
+        ...(sourceIndex === "" ? {} : { sourceIndex: Number(sourceIndex) }),
         records: bucket.records,
         unpricedRecords: bucket.unpricedRecords,
         sessions: bucket.sessions.size,
@@ -217,15 +221,4 @@ export class UsageAggregator {
       outOfWindow: this.#outOfWindow,
     };
   }
-}
-
-/**
- * A bucket mixes records from one model, but their cost provenance can differ
- * when only some records carried a reported cost. The weakest provenance in the
- * bucket wins so the UI never overstates confidence.
- */
-function resolveCostSource(bucket: MutableBucket): UsageBucket["costSource"] {
-  if (bucket.unpricedRecords === bucket.records) return "unpriced";
-  if (bucket.providerReportedRecords === bucket.records) return "providerReported";
-  return "modelPriced";
 }

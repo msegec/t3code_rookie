@@ -7,7 +7,7 @@ import * as NodePath from "node:path";
 
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest";
 
-import { readTranscriptRecords } from "./usageTranscriptReader.ts";
+import { listTranscriptFiles, readTranscriptRecords } from "./usageTranscriptReader.ts";
 
 let dir: string;
 
@@ -206,5 +206,44 @@ describe("readTranscriptRecords resume", () => {
 
   it("returns null for an unreadable file", async () => {
     assert.isNull(await readTranscriptRecords(NodePath.join(dir, "missing.jsonl"), "claude"));
+  });
+});
+
+describe("listTranscriptFiles failures", () => {
+  it("distinguishes an empty root from a missing root and a failed root", async () => {
+    assert.deepStrictEqual(await listTranscriptFiles(dir, 0), {
+      files: [],
+      missing: false,
+      failedDirectories: 0,
+      failedFiles: 0,
+    });
+    assert.deepStrictEqual(await listTranscriptFiles(NodePath.join(dir, "absent"), 0), {
+      files: [],
+      missing: true,
+      failedDirectories: 0,
+      failedFiles: 0,
+    });
+    const file = NodePath.join(dir, "file");
+    await NodeFSP.writeFile(file, "");
+    assert.deepStrictEqual(await listTranscriptFiles(file, 0), {
+      files: [],
+      missing: false,
+      failedDirectories: 1,
+      failedFiles: 0,
+    });
+  });
+
+  it("retains healthy transcripts when a candidate cannot be statted", async () => {
+    const healthy = NodePath.join(dir, "healthy.jsonl");
+    await NodeFSP.writeFile(healthy, claudeLine(1, 5));
+    await NodeFSP.symlink(NodePath.join(dir, "absent"), NodePath.join(dir, "broken.jsonl"));
+    const result = await listTranscriptFiles(dir, 0);
+    assert.deepStrictEqual(
+      result.files.map((file) => file.path),
+      [healthy],
+    );
+    assert.strictEqual(result.failedFiles, 1);
+    assert.strictEqual(result.failedDirectories, 0);
+    assert.isFalse(result.missing);
   });
 });
