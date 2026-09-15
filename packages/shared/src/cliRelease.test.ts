@@ -1,8 +1,62 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { cliArchiveTarCommand, newestCliReleaseVersion, parseChecksums } from "./cliRelease.ts";
+import {
+  cliArchiveFileName,
+  cliArchivePlatformKey,
+  cliArchiveTarCommand,
+  cliReleaseChannelOf,
+  cliReleaseDownloadBaseUrl,
+  cliReleaseIndexPageUrl,
+  newestCliReleaseVersion,
+  parseChecksums,
+} from "./cliRelease.ts";
 
 describe("cliRelease", () => {
+  it("names archives by version and platform, zip only on Windows", () => {
+    expect(cliArchiveFileName("1.2.3-preview.20260911.4", "linux-x64")).toBe(
+      "t3-1.2.3-preview.20260911.4-linux-x64.tar.gz",
+    );
+    expect(cliArchiveFileName("1.2.3", "win32-x64")).toBe("t3-1.2.3-win32-x64.zip");
+  });
+
+  it("only maps platforms and architectures that have a release archive", () => {
+    expect(cliArchivePlatformKey("darwin", "arm64")).toBe("darwin-arm64");
+    expect(cliArchivePlatformKey("linux", "x64")).toBe("linux-x64");
+    expect(cliArchivePlatformKey("win32", "x64")).toBe("win32-x64");
+    expect(cliArchivePlatformKey("darwin", "x64")).toBeUndefined();
+    expect(cliArchivePlatformKey("linux", "arm64")).toBe("linux-arm64");
+    expect(cliArchivePlatformKey("win32", "arm64")).toBe("win32-arm64");
+    expect(cliArchivePlatformKey("freebsd", "x64")).toBeUndefined();
+    expect(cliArchivePlatformKey("linux", "ia32")).toBeUndefined();
+  });
+
+  it("resolves download URLs under the tagged release, honoring a mirror", () => {
+    expect(cliReleaseDownloadBaseUrl("1.2.3")).toBe(
+      "https://github.com/pingdotgg/t3code/releases/download/v1.2.3",
+    );
+    expect(cliReleaseDownloadBaseUrl("1.2.3", "https://mirror.example/t3/")).toBe(
+      "https://mirror.example/t3/v1.2.3",
+    );
+  });
+
+  it("keeps fleet downloads, channels and release discovery on the fleet", () => {
+    const version = "0.0.41-nightly.20260916.1780.mzs.r1234abcdef56";
+    expect(cliReleaseDownloadBaseUrl(version)).toBe(
+      `https://github.com/msegec/t3code_rookie/releases/download/v${version}`,
+    );
+    expect(cliReleaseDownloadBaseUrl(version, "https://mirror.example/t3/")).toBe(
+      `https://mirror.example/t3/v${version}`,
+    );
+    expect(cliReleaseDownloadBaseUrl(version, " ")).toBe(
+      `https://github.com/msegec/t3code_rookie/releases/download/v${version}`,
+    );
+    expect(cliReleaseChannelOf(version)).toBe("nightly");
+    expect(cliReleaseIndexPageUrl(2, version)).toBe(
+      "https://api.github.com/repos/msegec/t3code_rookie/releases?per_page=100&page=2",
+    );
+    expect(newestCliReleaseVersion([{ tag_name: `v${version}` }], "nightly")).toBe(version);
+  });
+
   it("parses sha256sum output including binary-mode markers", () => {
     const checksums = parseChecksums(
       [
