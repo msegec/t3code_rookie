@@ -55,6 +55,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const path = yield* Path.Path;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-self-update-test-" });
   const order: string[] = [];
+  let stagedEntryPath = "";
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
@@ -62,7 +63,8 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
           order.push("extract");
           const stagingDir = input.args[input.args.indexOf("-C") + 1];
           if (stagingDir === undefined) return yield* Effect.die("missing tar target");
-          yield* fs.writeFileString(path.join(stagingDir, "t3"), "#!/bin/sh\n").pipe(Effect.orDie);
+          stagedEntryPath = path.join(stagingDir, "t3");
+          yield* fs.writeFileString(stagedEntryPath, "#!/bin/sh\n").pipe(Effect.orDie);
           return {
             stdout: "",
             stderr: "",
@@ -74,6 +76,14 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
             stderrInvalidUtf8: false,
           };
         }
+        expect(input.command).toBe(stagedEntryPath);
+        expect(input.args).toEqual([
+          "__service-preflight",
+          "--database-path",
+          config.dbPath,
+          "--launcher-protocol",
+          String(SERVICE_LAUNCHER_PROTOCOL),
+        ]);
         order.push("preflight");
         const result =
           options.preflight === "blocked"
@@ -397,10 +407,11 @@ it.layer(NodeServices.layer)("server self update", (it) => {
 
   it.effect("preserves the preflight refusal reason", () =>
     Effect.gen(function* () {
-      const { selfUpdate } = yield* makeHarness({ preflight: "blocked" });
+      const { selfUpdate, order } = yield* makeHarness({ preflight: "blocked" });
       expect((yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason).toBe(
         "local update required",
       );
+      expect(order).toEqual(["download", "extract", "preflight"]);
     }),
   );
 
