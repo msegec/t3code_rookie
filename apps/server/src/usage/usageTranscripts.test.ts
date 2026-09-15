@@ -306,6 +306,16 @@ describe("parseGrokLine", () => {
     });
   }
 
+  it.each(["usageIsIncomplete", "costIsPartial"])(
+    "does not present %s costs as complete",
+    (flag) => {
+      const records = parseGrokLine(turnCompleted({ usage: { [flag]: true } }));
+      expect(records[0]?.reportedCostUsd).toBeNull();
+      expect(records[0]?.partial).toBe(true);
+      expect(records[0]?.totals.outputTokens).toBe(272);
+    },
+  );
+
   it("extracts per-model totals and provider-reported cost ticks", () => {
     const records = parseGrokLine(turnCompleted());
 

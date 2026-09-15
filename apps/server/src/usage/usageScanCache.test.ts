@@ -65,7 +65,12 @@ describe("scan cache round trip", () => {
       mtimeMs: 300,
       provider: "grok",
       records: [
-        record({ provider: "grok", model: "grok-4.5-build", dedupeKey: "s:p:grok-4.5-build" }),
+        record({
+          provider: "grok",
+          model: "grok-4.5-build",
+          dedupeKey: "s:p:grok-4.5-build",
+          partial: true,
+        }),
       ],
       tailRecords: [record({ provider: "grok", model: "grok-4.5-build", dedupeKey: null })],
       position: position({ resumeOffset: 30, guardLength: 30, guardHash: 123 }),
@@ -128,6 +133,26 @@ describe("scan cache round trip", () => {
     const previous = { ...encoded, version: 2 };
 
     expect(decodeScanCache(JSON.parse(JSON.stringify(previous))).size).toBe(0);
+  });
+
+  it("preserves saved records when migrating a version 3 cache", () => {
+    const original = cacheWith([["/removed.jsonl", 100, [record()]]]);
+    const encoded = encodeScanCache(original);
+    const entry = encoded.files["/removed.jsonl"]!;
+    const previous = {
+      ...encoded,
+      version: 3,
+      files: {
+        "/removed.jsonl": {
+          ...entry,
+          r: entry.r.map((row) => row.slice(0, 10)),
+          t: entry.t.map((row) => row.slice(0, 10)),
+        },
+      },
+    };
+    const migrated = decodeScanCache(JSON.parse(JSON.stringify(previous)));
+    expect(migrated).toEqual(original);
+    expect(decodeScanCache(encodeScanCache(migrated))).toEqual(original);
   });
 
   it("interns repeated model and session strings", () => {

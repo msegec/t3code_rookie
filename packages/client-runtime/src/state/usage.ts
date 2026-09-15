@@ -1,4 +1,8 @@
-import type { EnvironmentId, UsageSummaryInput } from "@t3tools/contracts";
+import {
+  USAGE_CONTRACT_VERSION,
+  type EnvironmentId,
+  type UsageSummaryInput,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import type { AtomRegistry } from "effect/unstable/reactivity";
 
@@ -6,6 +10,11 @@ import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type { createEnvironmentPresentationAtoms } from "./presentation.ts";
 import { executeAtomQuery, runAtomCommand, squashAtomCommandFailure } from "./runtime.ts";
 import type { createServerEnvironmentAtoms } from "./server.ts";
+
+export const usageSummaryInput = (input: UsageSummaryInput): UsageSummaryInput => ({
+  ...input,
+  maxContractVersion: USAGE_CONTRACT_VERSION,
+});
 
 const isEnvironmentRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
 
@@ -55,7 +64,7 @@ export async function refreshUsage({
 }): Promise<void> {
   await Promise.all(
     environmentIds.map(async (environmentId) => {
-      const query = server.usageSummary({ environmentId, input });
+      const query = server.usageSummary({ environmentId, input: usageSummaryInput(input) });
       const presentation = presentations.presentationAtom(environmentId);
       const controller = new AbortController();
       const abortWhenDisconnected = () => {

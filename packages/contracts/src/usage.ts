@@ -21,7 +21,7 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
  */
-export const USAGE_CONTRACT_VERSION = 5 as const;
+export const USAGE_CONTRACT_VERSION = 6 as const;
 
 /**
  * Oldest {@link UsageSummary} version a current client will still merge.
@@ -32,7 +32,14 @@ export const USAGE_CONTRACT_VERSION = 5 as const;
  */
 export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
 
-export const UsageProviderKind = Schema.Literals(["claude", "codex", "grok"]);
+export const UsageProviderKind = Schema.Literals([
+  "claude",
+  "codex",
+  "grok",
+  "opencode",
+  "antigravity",
+  "cursor",
+]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
 /**
@@ -89,6 +96,7 @@ export type UsageTokenTotals = typeof UsageTokenTotals.Type;
  * to `costUsd`.
  */
 export const UsageBucket = Schema.Struct({
+  sourceIndex: Schema.optional(NonNegativeInt),
   day: UsageDay,
   hourStart: Schema.optional(TrimmedNonEmptyString),
   provider: UsageProviderKind,
@@ -170,6 +178,7 @@ export const UsagePricing = Schema.Struct({
 export type UsagePricing = typeof UsagePricing.Type;
 
 export const UsageSummaryInput = Schema.Struct({
+  maxContractVersion: Schema.optional(NonNegativeInt),
   /** Inclusive first day of the window, in `timeZone`. */
   sinceDay: UsageDay,
   /** Inclusive last day of the window, in `timeZone`. */
@@ -188,7 +197,15 @@ export const UsageSummaryInput = Schema.Struct({
 });
 export type UsageSummaryInput = typeof UsageSummaryInput.Type;
 
+export const UsageProviderCoverage = Schema.Struct({
+  provider: UsageProviderKind,
+  status: Schema.Literals(["supported", "unsupported"]),
+  reason: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(512))),
+});
+export type UsageProviderCoverage = typeof UsageProviderCoverage.Type;
+
 export const UsageSummary = Schema.Struct({
+  providerCoverage: Schema.optional(Schema.Array(UsageProviderCoverage)),
   contractVersion: Schema.Number,
   readAt: Schema.String,
   timeZone: TrimmedNonEmptyString,
