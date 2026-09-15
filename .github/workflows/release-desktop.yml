@@ -120,8 +120,9 @@ jobs:
     name: Build ${{ inputs.label }}
     runs-on: ${{ inputs.runner }}
     # Windows waits for the Linux CLI archive inside its own budget (see
-    # "Wait for Linux CLI archive"), so it gets that wait on top of the usual 30.
-    timeout-minutes: ${{ inputs.platform == 'win' && 70 || 30 }}
+    # "Wait for Linux CLI archive"), so it gets that wait on top of the usual 60.
+    # Fleet builds run on standard hosted runners, which are slower than upstream's.
+    timeout-minutes: ${{ inputs.platform == 'win' && 100 || 60 }}
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: ${{ inputs.clerk_publishable_key }}
       T3CODE_CLERK_JWT_TEMPLATE: ${{ inputs.clerk_jwt_template }}
@@ -467,7 +468,7 @@ jobs:
       - name: Wait for Linux CLI archive
         if: inputs.platform == 'win'
         shell: pwsh
-        timeout-minutes: 40
+        timeout-minutes: 60
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ARTIFACT: cli-linux-${{ inputs.arch }}
