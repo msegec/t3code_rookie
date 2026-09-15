@@ -11,6 +11,8 @@ import { HttpClient } from "effect/http";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { persistServerRuntimeState } from "../serverRuntimeState.ts";
+import { ServiceReadinessError } from "../serviceReadiness.ts";
 import * as BootService from "./bootService.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
 import {
@@ -144,6 +146,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   const control: {
     failCommand: string | undefined;
     stateAfterStop?: string;
+    readinessFailure?: boolean;
     linger: string;
     enabled: boolean;
     active: boolean;
@@ -215,7 +218,24 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         baseDir: serviceBaseDir,
         logsDir: path.join(serviceBaseDir, "userdata", "logs"),
         cliVersion,
-        host: { execPath: "/usr/bin/t3" },
+        host: {
+          execPath: "/usr/bin/t3",
+          watchReadiness: (input) =>
+            Effect.succeed({
+              awaitReady: Effect.suspend(() => {
+                commands.push("readiness");
+                return control.readinessFailure
+                  ? Effect.fail(new ServiceReadinessError({ reason: "timeout" }))
+                  : Effect.succeed({
+                      version: 1,
+                      pid: process.pid,
+                      ...input.endpoint,
+                      origin: "http://127.0.0.1",
+                      startedAt: "2026-09-07T00:00:00Z",
+                    });
+              }),
+            }),
+        },
       });
     }).pipe(
       Effect.provideService(ProcessRunner.ProcessRunner, runner),
@@ -337,6 +357,83 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
     }),
   );
 
+  it.effect("does not report installation success before replacement readiness", () =>
+    Effect.gen(function* () {
+      const { service, control, commands } = yield* makeHarness();
+      control.readinessFailure = true;
+      expect((yield* service.install().pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+      expect(commands.indexOf("systemctl --user restart t3code.service")).toBeLessThan(
+        commands.indexOf("readiness"),
+      );
+    }),
+  );
+
+  it.effect("requires repair for legacy service state without a pinned endpoint", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath } = yield* makeHarness();
+      yield* service.install();
+      yield* fs.writeFileString(statePath, '{"protocol":2,"activeVersion":"1.2.3"}');
+      expect(yield* service.status).toMatchObject({ current: false });
+    }),
+  );
+
+  it.effect("preserves the running endpoint through install and stopped service repair", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath } = yield* makeHarness();
+      const plan = yield* service.install();
+      const runtimePath = `${plan.baseDir}/userdata/server-runtime.json`;
+      yield* persistServerRuntimeState({
+        path: runtimePath,
+        state: {
+          version: 1,
+          pid: 2147483647,
+          host: "127.0.0.1",
+          port: 3774,
+          origin: "http://127.0.0.1:3774",
+          startedAt: "2026-09-07T00:00:00Z",
+        },
+      });
+      yield* service.install();
+      expect(parseServiceState(yield* fs.readFileString(statePath))?.endpoint).toEqual({
+        host: "127.0.0.1",
+        port: 3774,
+      });
+      yield* fs.remove(runtimePath);
+      yield* service.install();
+      expect(parseServiceState(yield* fs.readFileString(statePath))?.endpoint).toEqual({
+        host: "127.0.0.1",
+        port: 3774,
+      });
+    }),
+  );
+
+  it.effect("replaces a saved loopback host with the runtime wildcard binding", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath } = yield* makeHarness();
+      const plan = yield* service.install();
+      yield* fs.writeFileString(
+        statePath,
+        `{"protocol":${SERVICE_LAUNCHER_PROTOCOL},"activeVersion":"1.2.3","endpoint":{"host":"127.0.0.1","port":3774,"tailscaleServeEnabled":true,"tailscaleServePort":8443}}`,
+      );
+      yield* persistServerRuntimeState({
+        path: `${plan.baseDir}/userdata/server-runtime.json`,
+        state: {
+          version: 1,
+          pid: 2147483647,
+          port: 3774,
+          origin: "http://127.0.0.1:3774",
+          startedAt: "2026-09-07T00:00:00Z",
+        },
+      });
+      yield* service.install();
+      expect(parseServiceState(yield* fs.readFileString(statePath))?.endpoint).toEqual({
+        port: 3774,
+        tailscaleServeEnabled: true,
+        tailscaleServePort: 8443,
+      });
+    }),
+  );
+
   it.effect("installs, reports current state, and uninstalls", () =>
     Effect.gen(function* () {
       const { service, fs, statePath, timeouts, runtime } = yield* makeHarness();
@@ -345,6 +442,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(parseServiceState(yield* fs.readFileString(statePath))).toEqual({
         protocol: SERVICE_LAUNCHER_PROTOCOL,
         activeVersion: "1.2.3",
+        endpoint: { port: 3773 },
       });
       expect(plan.program).toEqual([runtime.entryPath, "__service-launcher"]);
       expect(yield* fs.readFileString(plan.unitPath)).toContain(
@@ -495,6 +593,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(parseServiceState(yield* fs.readFileString(statePath))).toEqual({
         protocol: SERVICE_LAUNCHER_PROTOCOL,
         activeVersion: "1.2.4",
+        endpoint: { port: 3773 },
       });
       expect(yield* fs.readFileString(plan.unitPath)).toContain("versions/1.2.4/t3");
       expect(
@@ -502,6 +601,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           (command) => command.startsWith("systemctl ") && !command.includes("show-environment"),
         ),
       ).toEqual([]);
+      expect(commands).not.toContain("readiness");
       const status = yield* newer.status;
       expect(status.current).toBe(false);
       expect(status.problems).toContain("restart-pending");
@@ -758,6 +858,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(parseServiceState(yield* fs.readFileString(statePath))).toEqual({
         protocol: SERVICE_LAUNCHER_PROTOCOL,
         activeVersion: "1.2.3",
+        endpoint: { port: 3773 },
       });
       expect(yield* fs.readFileString(plan.unitPath)).toContain(
         `    <string>${runtime.entryPath}</string>\n    <string>__service-launcher</string>`,
