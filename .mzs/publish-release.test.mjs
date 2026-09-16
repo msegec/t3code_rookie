@@ -5,7 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
-import { inventory, jobPlan, targets, signing } from "./local-build.mjs";
+import { desktopAssetName, inventory, jobPlan, targets, signing } from "./local-build.mjs";
 const version = "0.0.41-nightly.20260916.1780.mzs.r123456abcdef";
 
 function fixture(t) {
@@ -37,7 +37,6 @@ function fixture(t) {
   const receipts = targets.map((target) => {
     const [platform, arch] = target.split("-");
     const job = jobPlan("", root, plan, platform, arch);
-    const extension = { linux: "AppImage", mac: "zip", win: "exe" }[platform];
     const feed = {
       "mac-arm64": "nightly-mac.yml",
       "mac-x64": "nightly-mac-x64.yml",
@@ -47,7 +46,7 @@ function fixture(t) {
       "win-arm64": "nightly-win-arm64.yml",
     }[target];
     const names = [
-      `T3-Code-${version}-${arch}.${extension}`,
+      desktopAssetName(platform, arch, version),
       feed,
       ...(job.archive ? [job.archive] : []),
     ];

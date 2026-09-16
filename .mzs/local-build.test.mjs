@@ -6,6 +6,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
 import {
+  desktopAssetName,
   fileHash,
   prepareNativeInputs,
   importInputs,
@@ -46,7 +47,6 @@ export function releaseFixture(t) {
   const receipts = targets.map((target) => {
     const [platform, arch] = target.split("-");
     const job = jobPlan("", directory, plan, platform, arch);
-    const extension = { linux: "AppImage", mac: "zip", win: "exe" }[platform];
     const feed = {
       "mac-arm64": "nightly-mac.yml",
       "mac-x64": "nightly-mac-x64.yml",
@@ -57,7 +57,7 @@ export function releaseFixture(t) {
     }[target];
     NodeFS.mkdirSync(job.artifacts, { recursive: true });
     for (const name of [
-      `T3-Code-${version}-${arch}.${extension}`,
+      desktopAssetName(platform, arch, version),
       feed,
       ...(job.archive ? [job.archive] : []),
     ])
@@ -255,7 +255,7 @@ NodeTest.test("local CLI builds once, reuses verified outputs and rejects a dama
     "scripts/build-desktop-artifact.ts": `import * as fs from "node:fs"; import * as path from "node:path";
       const args = process.argv; const out = args[args.indexOf('--output-dir') + 1];
       const arch = args[args.indexOf('--arch') + 1];
-      for (const name of ['T3-Code-${version}-'+arch+'.AppImage','nightly-linux'+(arch === 'arm64' ? '-arm64' : '')+'.yml']) fs.writeFileSync(path.join(out,name), name);
+      for (const name of ['T3-Code-${version}-'+(arch === 'x64' ? 'x86_64' : arch)+'.AppImage','nightly-linux'+(arch === 'arm64' ? '-arm64' : '')+'.yml']) fs.writeFileSync(path.join(out,name), name);
       fs.writeFileSync('apps/server/dist/bundle.js','nightly branding');
       const monitor = 'native/resource-monitor/target/'+(arch === 'arm64' ? 'aarch64' : 'x86_64')+'-unknown-linux-gnu/release'; fs.mkdirSync(monitor, {recursive:true}); fs.writeFileSync(path.join(monitor, 't3-resource-monitor'),'monitor');`,
     "scripts/build-cli-archive.ts": `import * as fs from "node:fs"; import * as path from "node:path";

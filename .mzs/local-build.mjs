@@ -221,10 +221,15 @@ export function jobPlan(root, directory, plan, platform, arch) {
           },
   };
 }
+// electron-builder names the x64 AppImage "x86_64"; every other desktop asset uses "x64".
+export function desktopAssetName(platform, arch, version) {
+  const extension = { mac: "zip", linux: "AppImage", win: "exe" }[platform];
+  const label = platform === "linux" && arch === "x64" ? "x86_64" : arch;
+  return `T3-Code-${version}-${label}.${extension}`;
+}
 function requireAssets(job, assets, version) {
-  const required = job.archive ? [job.archive] : [];
-  for (const extension of { mac: ["zip"], linux: ["AppImage"], win: ["exe"] }[job.platform])
-    required.push(`T3-Code-${version}-${job.arch}.${extension}`);
+  const required = [desktopAssetName(job.platform, job.arch, version)];
+  if (job.archive) required.push(job.archive);
   for (const name of required)
     if (!assets.some((asset) => asset.name === name))
       throw new Error(`Missing ${job.target} artifact: ${name}`);
