@@ -5,7 +5,10 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeProcess from "node:process";
 
-export const targets = ["linux-x64", "linux-arm64", "mac-arm64", "mac-x64", "win-x64", "win-arm64"];
+// linux-arm64 and win-arm64 wait on an aarch64 node-pty: the kit has no aarch64 C
+// toolchain and node-pty ships no Linux prebuild, so the WSL runtime would carry
+// a host-built pty.node.
+export const targets = ["linux-x64", "mac-arm64", "mac-x64", "win-x64"];
 export const signing = { mac: "ad-hoc", linux: "unsigned", win: "unsigned" };
 const releaseAsset = (name) =>
   !name.startsWith("builder-debug") && !name.startsWith("builder-effective-config");
@@ -666,7 +669,6 @@ export function verifyCollected(directory) {
     "nightly-mac.yml",
     "nightly.yml",
     "nightly-linux.yml",
-    "nightly-linux-arm64.yml",
     "release-notes.md",
     `t3-source-${fleet.version}.bundle`,
   ])

@@ -217,7 +217,7 @@ NodeTest.test("dry-run plans need no dependencies and reject dirty pinned source
     f.directory,
     version,
     "win",
-    "arm64",
+    "x64",
     "--dry-run",
   ];
   const result = NodeChildProcess.spawnSync(process.execPath, args, { encoding: "utf8" });
@@ -254,13 +254,13 @@ NodeTest.test("local CLI builds once, reuses verified outputs and rejects a dama
     "apps/server/scripts/cli.ts": "process.exit(0);",
     "scripts/build-desktop-artifact.ts": `import * as fs from "node:fs"; import * as path from "node:path";
       const args = process.argv; const out = args[args.indexOf('--output-dir') + 1];
-      const arch = args[args.indexOf('--arch') + 1];
-      for (const name of ['T3-Code-${version}-'+(arch === 'x64' ? 'x86_64' : arch)+'.AppImage','nightly-linux'+(arch === 'arm64' ? '-arm64' : '')+'.yml']) fs.writeFileSync(path.join(out,name), name);
+      const arch = args[args.indexOf('--arch') + 1]; const mac = args[args.indexOf('--platform') + 1] === 'mac';
+      for (const name of mac ? ['T3-Code-${version}-'+arch+'.zip','nightly-mac.yml'] : ['T3-Code-${version}-'+(arch === 'x64' ? 'x86_64' : arch)+'.AppImage','nightly-linux.yml']) fs.writeFileSync(path.join(out,name), name);
       fs.writeFileSync('apps/server/dist/bundle.js','nightly branding');
-      const monitor = 'native/resource-monitor/target/'+(arch === 'arm64' ? 'aarch64' : 'x86_64')+'-unknown-linux-gnu/release'; fs.mkdirSync(monitor, {recursive:true}); fs.writeFileSync(path.join(monitor, 't3-resource-monitor'),'monitor');`,
+      const monitor = 'native/resource-monitor/target/'+(arch === 'arm64' ? 'aarch64' : 'x86_64')+(mac ? '-apple-darwin' : '-unknown-linux-gnu')+'/release'; fs.mkdirSync(monitor, {recursive:true}); fs.writeFileSync(path.join(monitor, 't3-resource-monitor'),'monitor');`,
     "scripts/build-cli-archive.ts": `import * as fs from "node:fs"; import * as path from "node:path";
-      const args = process.argv; const out = args[args.indexOf('--output-dir') + 1];
-      const arch = args[args.indexOf('--arch') + 1]; fs.writeFileSync(path.join(out, 't3-${version}-linux-'+arch+'.tar.gz'), 'archive');`,
+      const args = process.argv; const out = args[args.indexOf('--output-dir') + 1]; const platform = args[args.indexOf('--platform') + 1];
+      const arch = args[args.indexOf('--arch') + 1]; fs.writeFileSync(path.join(out, 't3-${version}-'+(platform === 'mac' ? 'darwin' : platform)+'-'+arch+'.tar.gz'), 'archive');`,
     "scripts/smoke-cli-archive.ts": "process.exit(0);",
   };
   for (const [name, bytes] of Object.entries(files)) {
@@ -309,10 +309,10 @@ NodeTest.test("local CLI builds once, reuses verified outputs and rejects a dama
   };
   NodeFS.writeFileSync(NodePath.join(release, "mzs-fleet.json"), JSON.stringify(fleet));
   const log = NodePath.join(directory, "commands.jsonl");
-  const run = (arch = "x64") =>
+  const run = (platform = "linux", arch = "x64") =>
     NodeChildProcess.spawnSync(
       process.execPath,
-      [NodePath.join(root, ".mzs/local-build.mjs"), root, release, version, "linux", arch],
+      [NodePath.join(root, ".mzs/local-build.mjs"), root, release, version, platform, arch],
       {
         encoding: "utf8",
         env: {
@@ -341,11 +341,11 @@ NodeTest.test("local CLI builds once, reuses verified outputs and rejects a dama
   NodeAssert.equal(result.status, 0, result.stderr);
   NodeAssert.equal(JSON.parse(result.stdout).result, "reused");
   NodeAssert.equal(NodeFS.readFileSync(log, "utf8"), commands);
-  result = run("arm64");
+  result = run("mac", "arm64");
   NodeAssert.equal(result.status, 0, result.stderr);
   NodeAssert.equal(JSON.parse(result.stdout).result, "built");
   NodeAssert.equal(
-    JSON.parse(NodeFS.readFileSync(NodePath.join(release, "jobs/linux-arm64/receipt.json"))).smoke
+    JSON.parse(NodeFS.readFileSync(NodePath.join(release, "jobs/mac-arm64/receipt.json"))).smoke
       .status,
     "not-run",
   );
@@ -402,7 +402,7 @@ NodeTest.test(
     const helper = NodePath.join(f.directory, "helper");
     NodeFS.writeFileSync(helper, "verified binary");
     const destination =
-      "native/resource-monitor/target/aarch64-unknown-linux-gnu/release/t3-resource-monitor";
+      "native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor";
     const input = {
       files: [
         {
@@ -416,8 +416,8 @@ NodeTest.test(
       env: { T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true" },
       tools: [],
     };
-    f.plan.nativeInputs = { schemaVersion: 1, targets: { "linux-arm64": input } };
-    let env = prepareNativeInputs(source, f.directory, f.plan, "linux-arm64", {
+    f.plan.nativeInputs = { schemaVersion: 1, targets: { "mac-arm64": input } };
+    let env = prepareNativeInputs(source, f.directory, f.plan, "mac-arm64", {
       PATH: process.env.PATH,
     });
     NodeAssert.equal(env.T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR, "true");
@@ -445,7 +445,7 @@ NodeTest.test(
       "verified binary",
     );
     NodeAssert.throws(
-      () => prepareNativeInputs(source, f.directory, f.plan, "linux-arm64", env),
+      () => prepareNativeInputs(source, f.directory, f.plan, "mac-arm64", env),
       /does not match source/,
     );
     NodeAssert.equal(
@@ -455,7 +455,7 @@ NodeTest.test(
     NodeFS.writeFileSync(helper, "verified binary");
     input.files[0].sourceTree = "f".repeat(40);
     NodeAssert.throws(
-      () => prepareNativeInputs(source, f.directory, f.plan, "linux-arm64", env),
+      () => prepareNativeInputs(source, f.directory, f.plan, "mac-arm64", env),
       /does not match source/,
     );
   },
