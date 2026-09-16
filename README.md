@@ -31,8 +31,14 @@ Queued for a future build:
 - Compressed file previews keep their content type so HTML previews render correctly.
 - OpenCode usage history, source-specific totals, and explicit provider coverage.
   Cursor and Antigravity history remain unavailable.
-- Desktop can connect to an existing background service with its local server
-  disabled. Browser previews can reuse a connected local service.
+- Remaining allowance in Usage > Limits for Grok, Cursor, OpenCode Go and
+  OpenRouter key caps, beside Codex and Claude. Accounts without quota data stay
+  listed with the reason. Free-model request counts are not exposed by OpenRouter
+  or OpenCode Zen and show as unavailable.
+- Desktop connected to an existing background service keeps its local server
+  disabled through updates and recovery. Browser previews can reuse a connected
+  local service. Upstream nightly 1780 now ships the disable switch itself.
+- Release files for Linux, Windows and macOS build on our own machine.
 
 These fixes are configured on `main` but are not in the published build linked above.
 
