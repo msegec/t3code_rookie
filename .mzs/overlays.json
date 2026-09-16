@@ -41,63 +41,63 @@
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "e012682996d7ae40d2ab74fe5bd848e599e16691"
+      "sha": "142604e126ca2f446ed806c583ba61a1e058edca"
     },
     {
       "kind": "commit",
       "name": "MZS project checkout appearance",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "bcd3b9a6d249a97fd0829b51f5fd05bec1360da2"
+      "sha": "85630e39c516af341cd6786abe93ab8025cdc5b9"
     },
     {
       "kind": "commit",
       "name": "MZS Cursor model discovery without sessions",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "c54d4c867511a410a23d45ab57141737e23b7dc0"
+      "sha": "7567ad02185af2b81892abbed23f8e4618c5d331"
     },
     {
       "kind": "commit",
       "name": "MZS compressed workspace preview MIME",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "7a5e83dfdac67aa71e3ab29f569c1255b12cb6fc"
+      "sha": "49be9ab136977441640ccdd44e6bd4d6e64c9f78"
     },
     {
       "kind": "commit",
       "name": "MZS desktop client-only operation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "69396fcbbfa6ca06ae8018e90e5f0cbe42ba29b1"
+      "sha": "cb00ca9874f5f8393e61100029d0188f4392e1f7"
     },
     {
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "485711e00cbccc7d3a8c6bf4a1613e3e9611603c"
+      "sha": "f2b3b8106c056e5756d4b5f9d14184b79d789fce"
     },
     {
       "kind": "commit",
       "name": "MZS provider usage history and coverage",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "458d22e541bcf5af07fa31ee9a2fbc779a8a045c"
+      "sha": "2a46e6d315c6326956d04c83f6295ab560d3b485"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "a846b6371f1f7f7eda34972c4fc785f9e75aa82b"
+      "sha": "a6bbf036e9b5d5dc4be14b5fec326e3daa5c30a2"
     },
     {
       "kind": "commit",
       "name": "MZS remaining provider allowances",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "41916539034ccc6c0143c2f47dd7118809d58bd8"
+      "sha": "8bb3ba6ddb73d942f4f52c72da85324d8f6210fa"
     }
   ],
   "tests": [
