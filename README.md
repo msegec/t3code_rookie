@@ -7,40 +7,39 @@ The installation commands in the upstream README below install official T3 Code.
 
 ## What our version adds
 
-This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.41-nightly.20260912.1576.mzs.r21d0e7326611)
-compared with its official base, [nightly 1576](https://github.com/pingdotgg/t3code/releases/tag/v0.0.41-nightly.20260912.1576).
+This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.41-nightly.20260916.1795.mzs.r3260c2d3083c)
+compared with its official base, [nightly 1795](https://github.com/pingdotgg/t3code/releases/tag/v0.0.41-nightly.20260916.1795).
 Newer upstream nightlies may already contain some of these changes.
 
 - Project sidebar colours and icons, with an accent editor in Project Settings.
-- Colour previews inside code blocks.
-- Upload, rename and delete files directly in the files view.
-- Usage totals that finish even when some connected devices are offline.
-- GitHub repository search when adding projects, with clearer empty results.
-- A visible context-window meter and Cursor/Grok subagent activity panels.
-- Browser previews carried over the existing T3 connection for remote work.
-- MZS desktop and server updates, with checks that the replacement server starts
-  and keeps its connection details.
-- Full upstream and fork release notes in the desktop update prompt.
-
-Queued for a future build:
-
 - Project Settings opens the checkout selected in the sidebar and shows its icon
   and accent. Group settings use the same representative checkout as the sidebar.
   Tracked in [upstream PR #11406](https://github.com/pingdotgg/t3code/pull/11406).
-- Cursor model discovery avoids creating disposable chats.
+- Colour previews inside code blocks.
+- Upload, rename and delete files directly in the files view.
 - Compressed file previews keep their content type so HTML previews render correctly.
+- Usage totals that finish even when some connected devices are offline.
 - OpenCode usage history, source-specific totals, and explicit provider coverage.
   Cursor and Antigravity history remain unavailable.
 - Remaining allowance in Usage > Limits for Grok, Cursor, OpenCode Go and
   OpenRouter key caps, beside Codex and Claude. Accounts without quota data stay
   listed with the reason. Free-model request counts are not exposed by OpenRouter
   or OpenCode Zen and show as unavailable.
+- GitHub repository search when adding projects, with clearer empty results.
+- Cursor model discovery avoids creating disposable chats.
+- A visible context-window meter and Cursor/Grok subagent activity panels.
+- Browser previews carried over the existing T3 connection for remote work.
 - Desktop connected to an existing background service keeps its local server
   disabled through updates and recovery. Browser previews can reuse a connected
-  local service. Upstream nightly 1780 now ships the disable switch itself.
-- Release files for Linux, Windows and macOS build on our own machine.
+  local service. The disable switch itself ships upstream since nightly 1780.
+- MZS desktop and server updates, with checks that the replacement server starts
+  and keeps its connection details.
+- Full upstream and fork release notes in the desktop update prompt.
+- Release files for Linux x64, Windows x64 and macOS (Intel and Apple silicon)
+  build on our own machine. Linux and Windows arm64 wait on an aarch64 terminal
+  module our build kit cannot produce yet.
 
-These fixes are configured on `main` but are not in the published build linked above.
+The overlay list on `main` matches this build. Nothing is queued.
 
 ## How our releases work
 
