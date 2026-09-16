@@ -40,6 +40,7 @@ import {
   resolveGrokAcpBaseModelId,
 } from "../acp/GrokAcpSupport.ts";
 import { sessionModelStateFromInitialize } from "../acp/AcpRuntimeModel.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
 import { discoverGrokSkills } from "../Drivers/GrokSkills.ts";
 
 const GROK_PRESENTATION = {
@@ -508,6 +509,14 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       version,
       // A failed metadata probe degrades the model picker, it does not make chats fail.
       status: acpFailed ? "warning" : "ready",
+      usageLimits: makeUnavailableUsageLimits({
+        checkedAt,
+        reason: "unsupported",
+        message:
+          auth.type === "api_key"
+            ? "Remaining quota is not available for xAI API-key accounts."
+            : "Remaining quota is not available through this Grok connection. Check /usage in Grok.",
+      }),
       auth,
       ...(acpFailed
         ? {

@@ -18,6 +18,7 @@ import {
   checkGrokProviderStatus,
   enrichGrokSnapshot,
 } from "../Layers/GrokProvider.ts";
+import { readGrokUsageLimits } from "../Layers/grokUsageLimits.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
@@ -66,6 +67,8 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
       const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const serverSettings = yield* ServerSettingsService;
       const { cwd } = yield* ServerConfig;
       const eventLoggers = yield* ProviderEventLoggers;
@@ -90,6 +93,16 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
       const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkGrokProviderStatus(effectiveConfig, processEnv, cwd).pipe(
+        Effect.flatMap((snapshot) =>
+          snapshot.enabled && snapshot.installed && snapshot.auth.status === "authenticated"
+            ? readGrokUsageLimits({ checkedAt: snapshot.checkedAt, environment: processEnv }).pipe(
+                Effect.map((usageLimits) => ({ ...snapshot, usageLimits })),
+                Effect.provideService(HttpClient.HttpClient, httpClient),
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.provideService(Path.Path, path),
+              )
+            : Effect.succeed(snapshot),
+        ),
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

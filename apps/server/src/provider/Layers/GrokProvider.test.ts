@@ -370,15 +370,28 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
             modelsOutput: LOGGED_IN_MODELS_OUTPUT,
             acp: true,
           });
-          return yield* checkGrokProviderStatus(
+          const fs = yield* FileSystem.FileSystem;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-requests-" });
+          const requestLog = NodePath.join(dir, "requests.jsonl");
+          const result = yield* checkGrokProviderStatus(
             decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
-            { ...process.env, XAI_API_KEY: "" },
+            { ...process.env, XAI_API_KEY: "", T3_ACP_REQUEST_LOG_PATH: requestLog },
           );
+          const requests = yield* fs.readFileString(requestLog);
+          expect(requests).toContain('"method":"initialize"');
+          expect(requests).not.toContain('"method":"authenticate"');
+          expect(requests).not.toContain('"method":"session/new"');
+          return result;
         }),
       );
 
       expect(snapshot.status).toBe("ready");
       expect(snapshot.version).toBe("1.0.13");
+      expect(snapshot.usageLimits?.unavailable).toEqual({
+        reason: "unsupported",
+        message:
+          "Remaining quota is not available through this Grok connection. Check /usage in Grok.",
+      });
       expect(snapshot.auth).toEqual({
         status: "authenticated",
         type: "cached_token",
@@ -462,6 +475,9 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
         label: "xAI API key",
       });
       expect(snapshot.status).toBe("warning");
+      expect(snapshot.usageLimits?.unavailable?.message).toBe(
+        "Remaining quota is not available for xAI API-key accounts.",
+      );
     }),
   );
 });

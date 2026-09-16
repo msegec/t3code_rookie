@@ -153,6 +153,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         processEnv,
       ).pipe(
         Effect.map(stampIdentity),
+        Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
         Effect.provideService(OpenCodeRuntime, openCodeRuntime),
       );

@@ -85,7 +85,11 @@ closes when you dismiss it or send your next message. It uses the same snapshot 
 anything. The command is offered only for providers that appear under **Usage → Limits**.
 
 API-key accounts may not report subscription limits. This also applies to Claude connections
-using a proxy through `ANTHROPIC_AUTH_TOKEN`.
+using a proxy through `ANTHROPIC_AUTH_TOKEN`. Accounts without quota data remain visible with an
+explanation. An unavailable quota is never shown as a full allowance or calculated from local
+conversation history. Grok reads the billing allowance with its existing sign-in and does not
+open a login window when Limits refreshes. If Grok omits its allowance percentage, check `/usage`
+in Grok. Expired sign-ins must be renewed in Grok before refreshing Limits.
 
 ## Connect a CLIProxyAPI hub
 
