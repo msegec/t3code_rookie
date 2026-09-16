@@ -158,6 +158,20 @@ describe("codexRateLimitsToUpdate", () => {
 });
 
 describe("codexRateLimitsFailureMessage", () => {
+  it.each([
+    [-32600, "Codex rejected the usage request (JSON-RPC -32600)."],
+    [-32601, "This Codex connection does not support reading remaining quota (JSON-RPC -32601)."],
+  ])("explains JSON-RPC %i without exposing the upstream message", (code, expected) => {
+    expect(
+      codexRateLimitsFailureMessage(
+        new CodexErrors.CodexAppServerRequestError({
+          code,
+          errorMessage: "private upstream error",
+        }),
+      ),
+    ).toBe(expected);
+  });
+
   it("keeps the JSON-RPC code and nothing else from a request failure", () => {
     expect(
       codexRateLimitsFailureMessage(

@@ -47,3 +47,21 @@ restart before T3 Code can see configuration changes.
 
 Existing threads keep their selected model and options even when it disappears
 from the catalog. If OpenCode rejects that model, select an available one and retry.
+
+## Usage limits
+
+Refresh **Usage > Limits** to read connected OpenCode Go subscription windows and
+OpenRouter key spending caps. OpenCode Go reports five-hour, weekly and monthly
+usage with reset times. OpenRouter reports the USD amount left under a configured
+key cap. That cap is separate from the account balance and free-model requests.
+
+OpenRouter does not expose remaining free requests through its key API. A key
+without a spending cap therefore has no percentage bar. OpenCode Zen also does not
+expose remaining credits or free-model requests through a supported usage API.
+These limits appear as unavailable, not as zero usage. When another connected
+provider supplies quota windows, the bars name only that provider's allowance.
+
+Keys without a reported account identity stay separate across environments. A
+pooled key-cap percentage averages the reported percentages; it is not a combined
+USD balance. Open an account's details to see its key cap. Custom API endpoints
+and connections that do not expose their resolved key cannot be probed.
