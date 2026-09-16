@@ -90,14 +90,14 @@
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "a6bbf036e9b5d5dc4be14b5fec326e3daa5c30a2"
+      "sha": "c635f905fa7c6fe44bab028c4f892e89321b6c4f"
     },
     {
       "kind": "commit",
       "name": "MZS remaining provider allowances",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/provider-usage-service-1780",
-      "sha": "8bb3ba6ddb73d942f4f52c72da85324d8f6210fa"
+      "sha": "be8f41f5f6162ccccc69c5ee6f42c70c7533329b"
     }
   ],
   "tests": [
