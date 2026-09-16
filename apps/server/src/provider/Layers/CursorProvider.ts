@@ -49,6 +49,7 @@ import {
 } from "../providerMaintenance.ts";
 import * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import { CursorListAvailableModelsResponse } from "../acp/CursorAcpExtension.ts";
+import { readCursorUsageLimits } from "./cursorUsageLimits.ts";
 
 const decodeCursorListAvailableModelsResponse = Schema.decodeUnknownEffect(
   CursorListAvailableModelsResponse,
@@ -1156,6 +1157,21 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
  * model or capability discovery. Cursor model data comes exclusively from
  * `cursor/list_available_models` during provider status checks.
  */
+/**
+ * Attach the account allowance to a probed snapshot so every provider check
+ * carries it; a snapshot without the field would clear the Limits row until
+ * enrichment republished it. Accounts that are not signed in stay untouched.
+ */
+export const withCursorUsageLimits = <Snapshot extends ServerProviderDraft>(
+  snapshot: Snapshot,
+  environment: NodeJS.ProcessEnv,
+): Effect.Effect<Snapshot, never, FileSystem.FileSystem | Path.Path | HttpClient.HttpClient> =>
+  snapshot.enabled && snapshot.installed && snapshot.auth.status === "authenticated"
+    ? readCursorUsageLimits({ checkedAt: snapshot.checkedAt, environment }).pipe(
+        Effect.map((usageLimits) => ({ ...snapshot, usageLimits })),
+      )
+    : Effect.succeed(snapshot);
+
 export const enrichCursorSnapshot = (input: {
   readonly settings: CursorSettings;
   readonly snapshot: ServerProvider;

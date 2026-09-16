@@ -31,6 +31,7 @@ import {
   checkCursorProviderStatus,
   makeCursorModelDiscovery,
   enrichCursorSnapshot,
+  withCursorUsageLimits,
 } from "../Layers/CursorProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
@@ -143,11 +144,13 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
         processEnv,
         discoverModels,
       ).pipe(
+        Effect.flatMap((probed) => withCursorUsageLimits(probed, processEnv)),
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
+        Effect.provideService(HttpClient.HttpClient, httpClient),
       );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
