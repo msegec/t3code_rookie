@@ -720,18 +720,20 @@ export function collect(root, directory) {
           copy(NodePath.join(directory, "jobs", receipt.target, "assets", asset.name), asset.name);
     for (const name of ["mzs-fleet.json", "release-notes.md", `t3-source-${fleet.version}.bundle`])
       copy(NodePath.join(directory, name), name);
-    const merge = (platform, first, second, output) =>
+    // A platform with one built architecture publishes that manifest as the feed.
+    const merge = (platform, first, second, output) => {
+      const files = [first, second, output].map((name) => NodePath.join(temporary, name));
+      if (!NodeFS.existsSync(files[1])) {
+        NodeFS.copyFileSync(files[0], files[2]);
+        return;
+      }
       execute(
         process.execPath,
-        [
-          "scripts/merge-update-manifests.ts",
-          "--platform",
-          platform,
-          ...[first, second, output].map((name) => NodePath.join(temporary, name)),
-        ],
+        ["scripts/merge-update-manifests.ts", "--platform", platform, ...files],
         root,
         buildEnvironment(fleet),
       );
+    };
     merge("mac", "nightly-mac.yml", "nightly-mac-x64.yml", "nightly-mac.yml");
     merge("win", "nightly-win-x64.yml", "nightly-win-arm64.yml", "nightly.yml");
     writeJson(NodePath.join(temporary, "build-provenance.json"), {
