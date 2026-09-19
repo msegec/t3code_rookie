@@ -5,99 +5,99 @@
       "kind": "commit",
       "name": "MZS fleet release routing",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "04846073fbe4b26a8c40cf776fb934da41d66a27"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "eec427edb52c12c4d64eb28322994d28d18f3349"
     },
     {
       "kind": "commit",
       "name": "MZS workspace project tools",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "479910a8855115fe468a777f727e8d793ceef55e"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "495684ec6bd6a5014a9cae9830205cc8f953c66c"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "bd46f8e7e862a56c4297820ae94e5c46d38deca4"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "b8fe032d6a7e5796949b5090877ead3c9d1738f1"
     },
     {
       "kind": "commit",
       "name": "MZS ACP subagent lifecycles",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "deddc36752b6548f4263b157346779eb6bc494b0"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "31c1b0fb4da1be8f03176f01d459ec3bce6fc28d"
     },
     {
       "kind": "commit",
       "name": "MZS fleet update metadata",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "3e49734173f88a814bf0a9e99f75b536ddb471f2"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "bdf4c5b5203aac9f106a2bdbe11381187a7f7aa1"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "8c3c024e20999fef2cfb51e350fc70894bed1700"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "86f13fcc36c19604318a33fb627cff23434587e3"
     },
     {
       "kind": "commit",
       "name": "MZS project checkout appearance",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "0e064d17cfd08e696fcfa3953efaa723f383d78f"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "111e84aca65dc67f0a0dbf36ba33413f56eb007e"
     },
     {
       "kind": "commit",
       "name": "MZS Cursor model discovery without sessions",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "256acbe44f588de0d4fa8df74b0a5cd52eb0ef3b"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "1927876dec479ed3e4ccdfb87b88a7302e6c5033"
     },
     {
       "kind": "commit",
       "name": "MZS compressed workspace preview MIME",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "7e4c09edc52d883dd73c721bde207f6320a9c2eb"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "2e7f32b148d206962cfb0345e9758717901dad4d"
     },
     {
       "kind": "commit",
       "name": "MZS desktop client-only operation",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "9d72f42d80985c7373b754b9696cfab3695042e3"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "a5a68733612dbd5e1d7962b72ca4483aefe39f80"
     },
     {
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "0d6733cba099d8b4001763aa9e0d46f286c8ea3d"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "3b3f784524372086a38e945db46ba3d3b30877b5"
     },
     {
       "kind": "commit",
       "name": "MZS provider usage history and coverage",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "6b8015b3313f44657ec939162828e40b00a33c58"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "8c37840ed0b48174c91c2c981618376d13d9376b"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "0cbbb6fb1f64418256d4eab50ece214d49812830"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "5067acc24a62bbe774ccb2ef39e2052767e043dc"
     },
     {
       "kind": "commit",
-      "name": "MZS remaining provider allowances",
+      "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/provider-usage-service-1795",
-      "sha": "38e534968c5c15ca058c1a243d1b15ea03badcbc"
+      "ref": "refs/heads/fleet/nightly-1978",
+      "sha": "90458a1786b1d707abc3920ebd224736ac782fa4"
     }
   ],
   "tests": [
@@ -221,11 +221,8 @@
     "apps/server/src/usage/usageTranscriptReader.test.ts",
     "apps/server/src/provider/acp/CursorAcpCliProbe.test.ts",
     "apps/server/src/provider/Layers/codexUsageLimits.test.ts",
-    "apps/server/src/provider/Layers/cursorUsageLimits.test.ts",
     "apps/server/src/provider/Layers/GrokProvider.test.ts",
-    "apps/server/src/provider/Layers/grokUsageLimits.test.ts",
     "apps/server/src/provider/Layers/OpenCodeProvider.test.ts",
-    "apps/server/src/provider/Layers/openCodeUsageLimits.test.ts",
     "apps/web/src/components/files/fileSaveCoordinator.test.ts",
     "apps/web/src/composerDraftStore.test.ts",
     "packages/shared/src/cliRelease.test.ts",
@@ -234,18 +231,9 @@
     "scripts/build-desktop-artifact.test.ts",
     "scripts/lib/resolve-catalog.test.ts",
     "scripts/mac-cross-build.test.ts",
-    "scripts/smoke-cli-archive.test.ts"
+    "scripts/smoke-cli-archive.test.ts",
+    "apps/server/src/provider/Layers/openRouterUsageLimits.test.ts",
+    "apps/server/src/provider/providerUsageLimits.test.ts"
   ],
-  "trackedPullRequests": [
-    7972,
-    7979,
-    8151,
-    8162,
-    8196,
-    8329,
-    8371,
-    11406,
-    8456,
-    9194
-  ]
+  "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371, 11406, 8456, 9194, 12115]
 }

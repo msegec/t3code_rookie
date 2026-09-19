@@ -144,6 +144,7 @@ function preflight(root, manifestPath, version) {
     ].flatMap((name) => ["--filter", name]),
     "typecheck",
   ]);
+  step("electron", "vp", ["run", "--filter", "@t3tools/desktop", "ensure:electron"]);
   step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
   step("build", "vp", ["run", "build:desktop"]);
   process.stderr.write("fleet_phase=preflight_cli\n");

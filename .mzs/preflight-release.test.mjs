@@ -78,7 +78,7 @@ NodeTest.test("release rejects missing fleet routing before dependencies or buil
   NodeAssert.throws(() => assertFleetUpdateRouting(root), /Fleet update routing missing/);
 });
 
-for (const failedStage of ["typecheck", "tests"]) {
+for (const failedStage of ["typecheck", "electron", "tests"]) {
   NodeTest.test(`release stops at ${failedStage} before expensive downstream work`, (test) => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-preflight-order-"));
     test.after(() => NodeFS.rmSync(root, { recursive: true, force: true }));
@@ -107,7 +107,7 @@ for (const failedStage of ["typecheck", "tests"]) {
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync("commands.jsonl", JSON.stringify(args) + "\\n");
-if (${JSON.stringify(failedStage)} === "typecheck" ? args.includes("typecheck") : args[0] === "test") {
+if (args.includes(${JSON.stringify({ typecheck: "typecheck", electron: "ensure:electron", tests: "test" }[failedStage])})) {
   process.exitCode = 7;
 }
 `,
@@ -133,11 +133,14 @@ if (${JSON.stringify(failedStage)} === "typecheck" ? args.includes("typecheck") 
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    NodeAssert.equal(commands.length, failedStage === "typecheck" ? 3 : 4);
+    NodeAssert.equal(commands.length, { typecheck: 3, electron: 4, tests: 5 }[failedStage]);
     NodeAssert.deepEqual(commands[0], ["i", "--frozen-lockfile", "--ignore-scripts"]);
     NodeAssert.equal(commands[2].at(-1), "typecheck");
+    if (failedStage !== "typecheck") {
+      NodeAssert.deepEqual(commands[3], ["run", "--filter", "@t3tools/desktop", "ensure:electron"]);
+    }
     if (failedStage === "tests") {
-      NodeAssert.deepEqual(commands[3], ["test", "run", "selected.test.ts", ...fleetUpdateTests]);
+      NodeAssert.deepEqual(commands[4], ["test", "run", "selected.test.ts", ...fleetUpdateTests]);
     }
     NodeAssert.doesNotMatch(result.stderr, /fleet_phase=preflight_(version|build|cli|package)/);
     NodeAssert.doesNotMatch(result.stderr, /fleet_preflight=passed/);
