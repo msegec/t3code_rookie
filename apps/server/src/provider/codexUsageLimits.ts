@@ -149,6 +149,12 @@ export function codexRateLimitsToUpdate(
 export function codexRateLimitsFailureMessage(error: CodexErrors.CodexAppServerError): string {
   switch (error._tag) {
     case "CodexAppServerRequestError":
+      if (error.code === -32601) {
+        return "This Codex connection does not support reading remaining quota (JSON-RPC -32601).";
+      }
+      if (error.code === -32600) {
+        return "Codex rejected the usage request (JSON-RPC -32600).";
+      }
       return `Codex could not read usage (JSON-RPC ${error.code}).`;
     case "CodexAppServerSpawnError":
       return "Codex could not be started to read usage.";
