@@ -294,7 +294,12 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
   for (const presentation of presentations.values()) {
     const environmentLabel = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
-      if (provider.usageLimits?.unavailable?.reason === "unsupported") continue;
+      if (
+        provider.usageLimits?.unavailable?.reason === "unsupported" &&
+        provider.usageLimits.externalUsage !== undefined
+      ) {
+        continue;
+      }
       const notice = provider.usageLimits ? limitsNotice(provider.usageLimits) : null;
       const name = provider.displayName?.trim() || String(provider.driver);
       if (notice) notices.push(`${label(environmentLabel, name)}: ${notice}`);
@@ -455,7 +460,10 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     return {
       id,
       kind: first.kind,
-      label: first.label,
+      label:
+        first.id === "openrouter:key-cap" && members.length > 1
+          ? "OpenRouter key spending caps (free requests unknown)"
+          : first.label,
       members,
       columns: accounts.map(
         (account) => memberByAccount.get(account.key) ?? { account, window: null },
@@ -471,7 +479,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
 
 export function limitsNotice(limits: ServerProviderUsageLimits): string | null {
   if (limits.unavailable?.reason === "unsupported") {
-    return limits.unavailable.message ?? "This account has no subscription limits.";
+    return limits.unavailable.message ?? "Remaining quota is not available for this account.";
   }
   if (limits.unavailable?.reason === "probeFailed") {
     return limits.unavailable.message ?? "Could not read limits.";
