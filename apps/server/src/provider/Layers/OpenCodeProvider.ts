@@ -9,6 +9,8 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { HttpClient } from "effect/unstable/http";
+import { readOpenRouterUsageLimits } from "./openRouterUsageLimits.ts";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -388,7 +390,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
-  OpenCodeRuntime | OpenCodeServerOwner.OpenCodeServerOwner
+  OpenCodeRuntime | OpenCodeServerOwner.OpenCodeServerOwner | HttpClient.HttpClient
 > {
   const openCodeRuntime = yield* OpenCodeRuntime;
   const serverOwner = yield* OpenCodeServerOwner.OpenCodeServerOwner;
@@ -541,6 +543,10 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   );
   const skills = openCodeSkillsToServerProviderSkills(inventoryExit.value.inventory.skills);
   const connectedCount = inventoryExit.value.inventory.providerList.connected.length;
+  const usageLimits = yield* readOpenRouterUsageLimits(
+    inventoryExit.value.inventory.providerList,
+    checkedAt,
+  );
   return buildServerProvider({
     presentation: OPENCODE_PRESENTATION,
     enabled: true,
@@ -554,6 +560,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       installed: true,
       version,
       status: connectedCount > 0 ? "ready" : "warning",
+      usageLimits,
       auth: {
         status: connectedCount > 0 ? "authenticated" : "unknown",
         type: "opencode",
