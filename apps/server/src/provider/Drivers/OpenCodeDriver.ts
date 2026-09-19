@@ -35,6 +35,7 @@ import * as ServerSettings from "../../serverSettings.ts";
 import type { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { readOpenCodeGoUsageLimits } from "../openCodeUsageLimits.ts";
+import { mergeOpenCodeUsageLimits } from "../openRouterUsageLimits.ts";
 import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
@@ -384,7 +385,10 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         },
         { concurrency: "unbounded" },
       ).pipe(
-        Effect.map(({ provider, usageLimits }) => ({ ...provider, usageLimits })),
+        Effect.map(({ provider, usageLimits }) => ({
+          ...provider,
+          usageLimits: mergeOpenCodeUsageLimits(usageLimits, provider.usageLimits),
+        })),
         Effect.map(stampIdentity),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, pathService),
