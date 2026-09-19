@@ -97,7 +97,7 @@
       "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "90458a1786b1d707abc3920ebd224736ac782fa4"
+      "sha": "f974a4d5b0fccec3287000e07dcc9e7c2f895e23"
     }
   ],
   "tests": [
