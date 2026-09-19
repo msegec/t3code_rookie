@@ -87,7 +87,7 @@ closes when you dismiss it or send your next message. It uses the same snapshot 
 anything. The command is offered only for providers that appear under **Usage → Limits**.
 
 OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
-the environment. T3 cannot report limits for external OpenCode servers because their credentials
+the environment. T3 cannot report Go limits for external OpenCode servers because their credentials
 belong to the remote server. Cursor reports
 its monthly allowance, including separate Auto and API usage, using a file-based CLI login or
 `CURSOR_AUTH_TOKEN`. Cursor's default macOS keychain login does not currently report limits.
@@ -97,6 +97,10 @@ to use a file-based login.
 Grok reports the remaining subscription allowance and reset time for its current billing period
 after signing in with `grok login`. Explicit `XAI_API_KEY` connections and custom authentication
 or endpoint configurations do not report subscription limits.
+
+OpenRouter connections through OpenCode report key spending caps when the connected key is
+available. These caps are separate from free-model request allowances, which OpenRouter does not
+expose. OpenCode Zen free-model requests and credit balances are also shown as unavailable.
 
 API-key accounts may not report subscription limits. This also applies to Claude connections
 using a proxy through `ANTHROPIC_AUTH_TOKEN`.

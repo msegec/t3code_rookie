@@ -302,6 +302,19 @@ it("keeps native and MCP commands while preserving compaction and separate skill
 const testLayer = Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble).pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
   Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(
+    Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) =>
+        Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json({ data: { limit: 10, limit_remaining: 5, is_free_tier: false } }),
+          ),
+        ),
+      ),
+    ),
+  ),
 );
 
 const makeOpenCodeSettings = (overrides?: Partial<OpenCodeSettings>): OpenCodeSettings =>
@@ -335,6 +348,38 @@ const checkProvider = Effect.fn("checkProvider")(function* (
 });
 
 it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
+  it.effect("publishes connected OpenRouter key limits through the provider snapshot", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["openrouter"],
+          default: {},
+          all: [
+            {
+              id: "openrouter",
+              name: "OpenRouter",
+              source: "api",
+              env: [],
+              options: {},
+              models: {},
+              key: "test-key",
+            },
+          ],
+        },
+        agents: [],
+        skills: [],
+        commands: [],
+      };
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+      NodeAssert.equal(snapshot.usageLimits?.windows[0]?.usedPercent, 50);
+      NodeAssert.equal(snapshot.status, "ready");
+      const serialized = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
+        snapshot,
+      );
+      NodeAssert.equal(serialized.includes("test-key"), false);
+    }),
+  );
+
   it.effect("shows a codex-style missing binary message", () =>
     Effect.gen(function* () {
       runtimeMock.state.runVersionError = new Error("spawn opencode ENOENT");

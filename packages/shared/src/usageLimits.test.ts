@@ -83,7 +83,7 @@ describe("limitsNotice", () => {
     expect(limitsNotice({ checkedAt, windows: [window] })).toBeNull();
     expect(limitsNotice({ checkedAt, windows: [] })).toBe("No limits reported.");
     expect(limitsNotice({ checkedAt, windows: [], unavailable: { reason: "unsupported" } })).toBe(
-      "This account has no subscription limits.",
+      "Remaining quota is not available for this account.",
     );
     expect(
       limitsNotice({
@@ -621,6 +621,35 @@ describe("pooled account columns", () => {
       row.columns.map((member) => (member.window ? member.account.key : null)),
     );
 
+  it("keeps individual OpenRouter amounts out of a pooled key-cap label", () => {
+    const cap = {
+      id: "openrouter:key-cap",
+      kind: "other" as const,
+      usedPercent: 25,
+      label: "OpenRouter key spending cap: USD 7.5 remaining (free requests unknown)",
+    };
+    const accounts = [
+      { ...account("key-a", [cap]), driver: ProviderDriverKind.make("opencode") },
+      {
+        ...account("key-b", [
+          {
+            ...cap,
+            usedPercent: 75,
+            label: "OpenRouter key spending cap: USD 25 remaining (free requests unknown)",
+          },
+        ]),
+        driver: ProviderDriverKind.make("opencode"),
+      },
+    ];
+    const pooled = collectLimitPools(accounts, now)[0]!.windows[0]!;
+    expect(pooled.label).toBe("OpenRouter key spending caps (free requests unknown)");
+    expect(pooled.remainingPercent).toBe(50);
+    expect(pooled.members.map(({ window }) => window.label)).toEqual(
+      accounts.map((account) => account.limits.windows[0]!.label),
+    );
+    expect(collectLimitPools(accounts.slice(0, 1), now)[0]!.windows[0]!.label).toBe(cap.label);
+  });
+
   it("keeps session columns across rows with opposite reset and usage orders", () => {
     const accounts = [
       account("a", [
@@ -699,7 +728,7 @@ describe("collectLimitNotices", () => {
     accounts: [],
   };
 
-  it("names failures and silence, skips unsupported accounts, and labels environments only when several", () => {
+  it("names failures, unsupported accounts and silence, and labels multiple environments", () => {
     const failed = provider({
       instanceId: ProviderInstanceId.make("claude"),
       driver: claude,
@@ -729,6 +758,7 @@ describe("collectLimitNotices", () => {
     ]);
     expect(collectLimitNotices(one)).toEqual([
       "Claude Max: Could not read limits.",
+      "claudeAgent: Remaining quota is not available for this account.",
       "codex: No limits reported.",
       "hub: No accounts reported.",
       "down: ECONNREFUSED",
