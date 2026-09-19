@@ -27,77 +27,77 @@
       "name": "MZS ACP subagent lifecycles",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "31c1b0fb4da1be8f03176f01d459ec3bce6fc28d"
+      "sha": "2dfaf38bd2c6f8391804a2cfde019d1dbe5c9934"
     },
     {
       "kind": "commit",
       "name": "MZS fleet update metadata",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "bdf4c5b5203aac9f106a2bdbe11381187a7f7aa1"
+      "sha": "cda3260dd260d35fc1c360a6177143209085da73"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "86f13fcc36c19604318a33fb627cff23434587e3"
+      "sha": "804fd41e81c375b520fb01d6ce74322c7b6eb5d7"
     },
     {
       "kind": "commit",
       "name": "MZS project checkout appearance",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "111e84aca65dc67f0a0dbf36ba33413f56eb007e"
+      "sha": "07ecd4c86141bd4f3a896076bdb062064043cb54"
     },
     {
       "kind": "commit",
       "name": "MZS Cursor model discovery without sessions",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "1927876dec479ed3e4ccdfb87b88a7302e6c5033"
+      "sha": "d7e87bf9b2bce5def72478fab7759a60526741bc"
     },
     {
       "kind": "commit",
       "name": "MZS compressed workspace preview MIME",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "2e7f32b148d206962cfb0345e9758717901dad4d"
+      "sha": "1a796cd63294d516fea3ab1fdc78efee8d8df6c8"
     },
     {
       "kind": "commit",
       "name": "MZS desktop client-only operation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "a5a68733612dbd5e1d7962b72ca4483aefe39f80"
+      "sha": "bb4afe54fbf84fe4e1303cd045b547f385ffbb56"
     },
     {
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "3b3f784524372086a38e945db46ba3d3b30877b5"
+      "sha": "52673693b0063fed8c4d79f4e39e525dfc96f599"
     },
     {
       "kind": "commit",
       "name": "MZS provider usage history and coverage",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "8c37840ed0b48174c91c2c981618376d13d9376b"
+      "sha": "11fa5438eb08749614e76d5d1f410f482ef0507d"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "5067acc24a62bbe774ccb2ef39e2052767e043dc"
+      "sha": "164c1cf035deb259194b8bee75606afb5328c993"
     },
     {
       "kind": "commit",
       "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "f974a4d5b0fccec3287000e07dcc9e7c2f895e23"
+      "sha": "00cd3cf4d4f1b88ef89ef496b70dddfca96de30a"
     }
   ],
   "tests": [
