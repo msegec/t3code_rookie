@@ -7,8 +7,8 @@ The installation commands in the upstream README below install official T3 Code.
 
 ## What our version adds
 
-This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.41-nightly.20260916.1795.mzs.r3260c2d3083c)
-compared with its official base, [nightly 1795](https://github.com/pingdotgg/t3code/releases/tag/v0.0.41-nightly.20260916.1795).
+This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.43-nightly.20260921.2071.mzs.rf4b26f138415)
+compared with its official base, [nightly 2071](https://github.com/pingdotgg/t3code/releases/tag/v0.0.43-nightly.20260921.2071).
 Newer upstream nightlies may already contain some of these changes.
 
 - Project sidebar colours and icons, with an accent editor in Project Settings.
@@ -21,10 +21,9 @@ Newer upstream nightlies may already contain some of these changes.
 - Usage totals that finish even when some connected devices are offline.
 - OpenCode usage history, source-specific totals, and explicit provider coverage.
   Cursor and Antigravity history remain unavailable.
-- Remaining allowance in Usage > Limits for Grok, Cursor, OpenCode Go and
-  OpenRouter key caps, beside Codex and Claude. Accounts without quota data stay
-  listed with the reason. Free-model request counts are not exposed by OpenRouter
-  or OpenCode Zen and show as unavailable.
+- OpenRouter key caps in Usage > Limits and explanations when quota data is
+  unavailable. Cursor, Grok and OpenCode Go allowance probes now ship upstream.
+  Free-model request counts are not exposed by OpenRouter or OpenCode Zen.
 - GitHub repository search when adding projects, with clearer empty results.
 - Cursor model discovery avoids creating disposable chats.
 - A visible context-window meter and Cursor/Grok subagent activity panels.
@@ -38,11 +37,6 @@ Newer upstream nightlies may already contain some of these changes.
 - Release files for Linux x64, Windows x64 and macOS (Intel and Apple silicon)
   build on our own machine. Linux and Windows arm64 wait on an aarch64 terminal
   module our build kit cannot produce yet.
-
-The overlay list on `main` targets nightly 1978 for the next local build.
-The published comparison above remains for nightly 1795. Upstream now owns
-Cursor, Grok and OpenCode Go allowance probes; the next allowance overlay keeps
-OpenRouter caps and explicit unavailable-data explanations.
 
 ## How our releases work
 
