@@ -75,8 +75,8 @@
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "52673693b0063fed8c4d79f4e39e525dfc96f599"
+      "ref": "refs/heads/fleet/nightly-2071",
+      "sha": "47515a4880c1cd73cb19c2f563230351779c77a8"
     },
     {
       "kind": "commit",
@@ -235,5 +235,17 @@
     "apps/server/src/provider/Layers/openRouterUsageLimits.test.ts",
     "apps/server/src/provider/providerUsageLimits.test.ts"
   ],
-  "trackedPullRequests": [7972, 7979, 8151, 8162, 8196, 8329, 8371, 11406, 8456, 9194, 12115]
+  "trackedPullRequests": [
+    7972,
+    7979,
+    8151,
+    8162,
+    8196,
+    8329,
+    8371,
+    11406,
+    8456,
+    9194,
+    12115
+  ]
 }
