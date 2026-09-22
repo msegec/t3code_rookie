@@ -76,7 +76,7 @@
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2071",
-      "sha": "47515a4880c1cd73cb19c2f563230351779c77a8"
+      "sha": "a75e49163b96511026740a940348cd12cb7346b4"
     },
     {
       "kind": "commit",
