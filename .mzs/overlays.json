@@ -12,8 +12,8 @@
       "kind": "commit",
       "name": "MZS workspace project tools",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "495684ec6bd6a5014a9cae9830205cc8f953c66c"
+      "ref": "refs/heads/fleet/nightly-2173",
+      "sha": "ffac7af4e4cd32edeeefd2e8742ff1997cb1727d"
     },
     {
       "kind": "commit",
@@ -47,8 +47,8 @@
       "kind": "commit",
       "name": "MZS project checkout appearance",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "07ecd4c86141bd4f3a896076bdb062064043cb54"
+      "ref": "refs/heads/fleet/nightly-2173",
+      "sha": "188b1cb882f23b054aec26bf4f852292a3d22100"
     },
     {
       "kind": "commit",
@@ -118,7 +118,6 @@
     "apps/web/src/lib/workspaceUploadQueue.test.ts",
     "apps/web/src/lib/attachmentUploadQueue.test.ts",
     "apps/server/src/workspace/WorkspaceFileSystem.test.ts",
-    "apps/web/src/components/usage/UsagePage.test.tsx",
     "apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts",
     "apps/server/src/git/GitManager.test.ts",
     "apps/server/src/sourceControl/AzureDevOpsSourceControlProvider.test.ts",
