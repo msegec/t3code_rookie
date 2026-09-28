@@ -12,8 +12,8 @@
       "kind": "commit",
       "name": "MZS workspace project tools",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2173",
-      "sha": "ffac7af4e4cd32edeeefd2e8742ff1997cb1727d"
+      "ref": "refs/heads/fleet/nightly-2375",
+      "sha": "05d8e59db7e90c66080f556774a499bcebba3376"
     },
     {
       "kind": "commit",
@@ -68,36 +68,29 @@
       "kind": "commit",
       "name": "MZS desktop client-only operation",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "bb4afe54fbf84fe4e1303cd045b547f385ffbb56"
+      "ref": "refs/heads/fleet/nightly-2375",
+      "sha": "5339f9acb5abde87785d48dd404e406e3d1a5033"
     },
     {
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2187",
-      "sha": "299e1db6b662d35cd1b2d36c6ca424c29ca53bf0"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS provider usage history and coverage",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "11fa5438eb08749614e76d5d1f410f482ef0507d"
+      "ref": "refs/heads/fleet/nightly-2375",
+      "sha": "f1edcf7d61d55e4901d8e638a0fab90426bfa9c8"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "164c1cf035deb259194b8bee75606afb5328c993"
+      "ref": "refs/heads/fleet/nightly-2375",
+      "sha": "bf3e58c794e526e13475657d1ca1de68c02e902e"
     },
     {
       "kind": "commit",
       "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "00cd3cf4d4f1b88ef89ef496b70dddfca96de30a"
+      "ref": "refs/heads/fleet/nightly-2375",
+      "sha": "f2e77b3fc1b6c7160316883e9d467f34457fb39c"
     }
   ],
   "tests": [
@@ -206,8 +199,6 @@
     "apps/server/src/sourceControl/SourceControlDiscovery.test.ts",
     "apps/server/src/usage/UsageService.test.ts",
     "apps/server/src/usage/usageAggregation.test.ts",
-    "apps/server/src/usage/usageCompatibility.test.ts",
-    "apps/server/src/usage/usageOpenCode.test.ts",
     "apps/server/src/usage/usageScanCache.test.ts",
     "apps/server/src/usage/usageTranscripts.test.ts",
     "apps/web/src/components/settings/settingsSearch.clientOnly.test.ts",
