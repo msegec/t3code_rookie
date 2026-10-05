@@ -5,92 +5,71 @@
       "kind": "commit",
       "name": "MZS fleet release routing",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "eec427edb52c12c4d64eb28322994d28d18f3349"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "cb2f15e4334fd6be5055109710bb442c95adf160"
     },
     {
       "kind": "commit",
       "name": "MZS workspace project tools",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2375",
-      "sha": "05d8e59db7e90c66080f556774a499bcebba3376"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "84177a626948e7e96d1d7ce4fb4a923800552a8d"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "b8fe032d6a7e5796949b5090877ead3c9d1738f1"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS ACP subagent lifecycles",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "2dfaf38bd2c6f8391804a2cfde019d1dbe5c9934"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "2d5f722b7eea61bb95416da4f77d06416c59c900"
     },
     {
       "kind": "commit",
       "name": "MZS fleet update metadata",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "cda3260dd260d35fc1c360a6177143209085da73"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "c6d61d9d11a28f96bcbd01aa4d24d95926a2837d"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "804fd41e81c375b520fb01d6ce74322c7b6eb5d7"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "10656e35e36ca8b58f78ad96427591a5ec3a710f"
     },
     {
       "kind": "commit",
       "name": "MZS project checkout appearance",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2173",
-      "sha": "188b1cb882f23b054aec26bf4f852292a3d22100"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS Cursor model discovery without sessions",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "d7e87bf9b2bce5def72478fab7759a60526741bc"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS compressed workspace preview MIME",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-1978",
-      "sha": "1a796cd63294d516fea3ab1fdc78efee8d8df6c8"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "4b75e07a201d58abf281230a4ff164788b203e63"
     },
     {
       "kind": "commit",
       "name": "MZS desktop client-only operation",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2375",
-      "sha": "5339f9acb5abde87785d48dd404e406e3d1a5033"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "dd56be27035225d64cce3fe0d5d5e9640aa8e2e4"
     },
     {
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2375",
-      "sha": "f1edcf7d61d55e4901d8e638a0fab90426bfa9c8"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "5d05e106df382e091bbdbb04a0624ed4ba1a37b0"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2375",
-      "sha": "bf3e58c794e526e13475657d1ca1de68c02e902e"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "66218056c7a3aea044abcbac5e68fcb1af5ec4f7"
     },
     {
       "kind": "commit",
       "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-2375",
-      "sha": "f2e77b3fc1b6c7160316883e9d467f34457fb39c"
+      "ref": "refs/heads/fleet/nightly-2689",
+      "sha": "387cd60d3524093b83c59237ec019a907714095e"
     }
   ],
   "tests": [
@@ -128,20 +107,9 @@
     "packages/ssh/src/command.test.ts",
     "packages/ssh/src/tunnel.test.ts",
     "packages/contracts/src/settings.test.ts",
-    "apps/web/src/components/chat/ContextWindowMeter.test.tsx",
     "apps/web/src/components/chat/ContextWindowMeter.logic.test.ts",
     "apps/web/src/composer-logic.test.ts",
     "apps/web/src/state/usage.test.tsx",
-    "apps/server/src/provider/acp/GrokAcpSubagents.test.ts",
-    "apps/server/src/provider/acp/AcpTaskSubagents.test.ts",
-    "apps/server/src/provider/acp/AcpCoreRuntimeEvents.test.ts",
-    "apps/server/src/provider/Layers/GrokAdapter.test.ts",
-    "apps/server/src/provider/Layers/CursorAdapter.test.ts",
-    "apps/server/src/orchestration/ThreadBackgroundLiveness.test.ts",
-    "packages/client-runtime/src/state/subagentRuntime.test.ts",
-    "packages/contracts/src/providerRuntime.test.ts",
-    "apps/web/src/components/chat/agentSpawnSummary.test.ts",
-    "apps/mobile/src/lib/threadActivity.test.ts",
     "packages/client-runtime/src/work-log/presentation.test.ts",
     "apps/desktop/src/updates/releaseNotes.test.ts",
     "apps/web/src/components/desktopUpdate.logic.test.ts",
@@ -155,15 +123,10 @@
     "apps/server/src/persistence/Layers/Sqlite.test.ts",
     "apps/server/src/cli/service.test.ts",
     "apps/server/src/cli/pair.test.ts",
-    "apps/server/src/bin.test.ts",
     "apps/server/src/mcp/McpHttpServer.test.ts",
     "apps/server/src/mcp/PreviewAutomationBroker.test.ts",
     "apps/server/src/preview/Gateway.test.ts",
     "apps/server/src/preview/GatewayTransport.test.ts",
-    "apps/server/src/provider/Layers/ClaudeAdapter.test.ts",
-    "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts",
-    "apps/server/src/provider/Layers/OpenCodeAdapter.test.ts",
-    "apps/server/src/server.test.ts",
     "apps/web/src/browser/browserAutomationContext.test.ts",
     "apps/web/src/browser/browserTargetResolver.test.ts",
     "apps/web/src/browser/openFileInPreview.test.ts",
@@ -180,11 +143,8 @@
     "apps/web/src/components/settings/projectAccentSettings.test.ts",
     "apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts",
     "apps/server/src/project/ProjectAccents.test.ts",
-    "apps/server/src/orchestration/decider.projectScripts.test.ts",
     "packages/shared/src/t3ProjectFile.test.ts",
     "apps/web/src/projectSettingsNavigation.test.ts",
-    "apps/server/src/provider/Layers/CursorProvider.test.ts",
-    "apps/server/src/http.test.ts",
     "apps/desktop/src/app/DesktopApp.bootstrap.test.ts",
     "apps/desktop/src/app/DesktopAppActivation.clientOnly.test.ts",
     "apps/desktop/src/app/DesktopEnvironment.test.ts",
@@ -209,7 +169,6 @@
     "packages/client-runtime/src/state/usage.test.ts",
     "packages/shared/src/usageMerge.test.ts",
     "apps/server/src/usage/usageTranscriptReader.test.ts",
-    "apps/server/src/provider/acp/CursorAcpCliProbe.test.ts",
     "apps/server/src/provider/Layers/codexUsageLimits.test.ts",
     "apps/server/src/provider/Layers/GrokProvider.test.ts",
     "apps/server/src/provider/Layers/OpenCodeProvider.test.ts",
@@ -223,7 +182,13 @@
     "scripts/mac-cross-build.test.ts",
     "scripts/smoke-cli-archive.test.ts",
     "apps/server/src/provider/Layers/openRouterUsageLimits.test.ts",
-    "apps/server/src/provider/providerUsageLimits.test.ts"
+    "apps/server/src/provider/providerUsageLimits.test.ts",
+    "apps/server/src/ws.projectAccents.test.ts",
+    "apps/server/src/ws.test.ts",
+    "apps/server/src/orchestration-v2/ProjectCommands.test.ts",
+    "apps/server/src/provider/T3OrchestrationInstructions.test.ts",
+    "apps/server/src/provider/CodexDeveloperInstructions.test.ts",
+    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts"
   ],
   "trackedPullRequests": [
     7972,
