@@ -17,7 +17,7 @@ import {
   PREVIEW_ZOOM_LEVELS,
   type PreviewAdjustInput,
 } from "@t3tools/contracts";
-import { normalizePreviewUrl, resolveAddressBarInput } from "@t3tools/shared/preview";
+import { resolveAddressBarInput } from "@t3tools/shared/preview";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -35,6 +35,7 @@ import {
   updatePreviewServerSnapshot,
   useThreadPreviewState,
 } from "~/previewStateStore";
+import { releaseUnusedPreviewGateway } from "~/browser/previewGateway";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
 import {
@@ -265,43 +266,64 @@ export function PreviewView({
 
   const navigateToResolvedUrl = useCallback(
     async (resolvedUrl: string) => {
-      if (isServerTab && serverSurfaceRef.current) {
-        if (serverInputDisabled) return false;
-        serverSurfaceRef.current.navigate(resolvedUrl);
-        rememberPreviewUrl(threadRef, resolvedUrl);
-        return true;
-      }
-      if (runtimeTabId && previewBridge) {
-        // The bridge mirrors the resolved URL back to the server.
-        await previewBridge.navigate(runtimeTabId, resolvedUrl);
-        rememberPreviewUrl(threadRef, resolvedUrl);
-        return true;
-      }
-      const result = await openPreviewSession({ openPreview: open, threadRef, url: resolvedUrl });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        if (error instanceof BrowserSettingsReadError) {
-          toastManager.add({
-            type: "error",
-            title: "Unable to open browser",
-            description: error.message,
-          });
+      try {
+        if (isServerTab && serverSurfaceRef.current) {
+          if (serverInputDisabled) return false;
+          serverSurfaceRef.current.navigate(resolvedUrl);
+          rememberPreviewUrl(threadRef, resolvedUrl);
+          return true;
         }
+        if (runtimeTabId && previewBridge) {
+          // The bridge mirrors the resolved URL back to the server.
+          await previewBridge.navigate(runtimeTabId, resolvedUrl);
+          rememberPreviewUrl(threadRef, resolvedUrl);
+          return true;
+        }
+        const result = await openPreviewSession({ openPreview: open, threadRef, url: resolvedUrl });
+        if (result._tag === "Failure") releaseUnusedPreviewGateway(resolvedUrl);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          if (error instanceof BrowserSettingsReadError) {
+            toastManager.add({
+              type: "error",
+              title: "Unable to open browser",
+              description: error.message,
+            });
+          }
+        }
+        return result._tag === "Success";
+      } catch (error) {
+        releaseUnusedPreviewGateway(resolvedUrl);
+        throw error;
       }
-      return result._tag === "Success";
     },
     [isServerTab, open, runtimeTabId, serverInputDisabled, threadRef],
   );
 
   const handleSubmitUrl = useCallback(
     async (next: string) => {
+      let address: string;
       try {
-        const resolved = resolveAddressBarInput(next);
-        if (await navigateToResolvedUrl(resolved)) {
-          recordVisitForThread(threadRef, resolved);
-        }
+        address = resolveAddressBarInput(next);
       } catch {
         // Only empty input or an unsupported scheme lands here; the bar keeps the text.
+        return;
+      }
+      try {
+        const resolved = await resolveDiscoveredServerUrl(
+          threadRef.environmentId,
+          address,
+          threadRef.threadId,
+        );
+        if (await navigateToResolvedUrl(resolved)) {
+          recordVisitForThread(threadRef, address);
+        }
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to open browser",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
       }
     },
     [navigateToResolvedUrl, threadRef],
@@ -310,16 +332,20 @@ export function PreviewView({
   const handleOpenServerUrl = useCallback(
     async (next: string) => {
       try {
-        // A server tab's browser runs on the environment, where loopback is already right.
-        const resolved =
-          isServerTab || !previewBridge
-            ? normalizePreviewUrl(next)
-            : resolveDiscoveredServerUrl(threadRef.environmentId, next);
+        const resolved = await resolveDiscoveredServerUrl(
+          threadRef.environmentId,
+          next,
+          threadRef.threadId,
+        );
         if (await navigateToResolvedUrl(resolved)) {
           recordVisitForThread(threadRef, next);
         }
-      } catch {
-        // Server-side `failed` event renders the unreachable view.
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to open browser",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
       }
     },
     [isServerTab, navigateToResolvedUrl, threadRef],
@@ -467,7 +493,7 @@ export function PreviewView({
         ? {
             url:
               moveTarget === "desktop"
-                ? resolveDiscoveredServerUrl(threadRef.environmentId, url)
+                ? await resolveDiscoveredServerUrl(threadRef.environmentId, url, threadRef.threadId)
                 : url,
           }
         : {}),
