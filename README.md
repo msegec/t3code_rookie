@@ -7,30 +7,25 @@ The installation commands in the upstream README below install official T3 Code.
 
 ## What our version adds
 
-This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.43-nightly.20260924.2187.mzs.r3bf32e8087e8)
-compared with its official base, [nightly 2187](https://github.com/pingdotgg/t3code/releases/tag/v0.0.43-nightly.20260924.2187).
+This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.46-nightly.20261008.2801.mzs.rff6bf957602b)
+compared with its official base, [nightly 2801](https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261008.2801).
 Newer upstream nightlies may already contain some of these changes.
 
 - Project sidebar colours and icons, with an accent editor in Project Settings.
 - Project Settings opens the checkout selected in the sidebar and shows its icon
   and accent. Group settings use the same representative checkout as the sidebar.
   Tracked in [upstream PR #11406](https://github.com/pingdotgg/t3code/pull/11406).
-- Colour previews inside code blocks.
 - Upload, rename and delete files directly in the files view.
-- Compressed file previews keep their content type so HTML previews render correctly.
-- Usage totals that finish even when some connected devices are offline.
-- OpenCode usage history, source-specific totals, and explicit provider coverage.
-  Cursor and Antigravity history remain unavailable.
-- OpenRouter key caps in Usage > Limits and explanations when quota data is
-  unavailable. Cursor, Grok and OpenCode Go allowance probes now ship upstream.
-  Free-model request counts are not exposed by OpenRouter or OpenCode Zen.
-- GitHub repository search when adding projects, with clearer empty results.
-- Cursor model discovery avoids creating disposable chats.
 - A visible context-window meter and Cursor/Grok subagent activity panels.
 - Browser previews carried over the existing T3 connection for remote work.
 - Desktop connected to an existing background service keeps its local server
   disabled through updates and recovery. Browser previews can reuse a connected
-  local service. The disable switch itself ships upstream since nightly 1780.
+  local service. The disable switch itself ships upstream
+  ([PR #9194](https://github.com/pingdotgg/t3code/pull/9194)).
+- OpenRouter key caps in Usage > Limits and explanations when quota data is
+  unavailable. Cursor, Grok and OpenCode Go allowance probes ship upstream
+  ([PR #12115](https://github.com/pingdotgg/t3code/pull/12115)).
+  Free-model request counts are not exposed by OpenRouter or OpenCode Zen.
 - MZS desktop and server updates, with checks that the replacement server starts
   and keeps its connection details.
 - Full upstream and fork release notes in the desktop update prompt.
