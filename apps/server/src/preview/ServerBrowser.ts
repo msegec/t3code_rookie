@@ -1372,7 +1372,15 @@ const make = Effect.gen(function* () {
     if (input.url !== undefined) return normalizePreviewUrl(input.url);
     const target = input.target!;
     if (target.kind === "url") return normalizePreviewUrl(target.url);
-
+    // Workspace files resolve through a client browser host on the T3
+    // connection. This browser runs inside the environment and only knows
+    // loopback ports.
+    if (target.kind !== "environment-port") {
+      throw new ServerBrowserPage.ServerBrowserOperationError(
+        "PreviewAutomationExecutionError",
+        `This browser host cannot open ${target.kind} targets.`,
+      );
+    }
     const path = target.path ?? "";
     return `${target.protocol ?? "http"}://localhost:${target.port}${path.startsWith("/") || path === "" ? path : `/${path}`}`;
   };

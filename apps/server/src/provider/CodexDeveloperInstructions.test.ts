@@ -79,7 +79,10 @@ describe("T3 browser developer instructions", () => {
       NodeAssert.match(instructions, /t3-code/);
       NodeAssert.match(instructions, /preview_status/);
       NodeAssert.match(instructions, /preview_open/);
-      NodeAssert.match(instructions, /Do not switch to global browser skills/);
+      NodeAssert.match(instructions, /workspace-file/);
+      NodeAssert.match(instructions, /Do not expose application ports/);
+      NodeAssert.match(instructions, /selected browser host can be on another machine/);
+      NodeAssert.match(instructions, /Use another browser system when/);
     }
   });
 
@@ -89,7 +92,7 @@ describe("T3 browser developer instructions", () => {
       NodeAssert.doesNotMatch(instructions, /preview_status/);
       NodeAssert.doesNotMatch(instructions, /preview_open/);
       NodeAssert.doesNotMatch(instructions, /T3 Code collaborative browser/);
-      NodeAssert.doesNotMatch(instructions, /Do not switch to global browser skills/);
+      NodeAssert.doesNotMatch(instructions, /Use another browser system when/);
       NodeAssert.match(buildCodexDeveloperInstructions(mode), /<collaboration_mode>/);
       NodeAssert.match(buildCodexDeveloperInstructions(mode), /<\/collaboration_mode>/);
     }
