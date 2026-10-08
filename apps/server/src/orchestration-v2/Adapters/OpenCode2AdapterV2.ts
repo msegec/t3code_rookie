@@ -79,7 +79,10 @@ import {
 } from "../../provider/opencodeRuntime.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { buildRuntimeInstructions } from "../../provider/RuntimeInstructions.ts";
-import { t3OrchestrationSystemPrompt } from "../../provider/T3OrchestrationInstructions.ts";
+import {
+  T3_CODE_EXTERNAL_OPENCODE_INSTRUCTIONS,
+  t3OrchestrationSystemPrompt,
+} from "../../provider/T3OrchestrationInstructions.ts";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
@@ -3286,7 +3289,12 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       }
       const instructions = [
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
-        t3OrchestrationSystemPrompt(state.mcp !== undefined),
+        connection.external
+          ? T3_CODE_EXTERNAL_OPENCODE_INSTRUCTIONS
+          : t3OrchestrationSystemPrompt(
+              state.mcp !== undefined,
+              mcpSession?.browserToolsAvailable === true,
+            ),
       ]
         .filter((part) => part !== undefined && part.length > 0)
         .join("\n\n");

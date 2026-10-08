@@ -60,6 +60,15 @@ import {
   AcpRegistrySetProviderInput,
   AcpRegistrySetProviderResult,
 } from "./acpRegistry.ts";
+import {
+  PreviewGatewayError,
+  PreviewGatewayIssueInput,
+  PreviewGatewayIssueResult,
+  PreviewGatewayRegisterInput,
+  PreviewGatewayRegisterResult,
+  PreviewGatewayRevokeInput,
+} from "./previewGateway.ts";
+
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   AuthAccessStreamError,
@@ -389,6 +398,9 @@ export const WS_METHODS = {
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
   assetsPersistChatAttachments: "assets.persistChatAttachments",
+  previewGatewayIssue: "previewGateway.issue",
+  previewGatewayRegister: "previewGateway.register",
+  previewGatewayRevoke: "previewGateway.revoke",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
 
@@ -1272,6 +1284,23 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
   ]),
 });
 
+export const WsPreviewGatewayIssueRpc = Rpc.make(WS_METHODS.previewGatewayIssue, {
+  payload: PreviewGatewayIssueInput,
+  success: PreviewGatewayIssueResult,
+  error: Schema.Union([PreviewGatewayError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewGatewayRegisterRpc = Rpc.make(WS_METHODS.previewGatewayRegister, {
+  payload: PreviewGatewayRegisterInput,
+  success: PreviewGatewayRegisterResult,
+  error: Schema.Union([PreviewGatewayError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewGatewayRevokeRpc = Rpc.make(WS_METHODS.previewGatewayRevoke, {
+  payload: PreviewGatewayRevokeInput,
+  error: Schema.Union([PreviewGatewayError, EnvironmentAuthorizationError]),
+});
+
 const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
@@ -1944,6 +1973,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
   WsAssetsPersistChatAttachmentsRpc,
+  WsPreviewGatewayIssueRpc,
+  WsPreviewGatewayRegisterRpc,
+  WsPreviewGatewayRevokeRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
   WsMcpAppsCallToolRpc,

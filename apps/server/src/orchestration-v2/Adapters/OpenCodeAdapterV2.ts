@@ -65,7 +65,10 @@ import {
   summarizeNativeProtocolPayload,
 } from "../../provider/NativeProtocolLogging.ts";
 import { mergeProviderInstanceEnvironment } from "../../provider/ProviderInstanceEnvironment.ts";
-import { t3OrchestrationSystemPrompt } from "../../provider/T3OrchestrationInstructions.ts";
+import {
+  T3_CODE_EXTERNAL_OPENCODE_INSTRUCTIONS,
+  t3OrchestrationSystemPrompt,
+} from "../../provider/T3OrchestrationInstructions.ts";
 import { buildRuntimeInstructions } from "../../provider/RuntimeInstructions.ts";
 import * as OpenCodeRuntime from "../../provider/opencodeRuntime.ts";
 import * as IdAllocator from "../IdAllocator.ts";
@@ -974,7 +977,9 @@ export function makeOpenCodeAdapterV2(
 
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
         const hasT3Mcp = mcpSession !== undefined && !connection.external;
-        const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(hasT3Mcp);
+        const orchestrationSystemPrompt = connection.external
+          ? T3_CODE_EXTERNAL_OPENCODE_INSTRUCTIONS
+          : t3OrchestrationSystemPrompt(hasT3Mcp, mcpSession?.browserToolsAvailable === true);
         if (hasT3Mcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({

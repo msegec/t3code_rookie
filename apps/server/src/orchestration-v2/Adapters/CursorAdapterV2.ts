@@ -2137,6 +2137,9 @@ export function makeCursorAdapterV2(
             }),
             runOrdinal: turnInput.runOrdinal,
             hasT3Mcp: cursorMcpServers(turnInput.threadId) !== undefined,
+            browserToolsAvailable:
+              McpProviderSession.readMcpProviderSession(turnInput.threadId)
+                ?.browserToolsAvailable === true,
           });
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),

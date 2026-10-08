@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
   t3AcpPromptWithInstructions,
   t3OrchestrationPromptForFirstRun,
@@ -49,6 +50,34 @@ describe("T3 orchestration provider instructions", () => {
   it("only exposes the system prompt when the T3 MCP server is attached", () => {
     assert.equal(t3OrchestrationSystemPrompt(false), undefined);
     assert.equal(t3OrchestrationSystemPrompt(true), T3_CODE_ORCHESTRATION_INSTRUCTIONS);
+  });
+
+  it("adds browser guidance only when the thread's MCP grant includes preview tools", () => {
+    assert.equal(
+      t3OrchestrationSystemPrompt(true, true),
+      T3_CODE_BROWSER_TOOL_INSTRUCTIONS + T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+    );
+    assert.equal(t3OrchestrationSystemPrompt(false, true), undefined);
+    const prompt = "Inspect the repository.";
+    assert.include(
+      t3OrchestrationPromptForFirstRun({
+        prompt,
+        runOrdinal: 1,
+        hasT3Mcp: true,
+        browserToolsAvailable: true,
+      }),
+      "T3 Code collaborative browser",
+    );
+    assert.notInclude(
+      t3OrchestrationPromptForFirstRun({ prompt, runOrdinal: 1, hasT3Mcp: true }),
+      "T3 Code collaborative browser",
+    );
+  });
+
+  it("keeps browser guidance on the existing connection", () => {
+    assert.include(T3_CODE_BROWSER_TOOL_INSTRUCTIONS, "`workspace-file`");
+    assert.include(T3_CODE_BROWSER_TOOL_INSTRUCTIONS, "`environment-port`");
+    assert.include(T3_CODE_BROWSER_TOOL_INSTRUCTIONS, "Do not expose application ports");
   });
 
   it("gives ACP sessions provider-neutral mode, browser, and orchestration guidance", () => {
