@@ -194,7 +194,22 @@ const handlers = {
     invokeTargeted<PreviewAutomationStatus>("dialog", input),
   ),
   preview_status: McpToolAccess.readsAsCaller((input) =>
-    invokeTargeted<PreviewAutomationStatus>("status", input ?? {}),
+    invokeTargeted<PreviewAutomationStatus>("status", input ?? {}).pipe(
+      Effect.catchTag("PreviewAutomationNoAvailableHostError", (error) =>
+        Effect.succeed({
+          available: false,
+          visible: false,
+          tabId: null,
+          url: null,
+          title: null,
+          loading: false,
+          environmentId: error.environmentId,
+          threadId: error.threadId,
+          browserHost: null,
+          unavailableReason: "no-compatible-browser-host" as const,
+        }),
+      ),
+    ),
   ),
   preview_open: McpToolAccess.actsAsCaller((input) =>
     invokeTargeted<PreviewAutomationStatus>("open", normalizePreviewOpenInput(input)),

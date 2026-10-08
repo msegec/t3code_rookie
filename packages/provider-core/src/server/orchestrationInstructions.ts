@@ -40,9 +40,11 @@ export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## T3 Code collaborative browser
 
-You are running inside T3 Code. The \`t3-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
+Prefer the \`t3-code\` MCP \`preview_*\` tools. First call \`preview_status\`; try \`preview_open\` if closed/unattached, then navigate and inspect with \`preview_snapshot\`. Prefer snapshot locators. Current tool schemas and status are authoritative; configuration does not prove availability.
 
-For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
+The selected browser host can be on another machine from the provider's project/worktree. Browser localhost and recording paths belong to that host.
+
+Navigate static project content with a \`workspace-file\` target relative to the thread's project/worktree; T3 serves it through the existing connection without another server. For running applications use \`environment-port\`; let T3 resolve access and report unsupported routes. Do not expose application ports, add port forwards or install tunnels.
 
 \`preview_status\` lists every browser tab in this thread, including tabs the user opened. When the user asks about "this page" or a page they have open, read their tab: pass its \`tabId\` to \`preview_snapshot\` or \`preview_wait_for\`, or omit \`tabId\` when you have no tab of your own. You may act on the user's tab, including \`preview_evaluate\`, only while its owner is \`unclaimed\`; while it is \`human\`, the user is driving, so read it with \`preview_snapshot\` or open your own tab. To use a browser profile (a set of saved logins), pass \`profileId\` from \`preview_status\` profiles to \`preview_open\`.
 
@@ -51,6 +53,10 @@ Do not switch to global browser skills, Chrome, Node REPL browser automation, st
 - the user asks for another browser, or invokes a skill or documented repository workflow that names one; follow that workflow and report any prerequisite it is missing;
 - preview calls on an open tab have failed twice on the same step (timeouts, \`chrome-error://\` pages, a different client answering). Quote the raw error and switch without asking the user which browser to use.
 `;
+
+/** External OpenCode servers never receive T3's MCP tools. */
+export const T3_CODE_EXTERNAL_OPENCODE_INSTRUCTIONS =
+  "T3 does not attach browser tools to external OpenCode servers. Use only exposed tools; do not assume remote project access or add port forwards, expose ports or install tunnels.";
 
 const T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS = `## T3 Code interaction mode: Default
 
@@ -98,20 +104,34 @@ export function t3AcpPromptWithInstructions(input: {
  * context in the first prompt. Keep the wrapper explicit so it cannot be
  * mistaken for text authored by the user.
  */
-function prependT3OrchestrationInstructions(prompt: string): string {
-  return `<t3_code_orchestration_instructions>${T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
+function prependT3OrchestrationInstructions(
+  prompt: string,
+  browserToolsAvailable: boolean,
+): string {
+  return `<t3_code_orchestration_instructions>${t3McpInstructions(browserToolsAvailable).trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
 }
 
+function t3McpInstructions(browserToolsAvailable: boolean): string {
+  return browserToolsAvailable
+    ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS + T3_CODE_ORCHESTRATION_INSTRUCTIONS
+    : T3_CODE_ORCHESTRATION_INSTRUCTIONS;
+}
+
+/** `browserToolsAvailable` mirrors the thread's MCP preview grant. */
 export function t3OrchestrationPromptForFirstRun(input: {
   readonly prompt: string;
   readonly runOrdinal: number;
   readonly hasT3Mcp: boolean;
+  readonly browserToolsAvailable?: boolean;
 }): string {
   return input.runOrdinal === 1 && input.hasT3Mcp
-    ? prependT3OrchestrationInstructions(input.prompt)
+    ? prependT3OrchestrationInstructions(input.prompt, input.browserToolsAvailable === true)
     : input.prompt;
 }
 
-export function t3OrchestrationSystemPrompt(hasT3Mcp: boolean): string | undefined {
-  return hasT3Mcp ? T3_CODE_ORCHESTRATION_INSTRUCTIONS : undefined;
+export function t3OrchestrationSystemPrompt(
+  hasT3Mcp: boolean,
+  browserToolsAvailable = false,
+): string | undefined {
+  return hasT3Mcp ? t3McpInstructions(browserToolsAvailable) : undefined;
 }

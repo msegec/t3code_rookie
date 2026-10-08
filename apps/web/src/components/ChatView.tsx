@@ -5055,13 +5055,25 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       if (script.autoOpenPreview && script.previewUrl && isPreviewSupportedInRuntime()) {
-        const previewResult = await openUrlInPreview({
-          threadRef: activeThreadRef,
-          url: resolveDiscoveredServerUrl(activeThreadRef.environmentId, script.previewUrl),
-          openPreview,
-        });
-        if (previewResult._tag === "Failure" && !isAtomCommandInterrupted(previewResult)) {
-          const error = squashAtomCommandFailure(previewResult);
+        const previewError = await resolveDiscoveredServerUrl(
+          activeThreadRef.environmentId,
+          script.previewUrl,
+          activeThreadRef.threadId,
+        ).then(
+          async (url) => {
+            const previewResult = await openUrlInPreview({
+              threadRef: activeThreadRef,
+              url,
+              openPreview,
+            });
+            return previewResult._tag === "Failure" && !isAtomCommandInterrupted(previewResult)
+              ? { error: squashAtomCommandFailure(previewResult) }
+              : null;
+          },
+          (error: unknown) => ({ error }),
+        );
+        if (previewError !== null) {
+          const { error } = previewError;
           toastManager.add(
             stackedThreadToast({
               type: "error",

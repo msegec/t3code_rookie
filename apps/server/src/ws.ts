@@ -25,6 +25,7 @@ import {
   AcpRegistryOperationError,
   CommandId,
   authScopeResponse,
+  PreviewGatewayError,
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
   AuthOrchestrationOperateScope,
@@ -183,6 +184,7 @@ import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
+import * as PreviewGateway from "./preview/Gateway.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { attachmentRelativePath, createDeterministicAttachmentId } from "./attachmentStore.ts";
@@ -244,6 +246,8 @@ import {
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
+const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+const isPreviewGatewayError = Schema.is(PreviewGatewayError);
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1295,6 +1299,7 @@ const layerWsRpc = (
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
+      const previewGateway = yield* PreviewGateway.Gateway;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const modelManifest = yield* ModelManifest.ModelManifest;
       const providerLatestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
@@ -2731,6 +2736,46 @@ const layerWsRpc = (
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,
         [WS_METHODS.agentSessionsImport]: (input) =>
           agentSessionImporter.importRecentAgentThreads(input),
+        [WS_METHODS.previewGatewayIssue]: (input) =>
+          Effect.gen(function* () {
+            const thread = yield* threadManagement.getThreadShell(input.threadId).pipe(
+              Effect.mapError(
+                () =>
+                  new PreviewGatewayError({
+                    reason: "thread-unavailable",
+                    message: "The preview thread is unavailable.",
+                  }),
+              ),
+            );
+            if (thread === null)
+              return yield* new PreviewGatewayError({
+                reason: "thread-unavailable",
+                message: "The preview thread is unavailable.",
+              });
+            return yield* Effect.try({
+              try: () => previewGateway.issue(input, currentSessionId),
+              catch: (cause) =>
+                isPreviewGatewayError(cause)
+                  ? cause
+                  : new PreviewGatewayError({
+                      reason: "invalid-target",
+                      message: "Could not create a preview route.",
+                    }),
+            });
+          }),
+        [WS_METHODS.previewGatewayRegister]: (input) =>
+          Effect.try({
+            try: () => previewGateway.register(input, currentSessionId),
+            catch: (cause) =>
+              isPreviewGatewayError(cause)
+                ? cause
+                : new PreviewGatewayError({
+                    reason: "invalid-target",
+                    message: "Could not register a preview route.",
+                  }),
+          }),
+        [WS_METHODS.previewGatewayRevoke]: (input) =>
+          Effect.sync(() => previewGateway.revoke(input.origin, currentSessionId)),
         [WS_METHODS.assetsCreateUrl]: (input) =>
           Effect.gen(function* () {
             const path = yield* Path.Path;
