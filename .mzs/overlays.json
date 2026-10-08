@@ -6,70 +6,70 @@
       "name": "MZS fleet release routing",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "cb2f15e4334fd6be5055109710bb442c95adf160"
+      "sha": "075ad512327c488c7b03e04b27d1a9b46d72d38a"
     },
     {
       "kind": "commit",
       "name": "MZS workspace project tools",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "84177a626948e7e96d1d7ce4fb4a923800552a8d"
+      "sha": "7944198b4a3333dfd98e6de581439725ec28d317"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "2d5f722b7eea61bb95416da4f77d06416c59c900"
+      "sha": "389ee0f934116fab0ab0c3985e74936d9b6b86c6"
     },
     {
       "kind": "commit",
       "name": "MZS fleet update metadata",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "c6d61d9d11a28f96bcbd01aa4d24d95926a2837d"
+      "sha": "845b2490f45d0334e21586ce24378a850df3c769"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "10656e35e36ca8b58f78ad96427591a5ec3a710f"
+      "sha": "bf2b7caa364b3f6f53f1683d12c898df469acc2b"
     },
     {
       "kind": "commit",
       "name": "MZS project checkout appearance",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "4b75e07a201d58abf281230a4ff164788b203e63"
+      "sha": "a73584a67011bb02615020bc4dbbafa00344f4d3"
     },
     {
       "kind": "commit",
       "name": "MZS desktop client-only operation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "dd56be27035225d64cce3fe0d5d5e9640aa8e2e4"
+      "sha": "bfdf63b7f2b07433b40609415572ddb2f0e9b79a"
     },
     {
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "5d05e106df382e091bbdbb04a0624ed4ba1a37b0"
+      "sha": "7eb39923e98a4ccb54e0055dfd557b46eadbddaa"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "66218056c7a3aea044abcbac5e68fcb1af5ec4f7"
+      "sha": "dce16d30a980f8d511a7bbc2db2ae1d4a77b2dd9"
     },
     {
       "kind": "commit",
       "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "387cd60d3524093b83c59237ec019a907714095e"
+      "sha": "8fd7af7529a75a67ef32b00a8112f47f2844f1d4"
     }
   ],
   "tests": [
@@ -94,7 +94,6 @@
     "apps/server/src/git/GitManager.test.ts",
     "apps/server/src/sourceControl/AzureDevOpsSourceControlProvider.test.ts",
     "apps/server/src/sourceControl/BitbucketSourceControlProvider.test.ts",
-    "apps/server/src/sourceControl/GitHubCli.test.ts",
     "apps/server/src/sourceControl/GitHubSourceControlProvider.test.ts",
     "apps/server/src/sourceControl/GitLabCli.test.ts",
     "apps/server/src/sourceControl/GitLabSourceControlProvider.test.ts",
@@ -120,7 +119,7 @@
     "apps/server/src/serviceLauncher.test.ts",
     "apps/server/src/cloud/bootService.test.ts",
     "apps/server/src/serverRuntimeState.test.ts",
-    "apps/server/src/persistence/Layers/Sqlite.test.ts",
+    "apps/server/src/persistence/Sqlite.test.ts",
     "apps/server/src/cli/service.test.ts",
     "apps/server/src/cli/pair.test.ts",
     "apps/server/src/mcp/McpHttpServer.test.ts",
@@ -136,8 +135,6 @@
     "packages/client-runtime/src/state/previewGateway.test.ts",
     "packages/contracts/src/previewAutomationNavigation.test.ts",
     "apps/web/src/components/preview/openPreviewSession.test.ts",
-    "apps/web/src/components/preview/previewAutomationOpenReadiness.test.ts",
-    "apps/web/src/components/preview/PreviewAutomationHosts.test.tsx",
     "apps/web/src/components/settings/ProjectAccentEditor.test.tsx",
     "apps/web/src/components/settings/ProjectAccentSettingsRow.test.tsx",
     "apps/web/src/components/settings/projectAccentSettings.test.ts",
@@ -155,7 +152,7 @@
     "apps/desktop/src/updates/DesktopUpdates.clientOnly.test.ts",
     "apps/desktop/src/window/DesktopWindow.test.ts",
     "apps/desktop/src/wsl/DesktopWslBackend.test.ts",
-    "apps/server/src/pullRequest/GitHubPullRequestCli.test.ts",
+    "apps/server/src/pullRequest/GitHubPullRequestApi.test.ts",
     "apps/server/src/sourceControl/SourceControlDiscovery.test.ts",
     "apps/server/src/usage/UsageService.test.ts",
     "apps/server/src/usage/usageAggregation.test.ts",
@@ -169,9 +166,9 @@
     "packages/client-runtime/src/state/usage.test.ts",
     "packages/shared/src/usageMerge.test.ts",
     "apps/server/src/usage/usageTranscriptReader.test.ts",
-    "apps/server/src/provider/Layers/codexUsageLimits.test.ts",
-    "apps/server/src/provider/Layers/GrokProvider.test.ts",
-    "apps/server/src/provider/Layers/OpenCodeProvider.test.ts",
+    "apps/server/src/provider/codexUsageLimits.test.ts",
+    "apps/server/src/provider/GrokProvider.test.ts",
+    "apps/server/src/provider/OpenCodeProvider.test.ts",
     "apps/web/src/components/files/fileSaveCoordinator.test.ts",
     "apps/web/src/composerDraftStore.test.ts",
     "packages/shared/src/cliRelease.test.ts",
@@ -181,7 +178,7 @@
     "scripts/lib/resolve-catalog.test.ts",
     "scripts/mac-cross-build.test.ts",
     "scripts/smoke-cli-archive.test.ts",
-    "apps/server/src/provider/Layers/openRouterUsageLimits.test.ts",
+    "apps/server/src/provider/openRouterUsageLimits.test.ts",
     "apps/server/src/provider/providerUsageLimits.test.ts",
     "apps/server/src/ws.projectAccents.test.ts",
     "apps/server/src/ws.test.ts",
