@@ -13,63 +13,63 @@
       "name": "MZS workspace project tools",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "6ce0a220a50688c591365988cc35e4e2cca431bd"
+      "sha": "4e8ded2678f834db82d633bd6214aed3f805dbb0"
     },
     {
       "kind": "commit",
       "name": "MZS context window visibility",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "6215ba07e79843569b7f407b2617c297b6dc0773"
+      "sha": "66a8d8a43ca4bd81ee85dfa9982fab39a21b520f"
     },
     {
       "kind": "commit",
       "name": "MZS fleet update metadata",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "7b8bda383794e004cea0a91f26a63ead91221eaa"
+      "sha": "edd9f0e9c3cb0cc567ee1ed116d1f1c33c21de74"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "0922449ce325147ab32f081e17626b14f1f9ace5"
+      "sha": "8a2cc3774ec1520707e566eea2845c929ce2094f"
     },
     {
       "kind": "commit",
       "name": "MZS project checkout appearance",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "adc17daa34b6318b597a11f5aa5157cc7a8008ea"
+      "sha": "c49e3b8ddce7fd1f23b59f495026807bd1fc5650"
     },
     {
       "kind": "commit",
       "name": "MZS desktop client-only operation",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "b6db7a2caf05484f37cfb6731d4239c55d570b34"
+      "sha": "367c94974027686d01e5906a91526ed3ca5e367e"
     },
     {
       "kind": "commit",
       "name": "MZS previews over environment connections",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "c4e536303f9480aad103998b7b9af97eb859d253"
+      "sha": "205068691c715e431edf54703f380efd3b76e89f"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "cf63943b1a752073e00a7f9c9580d7f6b423a00f"
+      "sha": "c72217431eab8b0bc11b88264105a9dc0b0e290c"
     },
     {
       "kind": "commit",
       "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2689",
-      "sha": "833a943548916f9b23428c38c9605523279f62ad"
+      "sha": "ce54053da41ec1961855b7ff2eba848b310cfafe"
     }
   ],
   "tests": [
