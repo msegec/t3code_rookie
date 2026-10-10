@@ -7,8 +7,8 @@ The installation commands in the upstream README below install official T3 Code.
 
 ## What our version adds
 
-This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.46-nightly.20261008.2801.mzs.rff6bf957602b)
-compared with its official base, [nightly 2801](https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261008.2801).
+This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.46-nightly.20261010.2948.mzs.r881705eaa799)
+compared with its official base, [nightly 2948](https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261010.2948).
 Newer upstream nightlies may already contain some of these changes.
 
 - Project sidebar colours and icons, with an accent editor in Project Settings.
