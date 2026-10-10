@@ -62,14 +62,14 @@
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2948",
-      "sha": "8c1f9481baee16906a0a6b70753ae339f4924337"
+      "sha": "ff61cb660c2376745777d5b33c3a83cc477f68bf"
     },
     {
       "kind": "commit",
       "name": "MZS OpenRouter allowances and quota notices",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-2948",
-      "sha": "a235a9b98d605e14aa55a696a12d60fd06acc124"
+      "sha": "685003cf19a69c312c02beadf262f3c9b4332566"
     }
   ],
   "tests": [
