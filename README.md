@@ -7,15 +7,16 @@ The installation commands in the upstream README below install official T3 Code.
 
 ## What our version adds
 
-This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.0.46-nightly.20261014.3093.mzs.r8afcb801164a)
-compared with its official base, [nightly 3093](https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261014.3093).
+This list describes [our published build](https://github.com/msegec/t3code_rookie/releases/tag/v0.1.1-nightly.20261016.3218.mzs.re8057784aa2a)
+compared with its official base, [nightly 3218](https://github.com/pingdotgg/t3code/releases/tag/v0.1.1-nightly.20261016.3218).
 Newer upstream nightlies may already contain some of these changes.
 
 - Project sidebar colours and icons, with an accent editor in Project Settings.
 - Project Settings opens the checkout selected in the sidebar and shows its icon
   and accent. Group settings use the same representative checkout as the sidebar.
   Tracked in [upstream PR #11406](https://github.com/pingdotgg/t3code/pull/11406).
-- Upload, rename and delete files directly in the files view.
+- Upload, rename and delete project files directly in the files view. Host
+  folders stay read-only.
 - A visible context-window meter and Cursor/Grok subagent activity panels.
 - Browser previews carried over the existing T3 connection for remote work.
 - Desktop connected to an existing background service keeps its local server
