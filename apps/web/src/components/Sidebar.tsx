@@ -265,6 +265,7 @@ import {
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { projectAccentRowState, projectAccentRowStyle } from "../projectAccent";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button, InlineButton } from "./ui/button";
 import {
@@ -1642,6 +1643,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     discardComposerDraft(threadRef);
   };
 
+  const projectAccent = props.project?.accent ?? null;
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     thread.environmentId,
@@ -2126,6 +2128,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
                 data-testid="sidebar-row-slim"
+                data-project-accent={projectAccent === null ? undefined : "true"}
+                data-project-accent-state={projectAccentRowState(
+                  projectAccent,
+                  props.isActive,
+                  isSelected,
+                )}
+                style={projectAccentRowStyle(projectAccent)}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
                 onClick={handleClick}
@@ -2285,6 +2294,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               aria-label={accessibility.label}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isActive,
+                isSelected,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -2561,6 +2577,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
+  const projectAccent = props.project?.accent ?? null;
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
   const gitStatus = useEnvironmentQuery(
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
@@ -2627,6 +2644,15 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               aria-current={accessibility.current}
               aria-describedby={`${props.resultId}-pr`}
               aria-label={accessibility.label}
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              // Focus stays on the search input and the option is tabIndex -1,
+              // so this fill is the keyboard cursor and uses the strongest row token.
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isRouteActive || props.isHighlighted,
+                false,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(
