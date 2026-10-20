@@ -58,6 +58,7 @@ const layerMetadata = Layer.merge(
   }),
   Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
     invalidate: () => Effect.void,
+    resolveAccent: () => Effect.succeed(null),
     resolvePath: (workspaceRoot) => Effect.succeed(`${workspaceRoot}/favicon.svg`),
   }),
 );
@@ -133,6 +134,7 @@ it.effect("resolves only the requested active project page in creation order", (
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         invalidate: () => Effect.void,
         resolvePath: (workspaceRoot) => note(workspaceRoot).pipe(Effect.as(null)),
+        resolveAccent: () => Effect.succeed(null),
       }),
     );
     yield* Effect.gen(function* () {
@@ -626,6 +628,7 @@ it.effect("keeps project snapshots available when optional metadata enrichment f
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         invalidate: () => Effect.void,
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) =>
           Effect.fail(
             new ProjectFaviconResolver.ProjectFaviconResolutionError({
@@ -677,6 +680,7 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         invalidate: () => Effect.void,
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) =>
           Ref.get(metadataVersion).pipe(
             Effect.map((version) => `${workspaceRoot}/favicon-v${version}.svg`),

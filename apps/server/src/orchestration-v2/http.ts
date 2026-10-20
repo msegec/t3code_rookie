@@ -32,6 +32,7 @@ import {
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { loadSubscriberShellSnapshot } from "./ShellStream.ts";
+import * as ProjectAccents from "../project/ProjectAccents.ts";
 import { boundedSnapshotResponseFields } from "./ThreadStream.ts";
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
 
@@ -65,10 +66,14 @@ export const layer = HttpApiBuilder.group(
           (project) =>
             // Use available enrichment only; git probes can take a minute and exceed shell-snapshot budgets.
             projectEnrichment.getAvailable(project.workspaceRoot).pipe(
-              Effect.map((enrichment) => ({
-                ...project,
-                repositoryIdentity: enrichment.repositoryIdentity,
-              })),
+              // Clients prefer this snapshot over the WS one, so it has to carry
+              // accents too or the sidebar repaints a round trip after it loads.
+              Effect.flatMap((enrichment) =>
+                ProjectAccents.withProjectAccent({
+                  ...project,
+                  repositoryIdentity: enrichment.repositoryIdentity,
+                }),
+              ),
             ),
           { concurrency: 16 },
         ),

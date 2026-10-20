@@ -343,6 +343,9 @@ it.live.each(["thread", "shell"] as const)(
         Effect.provideService(ProjectEnrichment.ProjectEnrichmentService, {
           subscribeChanges: PubSub.subscribe(updates),
         } as ProjectEnrichment.ProjectEnrichmentService["Service"]),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
       );
       assert.deepEqual(
         items.map((item) => item.kind),
@@ -506,6 +509,9 @@ it.effect("shell groups read distinct threads once and keep each event's own seq
             ),
           ),
         ),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
       );
 
     const collectSummary = (afterSequence: number) =>
@@ -628,6 +634,9 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
             ),
           ),
         ),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
       );
 
     const recent = threads.slice(3, 28).map((thread) => thread.id);
@@ -1216,6 +1225,9 @@ it.effect.each(["thread", "shell"] as const)(
         Effect.provideService(ProjectEnrichment.ProjectEnrichmentService, {
           subscribeChanges: PubSub.subscribe(yield* PubSub.unbounded()),
         } as ProjectEnrichment.ProjectEnrichmentService["Service"]),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
         Effect.exit,
       );
       assert.deepEqual(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit, "snapshot");
@@ -1284,6 +1296,9 @@ it.effect.each(["thread", "shell"] as const)(
         Effect.provideService(ProjectEnrichment.ProjectEnrichmentService, {
           subscribeChanges: PubSub.subscribe(yield* PubSub.unbounded()),
         } as ProjectEnrichment.ProjectEnrichmentService["Service"]),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
         Effect.exit,
         Effect.forkChild,
       );

@@ -1315,6 +1315,47 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* No [data-app-sidebar] ancestor scope: the mobile sheet sidebar renders
+   without that attribute. The gradient never reacts to hover: sweeping the
+   pointer down the list must not pulse each row's tint, so hover feedback
+   stays the flat row wash the Tailwind row classes already apply and the
+   gradient only changes with route state. Selected and active rows retain
+   their flat surface fill beneath a gradient that holds full strength across
+   the right quarter and fades toward that fill on the left. The mix
+   percentages run stronger than a full-card wash would need because the fade
+   halves the perceived tint. */
+[data-project-accent] {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--project-accent-idle, color-mix(in srgb, var(--project-accent-color) 9%, transparent)) 75%
+  );
+}
+
+[data-project-accent][data-project-accent-state="selected"] {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(
+        --project-accent-selected,
+        color-mix(in srgb, var(--project-accent-color) 22%, var(--sidebar-row-selected))
+      )
+      75%
+  );
+}
+
+[data-project-accent][data-project-accent-state="active"] {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(
+        --project-accent-active,
+        color-mix(in srgb, var(--project-accent-color) 22%, var(--sidebar-row-active))
+      )
+      75%
+  );
+}
+
 /* Theme files are expressed in app color roles and mapped to the existing
    semantic surface tokens here. Keep this block after the sidebar-version
    compatibility overrides so both navigation implementations receive the
