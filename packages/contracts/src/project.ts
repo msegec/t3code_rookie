@@ -149,6 +149,38 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
+// The `u` flag is what makes Effect's JSON Schema generator export `pattern`.
+// Without it the published t3.json schema loses the hex check and editors
+// accept values the decoder rejects.
+const PROJECT_ACCENT_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/u;
+const PROJECT_ACCENT_COLOR_INPUT_PATTERN = /^\s*#[0-9a-fA-F]{6}\s*$/u;
+
+const ProjectAccentColorInput = Schema.String.annotate({
+  description: 'Six-digit hex color (e.g. "#1688f0").',
+}).check(Schema.isNonEmpty(), Schema.isPattern(PROJECT_ACCENT_COLOR_INPUT_PATTERN));
+export const ProjectAccentColor = ProjectAccentColorInput.pipe(
+  Schema.decodeTo(
+    Schema.String.check(Schema.isPattern(PROJECT_ACCENT_COLOR_PATTERN)),
+    SchemaTransformation.trim(),
+  ),
+);
+export type ProjectAccentColor = typeof ProjectAccentColor.Type;
+
+// No hover entry: hover feedback is the flat row wash, never a gradient
+// change, so sweeping the pointer down the list cannot pulse row tints.
+export const ProjectAccentPalette = Schema.Struct({
+  idle: ProjectAccentColor,
+  active: ProjectAccentColor,
+  selected: ProjectAccentColor,
+});
+export type ProjectAccentPalette = typeof ProjectAccentPalette.Type;
+
+export const ProjectAccent = Schema.Union([ProjectAccentColor, ProjectAccentPalette]).annotate({
+  description:
+    "Project sidebar thread-row accent. Set one hex color for generated state tints, or set idle, active, and selected colors for exact control.",
+});
+export type ProjectAccent = typeof ProjectAccent.Type;
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -156,6 +188,10 @@ export const Project = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
+  // Read live from the checkout's t3.json when the record is assembled, not
+  // persisted: sidebar rows must know their accent in the same paint that
+  // creates them, or the whole list repaints when it arrives.
+  accent: Schema.optional(Schema.NullOr(ProjectAccent)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Opt-in because background sync performs network I/O and may move the checkout.

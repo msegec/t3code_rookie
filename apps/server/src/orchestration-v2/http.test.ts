@@ -33,6 +33,7 @@ import * as ServerSettings from "../serverSettings.ts";
 
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import { ProjectEnrichmentService } from "../project/ProjectEnrichmentService.ts";
+import { ProjectFaviconResolver } from "../project/ProjectFaviconResolver.ts";
 import * as OrchestrationHttp from "./http.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -155,8 +156,13 @@ const serveOrchestrationHttp = (allowed: () => boolean) =>
       Layer.provide(Etag.layerWeak),
       Layer.provide(NodeServices.layer),
     );
-    const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true });
+    const { handler: serve, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true });
     yield* Effect.addFinalizer(() => Effect.promise(dispose));
+    // Project shells carry accents, which each request resolves through this service.
+    const requestContext = yield* Layer.build(
+      Layer.mock(ProjectFaviconResolver)({ resolveAccent: () => Effect.succeed(null) }),
+    );
+    const handler = (request: Request) => serve(request, requestContext);
     return { services, eventSink, handler };
   });
 
