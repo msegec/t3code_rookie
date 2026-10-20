@@ -28,6 +28,13 @@
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-3386",
       "sha": "c26700c2ed685a1a87048721ebac758946b22b35"
+    },
+    {
+      "kind": "commit",
+      "name": "MZS service ownership and endpoints",
+      "repository": "msegec/t3code_rookie",
+      "ref": "refs/heads/fleet/nightly-3386",
+      "sha": "b1cdfb6cd06d8b866e738b1d81f68d89c990a033"
     }
   ],
   "tests": [
@@ -58,7 +65,16 @@
     "scripts/mac-cross-build.test.ts",
     "scripts/smoke-cli-archive.test.ts",
     "apps/server/src/orchestration-v2/http.test.ts",
-    "apps/server/src/orchestration-v2/boundedSnapshotTransport.test.ts"
+    "apps/server/src/orchestration-v2/boundedSnapshotTransport.test.ts",
+    "apps/server/src/bundledEntrypoints.test.ts",
+    "apps/server/src/cli/pair.test.ts",
+    "apps/server/src/cli/triage.test.ts",
+    "apps/server/src/cloud/bootService.test.ts",
+    "apps/server/src/cloud/selfUpdate.test.ts",
+    "apps/server/src/manualServerHandoff.test.ts",
+    "apps/server/src/serverRuntimeState.test.ts",
+    "apps/server/src/serviceLauncher.test.ts",
+    "apps/server/src/serviceReadiness.test.ts"
   ],
   "trackedPullRequests": [
     7972,
