@@ -113,6 +113,7 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } f
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
+import { projectAccentRowState, projectAccentRowStyle } from "../../projectAccent";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
 // status and auth on every provider; leaving those out keeps each
@@ -679,6 +680,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     discardComposerDraft(threadRef);
   };
 
+  const projectAccent = props.project?.accent ?? null;
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     thread.environmentId,
@@ -1215,6 +1217,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 aria-label={accessibility.label}
                 aria-current={accessibility.current}
                 data-testid={inFolder ? "sidebar-row-folder" : "sidebar-row-slim"}
+                data-project-accent={projectAccent === null ? undefined : "true"}
+                data-project-accent-state={projectAccentRowState(
+                  projectAccent,
+                  props.isActive,
+                  isSelected,
+                )}
+                style={projectAccentRowStyle(projectAccent)}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(
                   rowSurfaceClassName,
@@ -1403,6 +1412,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               aria-label={accessibility.label}
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isActive,
+                isSelected,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -1626,6 +1642,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
+  const projectAccent = props.project?.accent ?? null;
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
   const gitStatus = useEnvironmentQuery(
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
@@ -1689,6 +1706,15 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               aria-selected={props.isHighlighted}
               aria-current={accessibility.current}
               aria-describedby={`${props.resultId}-pr`}
+              data-project-accent={projectAccent === null ? undefined : "true"}
+              // Focus stays on the search input and the option is tabIndex -1,
+              // so this fill is the keyboard cursor and uses the strongest row token.
+              data-project-accent-state={projectAccentRowState(
+                projectAccent,
+                props.isRouteActive || props.isHighlighted,
+                false,
+              )}
+              style={projectAccentRowStyle(projectAccent)}
               aria-label={accessibility.label}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}

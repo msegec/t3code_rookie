@@ -1,0 +1,31 @@
+import type { ProjectAccent } from "@t3tools/contracts";
+import type { CSSProperties } from "react";
+
+export interface ProjectAccentRowStyle extends CSSProperties {
+  "--project-accent-color"?: string;
+  "--project-accent-idle"?: string;
+  "--project-accent-active"?: string;
+  "--project-accent-selected"?: string;
+}
+
+export function projectAccentRowState(
+  accent: ProjectAccent | null,
+  isActive: boolean,
+  isSelected: boolean,
+): "active" | "selected" | "idle" | undefined {
+  if (accent === null) return undefined;
+  return isActive ? "active" : isSelected ? "selected" : "idle";
+}
+
+export function projectAccentRowStyle(
+  accent: ProjectAccent | null,
+): ProjectAccentRowStyle | undefined {
+  if (accent === null) return undefined;
+  return typeof accent === "string"
+    ? { "--project-accent-color": accent }
+    : {
+        "--project-accent-idle": accent.idle,
+        "--project-accent-active": accent.active,
+        "--project-accent-selected": accent.selected,
+      };
+}

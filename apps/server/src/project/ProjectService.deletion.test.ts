@@ -59,6 +59,7 @@ const layerServices = Layer.mergeAll(
           }),
           Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
             invalidate: () => Effect.void,
+            resolveAccent: () => Effect.succeed(null),
             resolvePath: () => Effect.succeed(null),
           }),
         ),

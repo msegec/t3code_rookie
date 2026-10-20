@@ -290,6 +290,9 @@ it.live.each(["thread", "shell"] as const)(
         Effect.provideService(ProjectEnrichment.ProjectEnrichmentService, {
           subscribeChanges: PubSub.subscribe(updates),
         } as ProjectEnrichment.ProjectEnrichmentService["Service"]),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
       );
       assert.deepEqual(
         items.map((item) => item.kind),
@@ -439,6 +442,9 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
             ),
           ),
         ),
+        Effect.provideService(ProjectFaviconResolver.ProjectFaviconResolver, {
+          resolveAccent: () => Effect.succeed(null),
+        } as unknown as ProjectFaviconResolver.ProjectFaviconResolver["Service"]),
       );
 
     const recent = threads.slice(3, 28).map((thread) => thread.id);

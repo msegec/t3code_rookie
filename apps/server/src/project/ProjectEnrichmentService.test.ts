@@ -57,6 +57,7 @@ it.effect("publishes repository completion while favicon enrichment is still pen
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         invalidate: () => Effect.void,
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) =>
           Deferred.await(releaseFavicon).pipe(Effect.as(`${workspaceRoot}/favicon.svg`)),
       }),
@@ -86,6 +87,7 @@ it.effect("keeps repository workers available when every favicon worker is hung"
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         invalidate: () => Effect.void,
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: () =>
           Effect.gen(function* () {
             const started = yield* Ref.updateAndGet(faviconStarts, (count) => count + 1);
@@ -147,6 +149,7 @@ it.effect(
         }),
         Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
           invalidate: () => Effect.void,
+          resolveAccent: () => Effect.succeed(null),
           resolvePath: () => Effect.succeed(null),
         }),
       );
@@ -207,6 +210,7 @@ it.effect("deduplicates requests, bounds pending work, and reloads invalidated r
       }),
       Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
         invalidate: () => Effect.void,
+        resolveAccent: () => Effect.succeed(null),
         resolvePath: (workspaceRoot) => Effect.succeed(`${workspaceRoot}/favicon.svg`),
       }),
     );

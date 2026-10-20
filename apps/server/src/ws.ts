@@ -216,6 +216,7 @@ import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
 import { projectMutationOperation } from "./project/ProjectMutation.ts";
+import * as ProjectAccents from "./project/ProjectAccents.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -749,13 +750,19 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
         projects,
         (project) =>
           projectEnrichment.getAvailable(project.workspaceRoot).pipe(
-            Effect.map((enrichment) => ({
-              project: {
+            // Accents ride on the shell so sidebar rows never paint once
+            // without them and once with them. See ProjectAccents.
+            Effect.flatMap((enrichment) =>
+              ProjectAccents.withProjectAccent({
                 ...project,
                 repositoryIdentity: enrichment.repositoryIdentity,
-              },
-              repositoryIdentityResolved: enrichment.repositoryIdentityResolved,
-            })),
+              }).pipe(
+                Effect.map((enrichedProject) => ({
+                  project: enrichedProject,
+                  repositoryIdentityResolved: enrichment.repositoryIdentityResolved,
+                })),
+              ),
+            ),
           ),
         { concurrency: 16 },
       ).pipe(
@@ -1057,6 +1064,16 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         }),
       });
     });
+    // The update carries the accent for the same reason the snapshot does: a
+    // project that changes must not hand the client a record the rows then
+    // have to repaint.
+    const projectItemWithAccent = Effect.fn("ws.orchestrationV2.projectShellItemWithAccent")(
+      function* (stored: Extract<ShellApplicationEvent, { readonly aggregateKind: "project" }>) {
+        const item = yield* projectItem(stored);
+        if (item.kind !== "project.updated") return item;
+        return { ...item, project: yield* ProjectAccents.withProjectAccent(item.project) };
+      },
+    );
 
     const projectShellItems = Effect.fn("ws.orchestrationV2.projectShellItems")(function* (
       events: ReadonlyArray<ShellApplicationEvent>,
@@ -1066,7 +1083,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         (stored) =>
           Effect.gen(function* () {
             if ("aggregateKind" in stored) {
-              return yield* projectItem(stored);
+              return yield* projectItemWithAccent(stored);
             }
             const shell = yield* threadManagement.getThreadShell(stored.event.threadId);
             return shellStreamItemFromThreadShell({ stored, shell });
@@ -1106,10 +1123,17 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
             ]),
           );
           const snapshotSequence = yield* applicationEvents.latestApplicationSequence;
-          const changedProjects = (yield* projects.listShells()).flatMap((project) =>
-            identities.has(project.workspaceRoot)
-              ? [{ ...project, repositoryIdentity: identities.get(project.workspaceRoot) ?? null }]
-              : [],
+          const changedProjects = yield* ProjectAccents.withProjectAccents(
+            (yield* projects.listShells()).flatMap((project) =>
+              identities.has(project.workspaceRoot)
+                ? [
+                    {
+                      ...project,
+                      repositoryIdentity: identities.get(project.workspaceRoot) ?? null,
+                    },
+                  ]
+                : [],
+            ),
           );
           return shellStreamItemFromEnrichmentRefresh({
             snapshot: {
