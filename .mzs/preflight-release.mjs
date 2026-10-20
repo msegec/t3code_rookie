@@ -11,10 +11,12 @@ export const fleetUpdateTests = [
   "apps/server/src/cloud/pinnedRuntime.test.ts",
   "apps/server/src/cloud/selfUpdate.test.ts",
   "apps/server/src/cloud/bootService.test.ts",
-  "apps/web/src/components/ServerUpdateAction.test.tsx",
   "apps/desktop/src/updates/updateChannels.test.ts",
   "scripts/build-desktop-artifact.fleet.test.ts",
 ];
+
+// Web component tests run in Chromium through the web package's browser project.
+export const fleetUpdateBrowserTests = ["src/components/ServerUpdateAction.browser.test.tsx"];
 
 export function assertFleetUpdateRouting(root) {
   const required = {
@@ -45,7 +47,10 @@ export function assertFleetUpdateRouting(root) {
         throw new Error(`Fleet update routing missing: ${file}: ${token}`);
     }
   }
-  for (const file of fleetUpdateTests) {
+  for (const file of [
+    ...fleetUpdateTests,
+    ...fleetUpdateBrowserTests.map((file) => `apps/web/${file}`),
+  ]) {
     if (!NodeFS.existsSync(NodePath.join(root, file))) {
       throw new Error(`Fleet update regression missing: ${file}`);
     }
@@ -146,6 +151,11 @@ function preflight(root, manifestPath, version) {
   ]);
   step("electron", "vp", ["run", "--filter", "@t3tools/desktop", "ensure:electron"]);
   step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
+  process.stderr.write("fleet_phase=preflight_browser_tests\n");
+  run("vp", ["test", "run", "--project", "browser", ...fleetUpdateBrowserTests], {
+    ...options,
+    cwd: NodePath.join(root, "apps/web"),
+  });
   step("build", "vp", ["run", "build:desktop"]);
   process.stderr.write("fleet_phase=preflight_cli\n");
   smokeCli(NodePath.join(root, "apps/server/dist/bin.mjs"), version);

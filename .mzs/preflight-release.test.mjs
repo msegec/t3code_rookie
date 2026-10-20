@@ -5,7 +5,12 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
 import * as NodeURL from "node:url";
-import { assertFleetUpdateRouting, fleetUpdateTests, smokeCli } from "./preflight-release.mjs";
+import {
+  assertFleetUpdateRouting,
+  fleetUpdateBrowserTests,
+  fleetUpdateTests,
+  smokeCli,
+} from "./preflight-release.mjs";
 
 const version = "0.0.39-nightly.20260907.1325.mzs.r123456abcdef";
 function fixture(test, source) {
@@ -63,7 +68,10 @@ NodeTest.test("release preflight cannot omit fleet update behavior tests", () =>
   NodeAssert.match(source, /assertFleetUpdateRouting\(root\);/);
   NodeAssert.match(source, /new Set\(\[\.\.\.manifest.tests, \.\.\.fleetUpdateTests\]\)/);
   NodeAssert.ok(fleetUpdateTests.includes("apps/server/src/cloud/selfUpdate.test.ts"));
-  NodeAssert.ok(fleetUpdateTests.includes("apps/web/src/components/ServerUpdateAction.test.tsx"));
+  NodeAssert.ok(
+    fleetUpdateBrowserTests.includes("src/components/ServerUpdateAction.browser.test.tsx"),
+  );
+  NodeAssert.match(source, /"--project", "browser", \.\.\.fleetUpdateBrowserTests/);
 });
 
 NodeTest.test("release rejects missing fleet routing before dependencies or builds", (test) => {
@@ -95,6 +103,7 @@ for (const failedStage of ["typecheck", "electron", "tests"]) {
         ".downloadUpdate() .installUpdate() DesktopUpdateStatusIcon",
       "scripts/build-desktop-artifact.ts": "T3CODE_DESKTOP_UPDATE_REPOSITORY",
       ...Object.fromEntries(fleetUpdateTests.map((file) => [file, ""])),
+      ...Object.fromEntries(fleetUpdateBrowserTests.map((file) => [`apps/web/${file}`, ""])),
       "manifest.json": JSON.stringify({ tests: ["selected.test.ts", fleetUpdateTests[0]] }),
     };
     for (const [file, contents] of Object.entries(files)) {
