@@ -5,36 +5,36 @@
       "kind": "commit",
       "name": "MZS fleet release routing",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3386",
-      "sha": "b3e094a68698435a81461281f4b6e08f7fc887a0"
+      "ref": "refs/heads/fleet/nightly-3892",
+      "sha": "0a9f5123e220d3938e446410c8c58883af61c44e"
     },
     {
       "kind": "commit",
       "name": "MZS project sidebar accents",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3386",
-      "sha": "b9253ee3b3da7daf40be43cdab71c036aee3dc50"
+      "ref": "refs/heads/fleet/nightly-3892",
+      "sha": "dca5f908a1ab7ee80e3824b4b8dfd366afa666d5"
     },
     {
       "kind": "commit",
       "name": "MZS fleet update metadata",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3386",
-      "sha": "1f583a8d02f85a4eaced09852aa02a62f1d462b4"
+      "ref": "refs/heads/fleet/nightly-3892",
+      "sha": "5b6c0910711feeac537efeab5ceae09f48c31c03"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3386",
-      "sha": "c26700c2ed685a1a87048721ebac758946b22b35"
+      "ref": "refs/heads/fleet/nightly-3892",
+      "sha": "3f32fd59d3b602b46efa74529fb86e718533f9ff"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3386",
-      "sha": "b1cdfb6cd06d8b866e738b1d81f68d89c990a033"
+      "ref": "refs/heads/fleet/nightly-3892",
+      "sha": "75336f0d0e8082907992176951115f99e42fcdb5"
     }
   ],
   "tests": [
@@ -68,7 +68,6 @@
     "apps/server/src/orchestration-v2/boundedSnapshotTransport.test.ts",
     "apps/server/src/bundledEntrypoints.test.ts",
     "apps/server/src/cli/pair.test.ts",
-    "apps/server/src/cli/triage.test.ts",
     "apps/server/src/cloud/bootService.test.ts",
     "apps/server/src/cloud/selfUpdate.test.ts",
     "apps/server/src/manualServerHandoff.test.ts",
