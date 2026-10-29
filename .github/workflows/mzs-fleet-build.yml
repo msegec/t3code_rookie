@@ -55,15 +55,20 @@ jobs:
       VITE_MZS_FLEET_LABEL: MZS Fleet
       T3CODE_TELEMETRY_CHANNEL: dev
     steps:
+      # Same as release-desktop.yml: actions/checkout's credential cleanup runs
+      # submodule foreach, which fails on the orphaned gitlinks under .repos.
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ needs.resolve.outputs.ref }}
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ needs.resolve.outputs.ref }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_REF"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
