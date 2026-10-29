@@ -27,14 +27,14 @@
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-3892",
-      "sha": "3f32fd59d3b602b46efa74529fb86e718533f9ff"
+      "sha": "2c868b2baec0f0091d3e09bb50b819c785bfdd4d"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
       "ref": "refs/heads/fleet/nightly-3892",
-      "sha": "75336f0d0e8082907992176951115f99e42fcdb5"
+      "sha": "7037d7d94ada90863a47a1d13b7f4e4102d2f72b"
     }
   ],
   "tests": [
