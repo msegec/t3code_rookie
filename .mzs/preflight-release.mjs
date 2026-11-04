@@ -26,7 +26,7 @@ export function assertFleetUpdateRouting(root) {
       "FLEET_RELEASE_REPOSITORY",
       "cliReleaseDownloadBaseUrl",
     ],
-    "apps/server/src/cloud/pinnedRuntime.ts": ["cliReleaseDownloadBaseUrl"],
+    "apps/server/src/cloud/pinnedRuntime.ts": ["cliReleaseAssetUrl"],
     "packages/ssh/src/tunnel.ts": ["cliReleaseDownloadBaseUrl"],
     "apps/server/src/cloud/selfUpdate.ts": [
       "ensurePinnedRuntimeInstalled({",
@@ -35,7 +35,7 @@ export function assertFleetUpdateRouting(root) {
     "apps/web/src/components/ServerUpdateAction.tsx": ["serverEnvironment.updateServer"],
     "apps/web/src/components/sidebar/SidebarUpdatePill.tsx": [
       ".downloadUpdate()",
-      ".installUpdate()",
+      ".installUpdate(",
       "DesktopUpdateStatusIcon",
     ],
     "scripts/build-desktop-artifact.ts": ["T3CODE_DESKTOP_UPDATE_REPOSITORY"],

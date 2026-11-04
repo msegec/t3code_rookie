@@ -94,13 +94,13 @@ for (const failedStage of ["typecheck", "electron", "tests"]) {
       "packages/shared/src/fleetRelease.ts": "msegec/t3code_rookie",
       "packages/shared/src/cliRelease.ts":
         "FLEET_RELEASE_BASE_URL FLEET_RELEASE_REPOSITORY cliReleaseDownloadBaseUrl",
-      "apps/server/src/cloud/pinnedRuntime.ts": "cliReleaseDownloadBaseUrl",
+      "apps/server/src/cloud/pinnedRuntime.ts": "cliReleaseAssetUrl",
       "packages/ssh/src/tunnel.ts": "cliReleaseDownloadBaseUrl",
       "apps/server/src/cloud/selfUpdate.ts":
         "ensurePinnedRuntimeInstalled({ launcher.requestUpdate({ targetVersion",
       "apps/web/src/components/ServerUpdateAction.tsx": "serverEnvironment.updateServer",
       "apps/web/src/components/sidebar/SidebarUpdatePill.tsx":
-        ".downloadUpdate() .installUpdate() DesktopUpdateStatusIcon",
+        ".downloadUpdate() .installUpdate(expectedVersion) DesktopUpdateStatusIcon",
       "scripts/build-desktop-artifact.ts": "T3CODE_DESKTOP_UPDATE_REPOSITORY",
       ...Object.fromEntries(fleetUpdateTests.map((file) => [file, ""])),
       ...Object.fromEntries(fleetUpdateBrowserTests.map((file) => [`apps/web/${file}`, ""])),
