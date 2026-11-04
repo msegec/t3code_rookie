@@ -185,7 +185,7 @@ NodeTest.test("dry-run plans need no dependencies and reject dirty pinned source
     "apps/server/package.json": JSON.stringify({ version }),
     "apps/desktop/package.json": JSON.stringify({ version }),
     "apps/web/package.json": JSON.stringify({ version }),
-    "apps/server/vite.config.ts": 'const SEA_NODE_VERSION = "26.8.2";',
+    "package.json": JSON.stringify({ engines: { node: "26.8.2" } }),
     "pnpm-lock.yaml": "lockfileVersion: 9\n",
   };
   for (const [name, bytes] of Object.entries(files)) {
@@ -240,12 +240,11 @@ NodeTest.test("local CLI builds once, reuses verified outputs and rejects a dama
   NodeFS.mkdirSync(release);
   NodeFS.mkdirSync(tools);
   const files = {
-    "package.json": '{"type":"module"}',
+    "package.json": '{"type":"module","engines":{"node":"26.8.2"}}',
     ".gitignore": "dist/\ndist-electron/\ndist-exe/\ntarget/\n",
     "apps/server/package.json": JSON.stringify({ version }),
     "apps/desktop/package.json": JSON.stringify({ version }),
     "apps/web/package.json": JSON.stringify({ version }),
-    "apps/server/vite.config.ts": 'const SEA_NODE_VERSION = "26.8.2";',
     "pnpm-lock.yaml": "lockfileVersion: 9\n",
     ".mzs/local-build.mjs": NodeFS.readFileSync(
       new URL("./local-build.mjs", import.meta.url),
@@ -378,8 +377,8 @@ NodeTest.test(
       );
     }
     NodeFS.writeFileSync(
-      NodePath.join(source, "apps/server/vite.config.ts"),
-      'const SEA_NODE_VERSION = "26.8.2";',
+      NodePath.join(source, "package.json"),
+      JSON.stringify({ engines: { node: "26.8.2" } }),
     );
     const git = (...args) =>
       NodeChildProcess.execFileSync("git", ["-C", source, ...args], {

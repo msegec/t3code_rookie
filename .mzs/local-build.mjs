@@ -83,8 +83,7 @@ export function assertSource(root, fleet) {
     throw new Error(
       "Remove untracked env files from the isolated build source; build inputs must be pinned",
     );
-  const config = NodeFS.readFileSync(NodePath.join(root, "apps/server/vite.config.ts"), "utf8");
-  if (!config.includes(`const SEA_NODE_VERSION = "${fleet.toolchain.seaNode}"`))
+  if (readJson(NodePath.join(root, "package.json")).engines?.node !== fleet.toolchain.seaNode)
     throw new Error("SEA Node pin does not match source");
 }
 export function releasePlan(root, fleet, directory) {
