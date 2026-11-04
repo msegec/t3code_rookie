@@ -134,7 +134,6 @@ function preflight(root, manifestPath, version) {
     run(command, args, options);
   };
   step("install", "vp", ["i", "--frozen-lockfile", "--ignore-scripts"]);
-  step("effect_compiler", "vp", ["exec", "effect-tsgo", "patch"]);
   step("typecheck", "vp", [
     "run",
     ...[

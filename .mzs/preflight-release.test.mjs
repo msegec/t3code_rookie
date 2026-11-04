@@ -142,14 +142,15 @@ if (args.includes(${JSON.stringify({ typecheck: "typecheck", electron: "ensure:e
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    NodeAssert.equal(commands.length, { typecheck: 3, electron: 4, tests: 5 }[failedStage]);
+    NodeAssert.equal(commands.length, { typecheck: 2, electron: 3, tests: 4 }[failedStage]);
     NodeAssert.deepEqual(commands[0], ["i", "--frozen-lockfile", "--ignore-scripts"]);
-    NodeAssert.equal(commands[2].at(-1), "typecheck");
+    NodeAssert.equal(commands[1].at(-1), "typecheck");
+    NodeAssert.ok(!commands.some((args) => args.includes("effect-tsgo")));
     if (failedStage !== "typecheck") {
-      NodeAssert.deepEqual(commands[3], ["run", "--filter", "@t3tools/desktop", "ensure:electron"]);
+      NodeAssert.deepEqual(commands[2], ["run", "--filter", "@t3tools/desktop", "ensure:electron"]);
     }
     if (failedStage === "tests") {
-      NodeAssert.deepEqual(commands[4], ["test", "run", "selected.test.ts", ...fleetUpdateTests]);
+      NodeAssert.deepEqual(commands[3], ["test", "run", "selected.test.ts", ...fleetUpdateTests]);
     }
     NodeAssert.doesNotMatch(result.stderr, /fleet_phase=preflight_(version|build|cli|package)/);
     NodeAssert.doesNotMatch(result.stderr, /fleet_preflight=passed/);
