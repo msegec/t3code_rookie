@@ -30,9 +30,9 @@ Newer upstream nightlies may already contain some of these changes.
 - MZS desktop and server updates, with checks that the replacement server starts
   and keeps its connection details.
 - Full upstream and fork release notes in the desktop update prompt.
-- Release files for Linux x64, Windows x64 and macOS (Intel and Apple silicon)
-  build on our own machine. Linux and Windows arm64 wait on an aarch64 terminal
-  module our build kit cannot produce yet.
+- Release files for Linux, Windows and macOS on x64 and arm64. Our own machine
+  builds every target except Linux and Windows arm64; free GitHub-hosted runners
+  build all six.
 
 ## How our releases work
 
@@ -48,8 +48,10 @@ Cross-built downloads record their build host, source, tool pins, checksums and
 whether their executable smoke test ran in `build-provenance.json`. Local macOS
 builds are ad hoc signed ZIPs, without notarisation or a DMG. The pinned Node
 runtime cannot produce a macOS Intel CLI archive; the Intel desktop is included.
-A cross-built file is not evidence that it ran on that operating system. The
-legacy hosted workflow is unavailable at the current controls revision.
+A cross-built file is not evidence that it ran on that operating system.
+`import-hosted` takes every target from one run of the hosted workflow instead.
+Its notes name the run and each target's smoke result; hosted app bundles are
+unsigned.
 
 The [overlay list](.mzs/overlays.json) selects the changes for the next build.
 Each release records its exact nightly and applied changes in its release notes

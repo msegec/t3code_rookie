@@ -5,11 +5,26 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeProcess from "node:process";
 
-// linux-arm64 and win-arm64 wait on an aarch64 node-pty: the kit has no aarch64 C
-// toolchain and node-pty ships no Linux prebuild, so the WSL runtime would carry
-// a host-built pty.node.
-export const targets = ["linux-x64", "mac-arm64", "mac-x64", "win-x64"];
+export const targets = ["linux-x64", "mac-arm64", "mac-x64", "win-x64", "linux-arm64", "win-arm64"];
+// The kit has no aarch64 C toolchain and node-pty ships no Linux prebuild, so these
+// come only from the hosted workflow through import-hosted.
+export const hostedTargets = ["linux-arm64", "win-arm64"];
+const hostedLabels = {
+  "linux-x64": "Linux x64",
+  "linux-arm64": "Linux arm64",
+  "mac-arm64": "macOS arm64",
+  "mac-x64": "macOS x64",
+  "win-x64": "Windows x64",
+  "win-arm64": "Windows arm64",
+};
+const smokeValid = (smoke) =>
+  ["passed", "not-run", "failed"].includes(smoke?.status) &&
+  (smoke.status === "passed" || Boolean(smoke.reason));
 export const signing = { mac: "ad-hoc", linux: "unsigned", win: "unsigned" };
+// Hosted runs have no signing identity: electron-builder leaves the app bundles unsigned.
+export const hostedSigning = { mac: "unsigned", linux: "unsigned", win: "unsigned" };
+const signingFor = (receipt) =>
+  (receipt.hostedRun ? hostedSigning : signing)[receipt.target.split("-")[0]];
 const releaseAsset = (name) =>
   !name.startsWith("builder-debug") && !name.startsWith("builder-effective-config");
 const sha = (value) => NodeCrypto.createHash("sha256").update(value).digest("hex");
@@ -254,9 +269,8 @@ export function verifyJob(directory, plan, platform, arch) {
     receipt.target !== target ||
     receipt.sourceTree !== plan.sourceTree ||
     receipt.lockfileSha256 !== plan.lockfileSha256 ||
-    !["passed", "not-run"].includes(receipt.smoke?.status) ||
-    (receipt.smoke.status === "not-run" && !receipt.smoke.reason) ||
-    receipt.signing !== signing[receipt.target.split("-")[0]]
+    !smokeValid(receipt.smoke) ||
+    receipt.signing !== signingFor(receipt)
   )
     throw new Error(`Incompatible receipt: ${target}`);
   const assets = inventory(job.artifacts);
@@ -492,6 +506,8 @@ export function build(root, directory, version, platform, arch, dryRun = false) 
   assertSource(root, fleet);
   const plan = releasePlan(root, fleet, directory);
   const job = jobPlan(root, directory, plan, platform, arch);
+  if (hostedTargets.includes(job.target))
+    throw new Error(`${job.target} builds only on hosted runners; use import-hosted`);
   if (dryRun) return { result: "plan", plan, job };
   if (
     git(controlsRoot, "rev-parse", "HEAD") !== fleet.controlsSha ||
@@ -643,9 +659,8 @@ export function verifyCollected(directory) {
       receipt.identity !== plan.identity ||
       receipt.sourceTree !== plan.sourceTree ||
       receipt.lockfileSha256 !== plan.lockfileSha256 ||
-      receipt.signing !== signing[receipt.target.split("-")[0]] ||
-      !["passed", "not-run"].includes(receipt.smoke?.status) ||
-      (receipt.smoke.status === "not-run" && !receipt.smoke.reason)
+      receipt.signing !== signingFor(receipt) ||
+      !smokeValid(receipt.smoke)
     )
       throw new Error(`Invalid collected receipt: ${target}`);
     requireAssets(jobPlan("", "", plan, ...target.split("-")), receipt.assets, fleet.version);
@@ -683,6 +698,101 @@ export function verifyCollected(directory) {
   )
     throw new Error("Checksums do not cover the exact release inventory");
   return { plan, assets: actual };
+}
+// Replaces every job with the artifacts of one hosted mzs-fleet-build.yml run.
+// The hosted directory holds run.json ({ url, jobs } from the Actions API) and one
+// downloaded folder per artifact (desktop-<platform>-<arch>, cli-<platform>-<arch>).
+export function importHosted(root, directory, hosted) {
+  const metadata = NodeFS.readFileSync(NodePath.join(directory, "mzs-fleet.json"));
+  const fleet = readFleet(directory, JSON.parse(metadata).version);
+  assertSource(root, fleet);
+  const plan = releasePlan(root, fleet, directory);
+  const run = readJson(NodePath.join(hosted, "run.json"));
+  if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d+$/.test(run.url ?? ""))
+    throw new Error("Invalid hosted run URL");
+  const jobFor = (name) => run.jobs.find((entry) => entry.name === name);
+  const step = (entry, name) => entry?.steps?.find((value) => value.name === name)?.conclusion;
+  const jobs = NodePath.join(directory, "jobs");
+  NodeFS.rmSync(jobs, { recursive: true, force: true });
+  NodeFS.rmSync(NodePath.join(directory, "artifacts"), { recursive: true, force: true });
+  const receipts = targets.map((target) => {
+    const [platform, arch] = target.split("-");
+    const job = jobPlan(root, directory, plan, platform, arch);
+    const label = hostedLabels[target];
+    const built = jobFor(`Desktop ${label} / Build ${label}`);
+    if (built?.conclusion !== "success") throw new Error(`Hosted build did not pass: ${target}`);
+    NodeFS.mkdirSync(job.artifacts, { recursive: true });
+    const sources = [
+      `desktop-${platform}-${arch}`,
+      ...(job.archive ? [`cli-${platform}-${arch}`] : []),
+    ];
+    for (const source of sources)
+      for (const name of NodeFS.readdirSync(NodePath.join(hosted, source)))
+        NodeFS.copyFileSync(
+          NodePath.join(hosted, source, name),
+          NodePath.join(job.artifacts, name),
+        );
+    if (job.archive) {
+      const archive = NodePath.join(job.artifacts, job.archive);
+      const pattern = `${job.archive.replace(/\.(zip|tar\.gz)$/, "")}/mzs-fleet.json`;
+      const embedded =
+        platform === "win"
+          ? NodeChildProcess.execFileSync("unzip", ["-p", archive, pattern], { maxBuffer: 1 << 20 })
+          : NodeChildProcess.execFileSync("tar", ["-xzOf", archive, pattern], {
+              maxBuffer: 1 << 20,
+            });
+      if (!embedded.equals(metadata)) throw new Error(`Hosted archive metadata differs: ${target}`);
+    }
+    const verify = jobFor(`Desktop ${label} / Verify`);
+    const runner = verify?.labels?.[0] ?? built.labels?.[0];
+    const cliSmoke = step(
+      verify?.conclusion && verify.conclusion !== "skipped" ? verify : built,
+      "Smoke-test CLI archive",
+    );
+    const smoke = !job.archive
+      ? { status: "not-run", reason: "CLI archive unsupported for this target" }
+      : cliSmoke === "success"
+        ? { status: "passed" }
+        : cliSmoke === "failure"
+          ? { status: "failed", reason: `CLI archive smoke test failed on ${runner}` }
+          : {
+              status: "not-run",
+              reason: `CLI archive smoke test ${cliSmoke ?? "absent"} on ${runner}`,
+            };
+    const receipt = {
+      schemaVersion: 1,
+      identity: plan.identity,
+      target,
+      sourceTree: plan.sourceTree,
+      lockfileSha256: plan.lockfileSha256,
+      host: `github-hosted ${built.labels?.[0] ?? "unknown"}`,
+      hostedRun: run.url,
+      signing: hostedSigning[platform],
+      smoke,
+      assets: inventory(job.artifacts),
+    };
+    requireAssets(job, receipt.assets, fleet.version);
+    writeJson(NodePath.join(jobs, target, "receipt.json"), receipt);
+    return receipt;
+  });
+  writeJson(NodePath.join(directory, "build-plan.json"), plan);
+  const notesPath = NodePath.join(directory, "release-notes.md");
+  const heading = "## How this was built";
+  const notes = NodeFS.readFileSync(notesPath, "utf8").split(`\n${heading}\n`)[0].trimEnd();
+  const results = receipts.map(({ target, smoke }) => {
+    const result =
+      smoke.status === "passed"
+        ? "CLI archive smoke test passed."
+        : smoke.status === "failed"
+          ? `${smoke.reason}.`
+          : `CLI archive smoke test not run: ${smoke.reason}.`;
+    return `- ${hostedLabels[target]}: built. ${result}`;
+  });
+  NodeFS.writeFileSync(
+    notesPath,
+    `${notes}\n\n${heading}\n\nBuilt from the stacked source on GitHub-hosted runners in [this run](${run.url}). Nothing is signed with a developer certificate or notarized, and the app bundles are unsigned.\n\n${results.join("\n")}\n`,
+  );
+  return { result: "imported", identity: plan.identity, hostedRun: run.url, receipts };
 }
 export function collect(root, directory) {
   const plan = readJson(NodePath.join(directory, "build-plan.json"));
@@ -765,6 +875,8 @@ if (
   let result;
   if (args[0] === "import-inputs" && args.length === 4)
     result = importInputs(...args.slice(1).map((path) => NodePath.resolve(path)));
+  else if (args[0] === "import-hosted" && args.length === 4)
+    result = importHosted(...args.slice(1).map((path) => NodePath.resolve(path)));
   else if (args[0] === "collect" && args.length === 3)
     result = collect(NodePath.resolve(args[1]), NodePath.resolve(args[2]));
   else {
@@ -772,7 +884,7 @@ if (
     if (dryRun) args.pop();
     if (args.length !== 5)
       throw new Error(
-        "Usage: local-build.mjs <source-root> <release-dir> <version> <platform> <arch> [--dry-run] | collect <source-root> <release-dir> | import-inputs <source-root> <release-dir> <buildkit-dir>",
+        "Usage: local-build.mjs <source-root> <release-dir> <version> <platform> <arch> [--dry-run] | collect <source-root> <release-dir> | import-inputs <source-root> <release-dir> <buildkit-dir> | import-hosted <source-root> <release-dir> <hosted-dir>",
       );
     result = build(
       NodePath.resolve(args[0]),

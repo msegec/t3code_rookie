@@ -8,6 +8,8 @@ import * as NodeTest from "node:test";
 import {
   desktopAssetName,
   fileHash,
+  build,
+  importHosted,
   prepareNativeInputs,
   importInputs,
   inventory,
@@ -479,3 +481,136 @@ NodeTest.test("builder debug configuration stays out of the published inventory"
   );
   NodeAssert.equal(verifyCollected(f.release).plan.identity, f.plan.identity);
 });
+
+NodeTest.test(
+  "hosted imports keep each target's real smoke result and refuse foreign archives",
+  (t) => {
+    const f = releaseFixture(t);
+    NodeFS.rmSync(NodePath.join(f.directory, "jobs"), { recursive: true });
+    const source = NodePath.join(f.directory, "source");
+    const files = {
+      "apps/server/package.json": JSON.stringify({ version }),
+      "apps/desktop/package.json": JSON.stringify({ version }),
+      "apps/web/package.json": JSON.stringify({ version }),
+      "package.json": JSON.stringify({ engines: { node: "26.8.2" } }),
+      "pnpm-lock.yaml": "lockfileVersion: 9\n",
+    };
+    for (const [name, bytes] of Object.entries(files)) {
+      NodeFS.mkdirSync(NodePath.dirname(NodePath.join(source, name)), { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(source, name), bytes);
+    }
+    const run = (command, args, cwd) =>
+      NodeChildProcess.execFileSync(command, args, { cwd, encoding: "utf8", stdio: "pipe" }).trim();
+    run("git", ["init", "--quiet"], source);
+    run("git", ["add", "."], source);
+    run(
+      "git",
+      [
+        "-c",
+        "user.name=NodeTest",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--quiet",
+        "-m",
+        "fixture",
+      ],
+      source,
+    );
+    f.fleet.sourceSha = run("git", ["rev-parse", "HEAD"], source);
+    const metadata = JSON.stringify(f.fleet);
+    NodeFS.writeFileSync(NodePath.join(f.directory, "mzs-fleet.json"), metadata);
+    const hosted = NodePath.join(f.directory, "hosted");
+    const labels = {
+      "linux-x64": "Linux x64",
+      "linux-arm64": "Linux arm64",
+      "mac-arm64": "macOS arm64",
+      "mac-x64": "macOS x64",
+      "win-x64": "Windows x64",
+      "win-arm64": "Windows arm64",
+    };
+    const feeds = {
+      "mac-arm64": "nightly-mac.yml",
+      "mac-x64": "nightly-mac-x64.yml",
+      "linux-x64": "nightly-linux.yml",
+      "linux-arm64": "nightly-linux-arm64.yml",
+      "win-x64": "nightly-win-x64.yml",
+      "win-arm64": "nightly-win-arm64.yml",
+    };
+    const jobs = [];
+    for (const target of targets) {
+      const [platform, arch] = target.split("-");
+      const desktop = NodePath.join(hosted, `desktop-${platform}-${arch}`);
+      NodeFS.mkdirSync(desktop, { recursive: true });
+      for (const name of [
+        desktopAssetName(platform, arch, version),
+        feeds[target],
+        "builder-debug.yml",
+      ])
+        NodeFS.writeFileSync(NodePath.join(desktop, name), name);
+      const job = jobPlan("", f.directory, f.plan, platform, arch);
+      if (job.archive) {
+        const cli = NodePath.join(hosted, `cli-${platform}-${arch}`);
+        const stem = job.archive.replace(/\.(zip|tar\.gz)$/, "");
+        NodeFS.mkdirSync(NodePath.join(cli, stem), { recursive: true });
+        NodeFS.writeFileSync(NodePath.join(cli, stem, "mzs-fleet.json"), metadata);
+        if (platform === "win") run("zip", ["-qr", job.archive, stem], cli);
+        else run("tar", ["-czf", job.archive, stem], cli);
+        NodeFS.rmSync(NodePath.join(cli, stem), { recursive: true });
+      }
+      const smoke = platform === "win" ? "skipped" : job.archive ? "success" : undefined;
+      jobs.push({
+        name: `Desktop ${labels[target]} / Build ${labels[target]}`,
+        conclusion: "success",
+        labels: [`runner-${target}`],
+        steps: smoke ? [{ name: "Smoke-test CLI archive", conclusion: smoke }] : [],
+      });
+      if (platform === "win")
+        jobs.push({
+          name: `Desktop ${labels[target]} / Verify`,
+          conclusion: "failure",
+          labels: [`verify-${target}`],
+          steps: [{ name: "Smoke-test CLI archive", conclusion: "failure" }],
+        });
+    }
+    const url = "https://github.com/owner/repo/actions/runs/1";
+    NodeFS.writeFileSync(NodePath.join(hosted, "run.json"), JSON.stringify({ url, jobs }));
+
+    NodeFS.writeFileSync(NodePath.join(f.directory, "release-notes.md"), "notes\n");
+    const result = importHosted(source, f.directory, hosted);
+    importHosted(source, f.directory, hosted);
+    const notes = NodeFS.readFileSync(NodePath.join(f.directory, "release-notes.md"), "utf8");
+    NodeAssert.equal(notes.match(/## How this was built/g).length, 1);
+    NodeAssert.match(
+      notes,
+      /- Windows arm64: built\. CLI archive smoke test failed on verify-win-arm64\./,
+    );
+    const smoke = Object.fromEntries(result.receipts.map((r) => [r.target, r.smoke]));
+    NodeAssert.deepEqual(smoke["linux-arm64"], { status: "passed" });
+    NodeAssert.deepEqual(smoke["mac-x64"], {
+      status: "not-run",
+      reason: "CLI archive unsupported for this target",
+    });
+    NodeAssert.deepEqual(smoke["win-arm64"], {
+      status: "failed",
+      reason: "CLI archive smoke test failed on verify-win-arm64",
+    });
+    const plan = JSON.parse(NodeFS.readFileSync(NodePath.join(f.directory, "build-plan.json")));
+    for (const receipt of result.receipts) {
+      NodeAssert.equal(receipt.hostedRun, url);
+      NodeAssert.equal(receipt.signing, "unsigned");
+      const [platform, arch] = receipt.target.split("-");
+      NodeAssert.equal(verifyJob(f.directory, plan, platform, arch).target, receipt.target);
+    }
+    NodeAssert.throws(
+      () => build(source, f.directory, version, "linux", "arm64", true),
+      /hosted runners/,
+    );
+
+    NodeFS.writeFileSync(
+      NodePath.join(f.directory, "mzs-fleet.json"),
+      JSON.stringify({ ...f.fleet, overlays: [{}] }),
+    );
+    NodeAssert.throws(() => importHosted(source, f.directory, hosted), /metadata differs/);
+  },
+);
