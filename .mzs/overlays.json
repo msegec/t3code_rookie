@@ -5,36 +5,36 @@
       "kind": "commit",
       "name": "MZS fleet release routing",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3892",
-      "sha": "0a9f5123e220d3938e446410c8c58883af61c44e"
+      "ref": "refs/heads/fleet/nightly-4179",
+      "sha": "99c2b380263d7e57efc6b6f75d8c1cd09a688675"
     },
     {
       "kind": "commit",
       "name": "MZS project sidebar accents",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3892",
-      "sha": "dca5f908a1ab7ee80e3824b4b8dfd366afa666d5"
+      "ref": "refs/heads/fleet/nightly-4179",
+      "sha": "1e6266eabfd4e89a459c7c2859d7696323549fc6"
     },
     {
       "kind": "commit",
       "name": "MZS fleet update metadata",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3892",
-      "sha": "5b6c0910711feeac537efeab5ceae09f48c31c03"
+      "ref": "refs/heads/fleet/nightly-4179",
+      "sha": "96fdb7dcc781c8a4d1b98e86f51c5b3242c0c0b1"
     },
     {
       "kind": "commit",
       "name": "MZS local cross-platform release builds",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3892",
-      "sha": "2c868b2baec0f0091d3e09bb50b819c785bfdd4d"
+      "ref": "refs/heads/fleet/nightly-4179",
+      "sha": "9f5f0540ddf0bc7a14f29c0c340cf5bdb9d42581"
     },
     {
       "kind": "commit",
       "name": "MZS service ownership and endpoints",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-3892",
-      "sha": "7037d7d94ada90863a47a1d13b7f4e4102d2f72b"
+      "ref": "refs/heads/fleet/nightly-4179",
+      "sha": "f70c702213f330fc7e3f673e4c37c7c9145d42d7"
     }
   ],
   "tests": [
