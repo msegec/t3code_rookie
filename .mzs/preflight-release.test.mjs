@@ -86,30 +86,34 @@ NodeTest.test("release rejects missing fleet routing before dependencies or buil
   NodeAssert.throws(() => assertFleetUpdateRouting(root), /Fleet update routing missing/);
 });
 
+function writeRoutingFixture(root) {
+  const files = {
+    "packages/shared/src/fleetRelease.ts": "msegec/t3code_rookie",
+    "packages/shared/src/cliRelease.ts":
+      "FLEET_RELEASE_BASE_URL FLEET_RELEASE_REPOSITORY cliReleaseDownloadBaseUrl",
+    "apps/server/src/cloud/pinnedRuntime.ts": "cliReleaseAssetUrl",
+    "packages/ssh/src/tunnel.ts": "cliReleaseDownloadBaseUrl",
+    "apps/server/src/cloud/selfUpdate.ts":
+      "ensurePinnedRuntimeInstalled({ launcher.requestUpdate({ targetVersion",
+    "apps/web/src/components/ServerUpdateAction.tsx": "serverEnvironment.updateServer",
+    "apps/web/src/components/sidebar/SidebarUpdatePill.tsx":
+      ".downloadUpdate() .installUpdate(expectedVersion) DesktopUpdateStatusIcon",
+    "scripts/build-desktop-artifact.ts": "T3CODE_DESKTOP_UPDATE_REPOSITORY",
+    ...Object.fromEntries(fleetUpdateTests.map((file) => [file, ""])),
+    ...Object.fromEntries(fleetUpdateBrowserTests.map((file) => [`apps/web/${file}`, ""])),
+    "manifest.json": JSON.stringify({ tests: ["selected.test.ts", fleetUpdateTests[0]] }),
+  };
+  for (const [file, contents] of Object.entries(files)) {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(root, file)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(root, file), contents);
+  }
+}
+
 for (const failedStage of ["typecheck", "electron", "tests"]) {
   NodeTest.test(`release stops at ${failedStage} before expensive downstream work`, (test) => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-preflight-order-"));
     test.after(() => NodeFS.rmSync(root, { recursive: true, force: true }));
-    const files = {
-      "packages/shared/src/fleetRelease.ts": "msegec/t3code_rookie",
-      "packages/shared/src/cliRelease.ts":
-        "FLEET_RELEASE_BASE_URL FLEET_RELEASE_REPOSITORY cliReleaseDownloadBaseUrl",
-      "apps/server/src/cloud/pinnedRuntime.ts": "cliReleaseAssetUrl",
-      "packages/ssh/src/tunnel.ts": "cliReleaseDownloadBaseUrl",
-      "apps/server/src/cloud/selfUpdate.ts":
-        "ensurePinnedRuntimeInstalled({ launcher.requestUpdate({ targetVersion",
-      "apps/web/src/components/ServerUpdateAction.tsx": "serverEnvironment.updateServer",
-      "apps/web/src/components/sidebar/SidebarUpdatePill.tsx":
-        ".downloadUpdate() .installUpdate(expectedVersion) DesktopUpdateStatusIcon",
-      "scripts/build-desktop-artifact.ts": "T3CODE_DESKTOP_UPDATE_REPOSITORY",
-      ...Object.fromEntries(fleetUpdateTests.map((file) => [file, ""])),
-      ...Object.fromEntries(fleetUpdateBrowserTests.map((file) => [`apps/web/${file}`, ""])),
-      "manifest.json": JSON.stringify({ tests: ["selected.test.ts", fleetUpdateTests[0]] }),
-    };
-    for (const [file, contents] of Object.entries(files)) {
-      NodeFS.mkdirSync(NodePath.dirname(NodePath.join(root, file)), { recursive: true });
-      NodeFS.writeFileSync(NodePath.join(root, file), contents);
-    }
+    writeRoutingFixture(root);
     NodeFS.writeFileSync(
       NodePath.join(root, "vp"),
       `#!${process.execPath}
@@ -156,3 +160,66 @@ if (args.includes(${JSON.stringify({ typecheck: "typecheck", electron: "ensure:e
     NodeAssert.doesNotMatch(result.stderr, /fleet_preflight=passed/);
   });
 }
+
+NodeTest.test("tests read the unstamped versions and the build reads the stamp", (test) => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-preflight-stamp-"));
+  test.after(() => NodeFS.rmSync(root, { recursive: true, force: true }));
+  const git = (...args) =>
+    NodeChildProcess.execFileSync(
+      "git",
+      ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args],
+      { encoding: "utf8" },
+    );
+  writeRoutingFixture(root);
+  const serverPackage = NodePath.join(root, "apps/server/package.json");
+  NodeFS.writeFileSync(serverPackage, JSON.stringify({ version: "0.1.7" }));
+  NodeFS.writeFileSync(NodePath.join(root, ".gitignore"), "commands.jsonl\nvp\ndist/\n");
+  git("init", "--quiet");
+  git("add", ".");
+  git("commit", "--quiet", "-m", "base");
+  NodeFS.writeFileSync(serverPackage, JSON.stringify({ version }));
+  git("commit", "--quiet", "-am", `chore(release): stamp ${version}`);
+  NodeFS.writeFileSync(
+    NodePath.join(root, "vp"),
+    `#!${process.execPath}
+const fs = require("node:fs");
+const path = require("node:path");
+const root = ${JSON.stringify(root)};
+const args = process.argv.slice(2);
+const { version } = JSON.parse(fs.readFileSync(path.join(root, "apps/server/package.json"), "utf8"));
+fs.appendFileSync(path.join(root, "commands.jsonl"), JSON.stringify({ args, version }) + "\\n");
+if (args.includes("build:desktop")) {
+  fs.mkdirSync(path.join(root, "apps/server/dist"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "apps/server/dist/bin.mjs"),
+    \`console.log(process.argv.includes("--version") ? "t3 v\${version}" : "USAGE t3");\`,
+  );
+}
+`,
+    { mode: 0o755 },
+  );
+  const result = NodeChildProcess.spawnSync(
+    process.execPath,
+    [
+      NodeURL.fileURLToPath(new URL("./preflight-release.mjs", import.meta.url)),
+      root,
+      NodePath.join(root, "manifest.json"),
+      version,
+    ],
+    {
+      env: { ...process.env, PATH: `${root}${NodePath.delimiter}${process.env.PATH}` },
+      encoding: "utf8",
+      timeout: 10_000,
+    },
+  );
+  NodeAssert.equal(result.status, 0, result.stderr);
+  const calls = NodeFS.readFileSync(NodePath.join(root, "commands.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const versionAt = (match) => calls.find(({ args }) => match(args))?.version;
+  NodeAssert.equal(versionAt((args) => args[0] === "test" && !args.includes("browser")), "0.1.7");
+  NodeAssert.equal(versionAt((args) => args.includes("browser")), "0.1.7");
+  NodeAssert.equal(versionAt((args) => args.includes("build:desktop")), version);
+  NodeAssert.equal(git("status", "--porcelain"), "");
+});

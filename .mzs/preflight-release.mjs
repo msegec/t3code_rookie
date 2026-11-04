@@ -111,6 +111,26 @@ export function smokeCli(entrypoint, version) {
   }
 }
 
+function gitOutput(root, args) {
+  const result = NodeChildProcess.spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function withUnstampedVersions(root, version, action) {
+  if (gitOutput(root, ["log", "-1", "--format=%s"]) !== `chore(release): stamp ${version}`)
+    return action();
+  const files = (gitOutput(root, ["diff", "--name-only", "HEAD~1", "HEAD"]) ?? "")
+    .split("\n")
+    .filter(Boolean);
+  if (!files.length) throw new Error("Release stamp commit changes no files");
+  run("git", ["-C", root, "checkout", "HEAD~1", "--", ...files], {});
+  try {
+    return action();
+  } finally {
+    run("git", ["-C", root, "checkout", "HEAD", "--", ...files], {});
+  }
+}
+
 function preflight(root, manifestPath, version) {
   const manifest = JSON.parse(NodeFS.readFileSync(manifestPath, "utf8"));
   if (
@@ -149,11 +169,13 @@ function preflight(root, manifestPath, version) {
     "typecheck",
   ]);
   step("electron", "vp", ["run", "--filter", "@t3tools/desktop", "ensure:electron"]);
-  step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
-  process.stderr.write("fleet_phase=preflight_browser_tests\n");
-  run("vp", ["test", "run", "--project", "browser", ...fleetUpdateBrowserTests], {
-    ...options,
-    cwd: NodePath.join(root, "apps/web"),
+  withUnstampedVersions(root, version, () => {
+    step("tests", "vp", ["test", "run", ...new Set([...manifest.tests, ...fleetUpdateTests])]);
+    process.stderr.write("fleet_phase=preflight_browser_tests\n");
+    run("vp", ["test", "run", "--project", "browser", ...fleetUpdateBrowserTests], {
+      ...options,
+      cwd: NodePath.join(root, "apps/web"),
+    });
   });
   step("build", "vp", ["run", "build:desktop"]);
   process.stderr.write("fleet_phase=preflight_cli\n");
