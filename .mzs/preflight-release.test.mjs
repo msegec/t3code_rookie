@@ -26,6 +26,19 @@ NodeTest.test("accepts CLI commands with and without a configured home", (test) 
   smokeCli(fixture(test, cli), version);
 });
 
+NodeTest.test("allows the CLI compile cache outside the runtime home", (test) => {
+  smokeCli(
+    fixture(
+      test,
+      `import fs from "node:fs";
+import path from "node:path";
+fs.mkdirSync(path.join(process.env.XDG_CACHE_HOME, "t3code", "compile-cache"), { recursive: true });
+${cli}`,
+    ),
+    version,
+  );
+});
+
 NodeTest.test("rejects correct version output followed by launcher startup failure", (test) => {
   const root = fixture(
     test,

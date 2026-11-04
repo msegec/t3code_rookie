@@ -70,6 +70,7 @@ function run(command, args, options) {
 
 export function smokeCli(entrypoint, version) {
   const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cli-smoke-"));
+  const cache = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cli-smoke-cache-"));
   try {
     const env = {
       PATH: process.env.PATH,
@@ -77,7 +78,7 @@ export function smokeCli(entrypoint, version) {
       USERPROFILE: home,
       XDG_CONFIG_HOME: home,
       XDG_DATA_HOME: home,
-      XDG_CACHE_HOME: home,
+      XDG_CACHE_HOME: cache,
       NO_COLOR: "1",
     };
     for (const configured of [false, true]) {
@@ -108,6 +109,7 @@ export function smokeCli(entrypoint, version) {
     }
   } finally {
     NodeFS.rmSync(home, { recursive: true, force: true });
+    NodeFS.rmSync(cache, { recursive: true, force: true });
   }
 }
 
