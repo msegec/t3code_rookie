@@ -250,7 +250,7 @@ jobs:
         if: steps.resource_monitor_cache.outputs.cache-hit != 'true' || (inputs.platform == 'linux' && steps.capture_helper_cache.outputs.cache-hit != 'true')
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           targets: ${{ inputs.rust_target }}
 
       - name: Download relay client tracing config
@@ -586,6 +586,7 @@ jobs:
           pnpm_config_store_dir: ${{ steps.stage_pnpm.outputs.dir }}/store
           pnpm_config_prefer_offline: "true"
           T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: true
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: msegec/t3code_rookie
           T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
           T3CODE_DESKTOP_UNTRUSTED_BUNDLE: ${{ inputs.untrusted_bundle }}
           CSC_LINK: ${{ secrets.CSC_LINK }}

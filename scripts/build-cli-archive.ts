@@ -634,6 +634,10 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
 
   yield* Effect.log(`[cli-archive] Staging ${stem}...`);
   yield* fs.copyFile(builtExecutable, path.join(contentDir, executableName));
+  const fleetMetadata = path.join(serverDir, "dist/mzs-fleet.json");
+  if (yield* fs.exists(fleetMetadata)) {
+    yield* fs.copyFile(fleetMetadata, path.join(contentDir, "mzs-fleet.json"));
+  }
   yield* stageWebClient(webClient, path.join(contentDir, "client"));
   yield* fs.copy(resourceMonitorDir, path.join(contentDir, "resource-monitor"));
   yield* stageRuntimeExternals({
