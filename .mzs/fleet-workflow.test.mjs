@@ -25,7 +25,7 @@ NodeTest.test("hosted workflow builds one pinned source without secrets or publi
       /uses: msegec\/t3code_rookie\/\.github\/workflows\/release-desktop\.yml@(\S+)/g,
     ),
   ];
-  NodeAssert.equal(calls.length, 6);
+  NodeAssert.equal(calls.length, 4);
   for (const [, ref] of calls) NodeAssert.equal(ref, sha);
   for (const [, action] of workflow.matchAll(/uses: ([^.\s]\S*)/g))
     NodeAssert.match(action, /@[a-f0-9]{40}$/);
@@ -42,10 +42,6 @@ NodeTest.test("hosted workflow builds one pinned source without secrets or publi
       "macos-15",
       "ubuntu-24.04",
       "ubuntu-24.04-arm",
-      "ubuntu-24.04",
-      "windows-2025",
-      "ubuntu-24.04",
-      "windows-11-arm",
     ],
   );
 });

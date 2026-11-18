@@ -5,17 +5,15 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeProcess from "node:process";
 
-export const targets = ["linux-x64", "mac-arm64", "mac-x64", "win-x64", "linux-arm64", "win-arm64"];
+export const targets = ["linux-x64", "mac-arm64", "mac-x64", "linux-arm64"];
 // The kit has no aarch64 C toolchain and node-pty ships no Linux prebuild, so these
 // come only from the hosted workflow through import-hosted.
-export const hostedTargets = ["linux-arm64", "win-arm64"];
+export const hostedTargets = ["linux-arm64"];
 const hostedLabels = {
   "linux-x64": "Linux x64",
   "linux-arm64": "Linux arm64",
   "mac-arm64": "macOS arm64",
   "mac-x64": "macOS x64",
-  "win-x64": "Windows x64",
-  "win-arm64": "Windows arm64",
 };
 const smokeValid = (smoke) =>
   ["passed", "not-run", "failed"].includes(smoke?.status) &&
@@ -238,11 +236,11 @@ export function jobPlan(root, directory, plan, platform, arch) {
           },
   };
 }
-// electron-builder names the x64 AppImage "x86_64"; every other desktop asset uses "x64".
+// A nightly AppImage carries no version, so electron-updater can replace it in place.
+// electron-builder names its x64 build "x86_64"; every other desktop asset uses "x64".
 export function desktopAssetName(platform, arch, version) {
-  const extension = { mac: "zip", linux: "AppImage", win: "exe" }[platform];
-  const label = platform === "linux" && arch === "x64" ? "x86_64" : arch;
-  return `T3-Code-${version}-${label}.${extension}`;
+  if (platform === "linux") return `T3-Code-Nightly-${arch === "x64" ? "x86_64" : arch}.AppImage`;
+  return `T3-Code-${version}-${arch}.${{ mac: "zip", win: "exe" }[platform]}`;
 }
 function requireAssets(job, assets, version) {
   const required = [desktopAssetName(job.platform, job.arch, version)];
@@ -681,7 +679,6 @@ export function verifyCollected(directory) {
       }
   for (const name of [
     "nightly-mac.yml",
-    "nightly.yml",
     "nightly-linux.yml",
     "release-notes.md",
     `t3-source-${fleet.version}.bundle`,
@@ -844,7 +841,6 @@ export function collect(root, directory) {
       );
     };
     merge("mac", "nightly-mac.yml", "nightly-mac-x64.yml", "nightly-mac.yml");
-    merge("win", "nightly-win-x64.yml", "nightly-win-arm64.yml", "nightly.yml");
     writeJson(NodePath.join(temporary, "build-provenance.json"), {
       plan,
       receipts,

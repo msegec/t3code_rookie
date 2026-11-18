@@ -5,78 +5,36 @@
       "kind": "commit",
       "name": "MZS fleet release routing",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-4179",
-      "sha": "99c2b380263d7e57efc6b6f75d8c1cd09a688675"
+      "ref": "refs/heads/fleet/nightly-4851-slim",
+      "sha": "99dc508ea60e67450bf1070f1a2291345575b1c7"
     },
     {
       "kind": "commit",
-      "name": "MZS project sidebar accents",
+      "name": "MZS hosted package provenance",
       "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-4179",
-      "sha": "1e6266eabfd4e89a459c7c2859d7696323549fc6"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS fleet update metadata",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-4179",
-      "sha": "96fdb7dcc781c8a4d1b98e86f51c5b3242c0c0b1"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS local cross-platform release builds",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-4179",
-      "sha": "9f5f0540ddf0bc7a14f29c0c340cf5bdb9d42581"
-    },
-    {
-      "kind": "commit",
-      "name": "MZS service ownership and endpoints",
-      "repository": "msegec/t3code_rookie",
-      "ref": "refs/heads/fleet/nightly-4179",
-      "sha": "f70c702213f330fc7e3f673e4c37c7c9145d42d7"
+      "ref": "refs/heads/fleet/nightly-4851-slim",
+      "sha": "ee577d7b4eb6a91eed7aec8ca7ce509a97dbcd78"
     }
   ],
   "tests": [
-    "apps/desktop/src/updates/releaseNotes.test.ts",
-    "apps/desktop/src/updates/updateChannels.test.ts",
-    "apps/server/integration/transferBudgetV2.integration.test.ts",
-    "apps/server/src/assets/AssetAccess.test.ts",
     "apps/server/src/cloud/pinnedRuntime.test.ts",
-    "apps/server/src/project/ManagedProjectFolders.test.ts",
-    "apps/server/src/project/ProjectAccents.test.ts",
-    "apps/server/src/project/ProjectEnrichmentService.test.ts",
-    "apps/server/src/project/ProjectFaviconResolver.test.ts",
-    "apps/server/src/project/ProjectService.deletion.test.ts",
-    "apps/server/src/project/ProjectService.test.ts",
-    "apps/server/src/ws.projectAccents.test.ts",
-    "apps/server/src/ws.test.ts",
+    "apps/desktop/src/updates/updateChannels.test.ts",
     "apps/web/src/branding.test.ts",
-    "apps/web/src/projectAccent.test.ts",
-    "packages/contracts/src/t3ProjectFile.test.ts",
-    "packages/shared/src/cliRelease.test.ts",
-    "packages/shared/src/fleetRelease.test.ts",
-    "packages/shared/src/t3ProjectFile.test.ts",
-    "packages/ssh/src/tunnel.test.ts",
-    "scripts/build-cli-archive.test.ts",
     "scripts/build-desktop-artifact.fleet.test.ts",
-    "scripts/build-desktop-artifact.test.ts",
-    "scripts/lib/resolve-catalog.test.ts",
-    "scripts/mac-cross-build.test.ts",
-    "scripts/smoke-cli-archive.test.ts",
-    "apps/server/src/orchestration-v2/http.test.ts",
-    "apps/server/src/orchestration-v2/boundedSnapshotTransport.test.ts",
-    "apps/server/src/bundledEntrypoints.test.ts",
-    "apps/server/src/cli/pair.test.ts",
-    "apps/server/src/cloud/bootService.test.ts",
-    "apps/server/src/cloud/selfUpdate.test.ts",
-    "apps/server/src/manualServerHandoff.test.ts",
-    "apps/server/src/serverRuntimeState.test.ts",
-    "apps/server/src/serviceLauncher.test.ts",
-    "apps/server/src/serviceReadiness.test.ts"
+    "packages/shared/src/fleetRelease.test.ts",
+    "packages/ssh/src/tunnel.test.ts",
+    "packages/shared/src/cliRelease.test.ts"
   ],
   "trackedPullRequests": [
     7972,
+    7979,
+    8151,
+    8162,
+    8196,
+    8329,
+    8371,
+    11406,
+    8456,
     9194,
     12115
   ]

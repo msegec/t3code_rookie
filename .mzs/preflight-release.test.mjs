@@ -201,7 +201,7 @@ const root = ${JSON.stringify(root)};
 const args = process.argv.slice(2);
 const { version } = JSON.parse(fs.readFileSync(path.join(root, "apps/server/package.json"), "utf8"));
 fs.appendFileSync(path.join(root, "commands.jsonl"), JSON.stringify({ args, version }) + "\\n");
-if (args.includes("build:desktop")) {
+if (args.includes("build:desktop:bundle")) {
   fs.mkdirSync(path.join(root, "apps/server/dist"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "apps/server/dist/bin.mjs"),
@@ -233,6 +233,6 @@ if (args.includes("build:desktop")) {
   const versionAt = (match) => calls.find(({ args }) => match(args))?.version;
   NodeAssert.equal(versionAt((args) => args[0] === "test" && !args.includes("browser")), "0.1.7");
   NodeAssert.equal(versionAt((args) => args.includes("browser")), "0.1.7");
-  NodeAssert.equal(versionAt((args) => args.includes("build:desktop")), version);
+  NodeAssert.equal(versionAt((args) => args.includes("build:desktop:bundle")), version);
   NodeAssert.equal(git("status", "--porcelain"), "");
 });

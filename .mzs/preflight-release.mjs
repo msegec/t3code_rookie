@@ -179,7 +179,7 @@ function preflight(root, manifestPath, version) {
       cwd: NodePath.join(root, "apps/web"),
     });
   });
-  step("build", "vp", ["run", "build:desktop"]);
+  step("build", "vp", ["run", "build:desktop:bundle"]);
   process.stderr.write("fleet_phase=preflight_cli\n");
   smokeCli(NodePath.join(root, "apps/server/dist/bin.mjs"), version);
   process.stderr.write("fleet_preflight=passed\n");

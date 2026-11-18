@@ -13,7 +13,6 @@ on:
         type: string
 
 permissions:
-  # The Windows jobs read this run's artifact list to wait for the Linux CLI archive.
   actions: read
   contents: read
 
@@ -84,7 +83,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
       - name: Build JS bundle
-        run: vp run build:desktop
+        run: vp run build:desktop:bundle
 
       # The CLI archive copies this beside its server bundle as provenance.
       - name: Stage fleet metadata
@@ -193,50 +192,4 @@ jobs:
       arch: arm64
       rust_target: aarch64-unknown-linux-gnu
       resource_key: linux-arm64
-      cli_archive: true
-
-  desktop_win_x64:
-    name: Desktop Windows x64
-    needs: [resolve, build_bundle]
-    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@7037d7d94ada90863a47a1d13b7f4e4102d2f72b
-    with:
-      version: ${{ needs.resolve.outputs.version }}
-      ref: ${{ needs.resolve.outputs.ref }}
-      release_channel: nightly
-      relay_client_tracing: false
-      clerk_publishable_key: ""
-      clerk_jwt_template: ""
-      clerk_cli_oauth_client_id: ""
-      relay_url: ""
-      label: Windows x64
-      runner: ubuntu-24.04
-      verify_runner: windows-2025
-      platform: win
-      target: nsis
-      arch: x64
-      rust_target: x86_64-pc-windows-msvc
-      resource_key: win32-x64
-      cli_archive: true
-
-  desktop_win_arm64:
-    name: Desktop Windows arm64
-    needs: [resolve, build_bundle]
-    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@7037d7d94ada90863a47a1d13b7f4e4102d2f72b
-    with:
-      version: ${{ needs.resolve.outputs.version }}
-      ref: ${{ needs.resolve.outputs.ref }}
-      release_channel: nightly
-      relay_client_tracing: false
-      clerk_publishable_key: ""
-      clerk_jwt_template: ""
-      clerk_cli_oauth_client_id: ""
-      relay_url: ""
-      label: Windows arm64
-      runner: ubuntu-24.04
-      verify_runner: windows-11-arm
-      platform: win
-      target: nsis
-      arch: arm64
-      rust_target: aarch64-pc-windows-msvc
-      resource_key: win32-arm64
       cli_archive: true

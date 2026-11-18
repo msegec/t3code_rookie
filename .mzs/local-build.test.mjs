@@ -54,8 +54,6 @@ export function releaseFixture(t) {
       "mac-x64": "nightly-mac-x64.yml",
       "linux-x64": "nightly-linux.yml",
       "linux-arm64": "nightly-linux-arm64.yml",
-      "win-x64": "nightly-win-x64.yml",
-      "win-arm64": "nightly-win-arm64.yml",
     }[target];
     NodeFS.mkdirSync(job.artifacts, { recursive: true });
     for (const name of [
@@ -118,7 +116,7 @@ export function collectedFixture(t) {
 }
 
 NodeTest.test(
-  "all local jobs use exact cross targets, native smoke and Windows WSL archives",
+  "all fleet jobs use exact cross targets and native smoke",
   (t) => {
     const { plan } = releaseFixture(t);
     for (const target of targets) {
@@ -131,12 +129,6 @@ NodeTest.test(
       if (executable)
         NodeAssert.ok(
           executable[1].includes(`${platform === "mac" ? "darwin" : platform}-${arch}`),
-        );
-      if (platform === "win")
-        NodeAssert.ok(
-          job.commands[2][1].includes(
-            `/release/jobs/linux-${arch}/assets/t3-${version}-linux-${arch}.tar.gz`,
-          ),
         );
       if (platform === "mac") NodeAssert.ok(job.commands[2][1].includes("zip"));
     }
@@ -218,7 +210,7 @@ NodeTest.test("dry-run plans need no dependencies and reject dirty pinned source
     source,
     f.directory,
     version,
-    "win",
+    "linux",
     "x64",
     "--dry-run",
   ];
@@ -256,7 +248,7 @@ NodeTest.test("local CLI builds once, reuses verified outputs and rejects a dama
     "scripts/build-desktop-artifact.ts": `import * as fs from "node:fs"; import * as path from "node:path";
       const args = process.argv; const out = args[args.indexOf('--output-dir') + 1];
       const arch = args[args.indexOf('--arch') + 1]; const mac = args[args.indexOf('--platform') + 1] === 'mac';
-      for (const name of mac ? ['T3-Code-${version}-'+arch+'.zip','nightly-mac.yml'] : ['T3-Code-${version}-'+(arch === 'x64' ? 'x86_64' : arch)+'.AppImage','nightly-linux.yml']) fs.writeFileSync(path.join(out,name), name);
+      for (const name of mac ? ['T3-Code-${version}-'+arch+'.zip','nightly-mac.yml'] : ['T3-Code-Nightly-'+(arch === 'x64' ? 'x86_64' : arch)+'.AppImage','nightly-linux.yml']) fs.writeFileSync(path.join(out,name), name);
       fs.writeFileSync('apps/server/dist/bundle.js','nightly branding');
       const monitor = 'native/resource-monitor/target/'+(arch === 'arm64' ? 'aarch64' : 'x86_64')+(mac ? '-apple-darwin' : '-unknown-linux-gnu')+'/release'; fs.mkdirSync(monitor, {recursive:true}); fs.writeFileSync(path.join(monitor, 't3-resource-monitor'),'monitor');`,
     "scripts/build-cli-archive.ts": `import * as fs from "node:fs"; import * as path from "node:path";
@@ -526,16 +518,12 @@ NodeTest.test(
       "linux-arm64": "Linux arm64",
       "mac-arm64": "macOS arm64",
       "mac-x64": "macOS x64",
-      "win-x64": "Windows x64",
-      "win-arm64": "Windows arm64",
     };
     const feeds = {
       "mac-arm64": "nightly-mac.yml",
       "mac-x64": "nightly-mac-x64.yml",
       "linux-x64": "nightly-linux.yml",
       "linux-arm64": "nightly-linux-arm64.yml",
-      "win-x64": "nightly-win-x64.yml",
-      "win-arm64": "nightly-win-arm64.yml",
     };
     const jobs = [];
     for (const target of targets) {
@@ -554,24 +542,16 @@ NodeTest.test(
         const stem = job.archive.replace(/\.(zip|tar\.gz)$/, "");
         NodeFS.mkdirSync(NodePath.join(cli, stem), { recursive: true });
         NodeFS.writeFileSync(NodePath.join(cli, stem, "mzs-fleet.json"), metadata);
-        if (platform === "win") run("zip", ["-qr", job.archive, stem], cli);
-        else run("tar", ["-czf", job.archive, stem], cli);
+        run("tar", ["-czf", job.archive, stem], cli);
         NodeFS.rmSync(NodePath.join(cli, stem), { recursive: true });
       }
-      const smoke = platform === "win" ? "skipped" : job.archive ? "success" : undefined;
+      const smoke = target === "linux-x64" ? "failure" : job.archive ? "success" : undefined;
       jobs.push({
         name: `Desktop ${labels[target]} / Build ${labels[target]}`,
         conclusion: "success",
         labels: [`runner-${target}`],
         steps: smoke ? [{ name: "Smoke-test CLI archive", conclusion: smoke }] : [],
       });
-      if (platform === "win")
-        jobs.push({
-          name: `Desktop ${labels[target]} / Verify`,
-          conclusion: "failure",
-          labels: [`verify-${target}`],
-          steps: [{ name: "Smoke-test CLI archive", conclusion: "failure" }],
-        });
     }
     const url = "https://github.com/owner/repo/actions/runs/1";
     NodeFS.writeFileSync(NodePath.join(hosted, "run.json"), JSON.stringify({ url, jobs }));
@@ -583,7 +563,7 @@ NodeTest.test(
     NodeAssert.equal(notes.match(/## How this was built/g).length, 1);
     NodeAssert.match(
       notes,
-      /- Windows arm64: built\. CLI archive smoke test failed on verify-win-arm64\./,
+      /- Linux x64: built\. CLI archive smoke test failed on runner-linux-x64\./,
     );
     const smoke = Object.fromEntries(result.receipts.map((r) => [r.target, r.smoke]));
     NodeAssert.deepEqual(smoke["linux-arm64"], { status: "passed" });
@@ -591,9 +571,9 @@ NodeTest.test(
       status: "not-run",
       reason: "CLI archive unsupported for this target",
     });
-    NodeAssert.deepEqual(smoke["win-arm64"], {
+    NodeAssert.deepEqual(smoke["linux-x64"], {
       status: "failed",
-      reason: "CLI archive smoke test failed on verify-win-arm64",
+      reason: "CLI archive smoke test failed on runner-linux-x64",
     });
     const plan = JSON.parse(NodeFS.readFileSync(NodePath.join(f.directory, "build-plan.json")));
     for (const receipt of result.receipts) {
