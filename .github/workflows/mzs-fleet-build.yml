@@ -21,8 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FLEET_VERSION: 0.1.6-nightly.20261029.3892.mzs.r6d51b3a92075
-  FLEET_SOURCE_SHA: 7037d7d94ada90863a47a1d13b7f4e4102d2f72b
+  FLEET_VERSION: 0.1.11-nightly.20261118.4864.mzs.r7a41aed87839
+  FLEET_SOURCE_SHA: 9e22d555c09e51422036192cba320f441a6f4bc6
 
 jobs:
   resolve:
@@ -107,7 +107,7 @@ jobs:
   desktop_mac_arm64:
     name: Desktop macOS arm64
     needs: [resolve, build_bundle]
-    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@7037d7d94ada90863a47a1d13b7f4e4102d2f72b
+    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@9e22d555c09e51422036192cba320f441a6f4bc6
     with:
       version: ${{ needs.resolve.outputs.version }}
       ref: ${{ needs.resolve.outputs.ref }}
@@ -130,7 +130,7 @@ jobs:
   desktop_mac_x64:
     name: Desktop macOS x64
     needs: [resolve, build_bundle]
-    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@7037d7d94ada90863a47a1d13b7f4e4102d2f72b
+    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@9e22d555c09e51422036192cba320f441a6f4bc6
     with:
       version: ${{ needs.resolve.outputs.version }}
       ref: ${{ needs.resolve.outputs.ref }}
@@ -152,7 +152,7 @@ jobs:
   desktop_linux_x64:
     name: Desktop Linux x64
     needs: [resolve, build_bundle]
-    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@7037d7d94ada90863a47a1d13b7f4e4102d2f72b
+    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@9e22d555c09e51422036192cba320f441a6f4bc6
     with:
       version: ${{ needs.resolve.outputs.version }}
       ref: ${{ needs.resolve.outputs.ref }}
@@ -175,7 +175,7 @@ jobs:
   desktop_linux_arm64:
     name: Desktop Linux arm64
     needs: [resolve, build_bundle]
-    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@7037d7d94ada90863a47a1d13b7f4e4102d2f72b
+    uses: msegec/t3code_rookie/.github/workflows/release-desktop.yml@9e22d555c09e51422036192cba320f441a6f4bc6
     with:
       version: ${{ needs.resolve.outputs.version }}
       ref: ${{ needs.resolve.outputs.ref }}
