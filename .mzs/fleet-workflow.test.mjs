@@ -38,8 +38,8 @@ NodeTest.test("hosted workflow builds one pinned source without secrets or publi
     [
       "ubuntu-24.04",
       "ubuntu-24.04",
-      "macos-15",
-      "macos-15",
+      "macos-26",
+      "macos-26",
       "ubuntu-24.04",
       "ubuntu-24.04-arm",
     ],
