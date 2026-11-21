@@ -1,6 +1,6 @@
 {
   "name": "@t3tools/desktop",
-  "version": "0.1.11",
+  "version": "0.1.12-nightly.20261121.5064.mzs.r7a41aed87839",
   "private": true,
   "type": "module",
   "main": "dist-electron/boot.cjs",
